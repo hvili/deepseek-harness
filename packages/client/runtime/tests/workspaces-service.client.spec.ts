@@ -188,6 +188,23 @@ describe('WorkspaceManager', () => {
 })
 
 describe('WorkspaceRuntime', () => {
+  it('removes a permanently deleted archived session from the local sidebar projection', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('deleted'), updatedAt: 1, running: false, blank: false }] as never[],
+    }))
+    await sessions.refresh()
+    api.onWorkspaceRemoveArchivedSession = () => Promise.resolve(ok({
+      removed: true, archivedSessionIds: [],
+    }))
+
+    await expect(workspaces.removeArchivedSession(sid('deleted'))).resolves.toBe(true)
+    expect(sessions.list.getSnapshot().ids).not.toContain('deleted')
+  })
+
   it('feeds readiness and recent-Workspace targeting without changing Host order', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

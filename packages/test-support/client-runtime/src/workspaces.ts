@@ -212,4 +212,24 @@ export class TestWorkspaces implements IWorkspaces {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
     })
   }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unarchiveSession', args: [sessionId] })
+    const stub = this.stubs.get('unarchiveSession')
+    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
+    this.calls.push({ method: 'removeArchivedSession', args: [sessionId] })
+    const stub = this.stubs.get('removeArchivedSession')
+    if (stub !== undefined) return await (stub(sessionId) as Promise<boolean>)
+    const wasArchived = this.list.getSnapshot().archivedSessionIds.includes(sessionId)
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+    })
+    return wasArchived
+  }
 }

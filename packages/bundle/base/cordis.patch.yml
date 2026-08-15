@@ -95,6 +95,16 @@
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
 
+    # Optional image-to-text bridge: when enabled, a configured image-capable
+    # route describes uploaded images before the selected text model runs.
+    - id: vision-proxy
+      name: '@deepseek-ai/dsh-vision-proxy'
+      config:
+        enabled: false
+        visionProvider: qwen-token-plan-cn
+        visionModel: kimi-k2.5
+        maxTokens: 1024
+
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:

@@ -2694,6 +2694,21 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
       },
+      unarchiveSession: (request) => {
+        const { sessionId } = request.payload
+        archivedSessionIds.splice(0, archivedSessionIds.length, ...archivedSessionIds.filter(id => id !== sessionId))
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      removeArchivedSession: (request) => {
+        const { sessionId } = request.payload
+        const wasArchived = archivedSessionIds.includes(sessionId)
+        archivedSessionIds.splice(0, archivedSessionIds.length, ...archivedSessionIds.filter(id => id !== sessionId))
+        sessions.splice(0, sessions.length, ...sessions.filter(session => session.sessionId !== sessionId))
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        if (wasArchived) emitHost({ type: 'host/session-removed', sessionId })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds], removed: wasArchived })
+      },
     },
     agentPresets: {
       // Both trusts appear, because a surface must present a locally authored
@@ -3105,6 +3120,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
+      case 'workspace.removeArchivedSession': return this.api.workspace.removeArchivedSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)

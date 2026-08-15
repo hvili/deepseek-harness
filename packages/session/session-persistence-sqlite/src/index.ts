@@ -349,6 +349,20 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     return rows.map(rowToMeta)
   }
 
+  /** Permanently remove one materialized session and all of its event rows. */
+  override async remove(id: SessionId): Promise<boolean> {
+    await this.ready
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const removed = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0
+      this.db.exec('COMMIT')
+      return removed
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   /** List metadata with a source-qualified monotonic revision per session. */
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     signal?.throwIfAborted()

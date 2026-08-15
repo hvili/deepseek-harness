@@ -46,9 +46,14 @@ async function harness(options: HarnessOptions = {}) {
 
   let listed = options.sessions ?? []
   const list = vi.fn(async () => listed)
+  const removeSession = vi.fn(async (id: SessionId) => {
+    const found = listed.some(header => header.id === id)
+    listed = listed.filter(header => header.id !== id)
+    return found
+  })
   const load = vi.fn(() => { throw new Error('event bodies must not be loaded') })
   const inspect = vi.fn(() => { throw new Error('event bodies must not be inspected') })
-  ctx.provide('sessionPersistence', { list, load, inspect } as never)
+  ctx.provide('sessionPersistence', { list, load, inspect, remove: removeSession } as never)
 
   if (options.sessionStore === true) {
     await ctx.plugin(SessionStore)
@@ -75,6 +80,7 @@ async function harness(options: HarnessOptions = {}) {
     list,
     load,
     inspect,
+    removeSession,
     setSessions: (headers: SessionHeader[]) => { listed = headers },
   }
 }
@@ -940,5 +946,24 @@ describe('registry-global session archive', () => {
     )
     const upgraded = await harness({ pool: legacy })
     expect(upgraded.registry.archivedSessionIds).toEqual([])
+  })
+
+  it('restores and permanently removes only archived cold session records', async () => {
+    const dir = await makeDir('archive-remove')
+    const result = await harness({ sessions: [header('keep', dir, 100), header('remove', dir, 200)] })
+    const workspace = result.registry.list()[0]!
+    await result.registry.archiveSession(SessionId('keep'))
+    await result.registry.unarchiveSession(SessionId('keep'))
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(workspace.sessionIds).toContain('keep')
+
+    await result.registry.archiveSession(SessionId('remove'))
+    await expect(result.registry.removeArchivedSession(SessionId('remove'))).resolves.toBe(true)
+    expect(result.removeSession).toHaveBeenCalledWith('remove')
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.isPermanentlyRemoved(SessionId('remove'))).toBe(true)
+    expect(workspace.sessionIds).not.toContain('remove')
+    expect(storedState(result.pool).archivedSessionIds).toEqual([])
+    await expect(result.registry.removeArchivedSession(SessionId('remove'))).resolves.toBe(false)
   })
 })

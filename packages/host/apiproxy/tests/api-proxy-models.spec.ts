@@ -234,6 +234,29 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('allows a text-only selection when the configured vision route is live', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    ctx.provide('settings', {
+      get: vi.fn(() => ({ enabled: true, visionProvider: 'text-only' })),
+    } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    ;(agent.inbox.nextTurn as UserMessage[]).push({
+      id: 'image-message-proxy', role: 'user', source: { kind: 'user' }, content: [{
+        type: 'image',
+        attachment: { attachmentId: 'att-proxy', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+      }],
+    } as never)
+
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+    await ctx.fiber.dispose()
+  })
+
   it('authorizes attachment bytes only when the session event stream references the id', async () => {
     const { ctx, agent, sessionId } = await harness()
     const ref = {

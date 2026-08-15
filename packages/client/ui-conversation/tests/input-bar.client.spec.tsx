@@ -205,6 +205,26 @@ function bench(over?: BenchOptions) {
 }
 
 describe('image draft rail', () => {
+  it('adds browser-selected text files as named prompt context', async () => {
+    const { view, shell } = bench()
+    const file = new File(['ignored'], 'notes.md', { type: 'text/markdown' })
+    Object.defineProperty(file, 'text', { value: () => Promise.resolve('# Notes\nUse the attached plan.') })
+    const picker = view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      fireEvent.change(picker, { target: { files: [file] } })
+      await Promise.resolve()
+    })
+    expect(shell.snapshot.draft).toBe('\n\n--- 文件：notes.md ---\n# Notes\nUse the attached plan.\n--- 文件结束：notes.md ---\n')
+  })
+
+  it('opens a browser file picker from the paperclip control', () => {
+    const { view } = bench()
+    const picker = view.container.querySelector<HTMLInputElement>('input[type="file"]')!
+    const click = vi.spyOn(picker, 'click')
+    fireEvent.click(view.getByRole('button', { name: '添加文件、图片或视频' }))
+    expect(click).toHaveBeenCalledOnce()
+  })
+
   it('collects clipboard files while preserving text from a mixed paste', () => {
     const addImages = vi.fn(() => null)
     const { textarea, shell } = bench({ addImages })

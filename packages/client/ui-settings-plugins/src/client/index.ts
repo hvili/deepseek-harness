@@ -27,9 +27,13 @@ import type { ConfigurablePluginsTabInjected } from './ConfigurablePluginsTab.ts
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
+import { VisionProxyCard } from './VisionProxyCard.tsx'
+import { ArchivedSessionsTab } from './ArchivedSessionsTab.tsx'
+import type { ArchivedSessionsTabInjected } from './ArchivedSessionsTab.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
+import { VISION_PROXY_NS, VisionProxyCardController } from './vision-proxy-card-controller.ts'
 import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
@@ -43,12 +47,14 @@ export type {
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
 export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
+export type { VisionProxyCardFace, VisionProxyCardState } from './vision-proxy-card-controller.ts'
+export type { ArchivedSessionsTabInjected, ArchivedSessionsTabProps } from './ArchivedSessionsTab.tsx'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces']
 
 /**
  * Mount the plugin configuration section and the cards this package ships.
@@ -62,6 +68,11 @@ export function apply(ctx: ClientContext): void {
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
+  const visionProxy = new VisionProxyCardController(ctx.settingsScope.bind({ namespace: VISION_PROXY_NS }))
+  const archivedSessionsInjected = (): ArchivedSessionsTabInjected => ({
+    restore: sessionId => ctx.workspaces.unarchiveSession(sessionId),
+    remove: sessionId => ctx.workspaces.removeArchivedSession(sessionId),
+  })
 
   // The credential a card reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -131,6 +142,14 @@ export function apply(ctx: ClientContext): void {
     }),
     children: { 'settings.plugin.item': { kind: 'list', scope: 'root' } },
   }, ConfigurablePluginsTab))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'archived-sessions',
+    order: 20,
+    label: () => t('archivedTab'),
+    locale: NS,
+    inject: archivedSessionsInjected,
+  }, ArchivedSessionsTab))
 
   ctx.slots.inject('settings.plugin.item', function* () {
     yield ctx.slots.register({
@@ -154,5 +173,12 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => webSearch.inject(),
     }, WebSearchCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      id: 'vision-proxy',
+      order: 30,
+      locale: NS,
+      inject: () => visionProxy.inject(),
+    }, VisionProxyCard)
   })
 }

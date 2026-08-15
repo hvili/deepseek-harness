@@ -124,8 +124,11 @@ const DEFAULT_MAX_MESSAGES = 50
  * is deferred work.
  */
 const WEB_SETTINGS_NAMESPACES = [
-  'agent-loop', 'shell', 'locale', 'permission', 'ui-conversation', 'ui-theme', 'web-search-deepseek',
+  'agent-loop', 'shell', 'locale', 'permission', 'ui-conversation', 'ui-theme', 'web-search-deepseek', 'vision-proxy',
 ] as const
+
+/** Settings section read by image admission before the agent pre-step runs. */
+const VISION_PROXY_SETTINGS_NAMESPACE = settingsNamespace('vision-proxy')
 
 /** Provider work budget: at most 100 calls and 2,000 inspected hits. */
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
@@ -1654,11 +1657,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // session's history was produced under that composition, and
           // rebuilding it differently would replay tool calls the model can no
           // longer make.
-          return (await ctx.agents.resume({
+          const handle = await ctx.agents.resume({
             resumeSessionId: sessionId,
             agentOptions: agentOptions(),
             setup: (await composeAgent(storedPreset)).setup,
-          })).agent
+          })
+          return handle.agent
         }
 
         try {
@@ -1667,7 +1671,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
         const composition = await composeAgent(presetId)
-        return (await ctx.agents.create({
+        const handle = await ctx.agents.create({
           sessionId,
           agentOptions: agentOptions(),
           meta: {
@@ -1675,7 +1679,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
           },
           setup: composition.setup,
-        })).agent
+        })
+        return handle.agent
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
@@ -1732,7 +1737,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = ctx.sessions.list().map(summarizeAttached)
+    const items = ctx.sessions.list()
+      .filter(session => !ctx.workspaceRegistry.isPermanentlyRemoved(session.id))
+      .map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1836,6 +1843,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   function routeServed(provider: string): boolean {
     const llm = ctx.get('llm')
     return llm === undefined || llm.listProviders().some(entry => entry.id === provider)
+  }
+
+  /**
+   * Image admission happens before `agent/pre-step`, so an enabled proxy must
+   * explicitly opt text-only sessions into the image upload path. Requiring
+   * the auxiliary provider route to be live avoids accepting images that can
+   * never be transformed when the configured vision route is absent.
+   */
+  function visionProxyAllowsImages(agent?: Agent): boolean {
+    const settings = ctx.get('settings')
+    if (settings === undefined) return false
+    // The pre-step hook can transform a newly claimed image, but it cannot
+    // rewrite image blocks that are already in the durable session surface.
+    // Refuse that case here instead of admitting a request the text adapter
+    // will reject later.
+    if (agent !== undefined && messagesHaveImage(agent.session.deriveMessages())) return false
+    const value = settings.get(VISION_PROXY_SETTINGS_NAMESPACE)
+    if (typeof value !== 'object' || value === null) return false
+    const section = value as { enabled?: unknown; visionProvider?: unknown }
+    return section.enabled === true
+      && typeof section.visionProvider === 'string'
+      && section.visionProvider.length > 0
+      && routeServed(section.visionProvider)
   }
 
   /**
@@ -2296,7 +2326,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               .some(message => contentHasImage(message.content))
             if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {
               const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model)
-              if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+              if (info.inputModalities !== undefined
+                && !info.inputModalities.includes('image')
+                && !visionProxyAllowsImages(found.agent)) {
                 return err(request, {
                   code: 'model-unavailable',
                   message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,
@@ -2485,7 +2517,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+              if (modelInfo.inputModalities !== undefined
+                && !modelInfo.inputModalities.includes('image')
+                && !visionProxyAllowsImages(agent)) {
                 return err(request, {
                   code: 'attachment-error',
                   message: `Model "${current.model}" does not support image input.`,
@@ -2917,6 +2951,25 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+
+      async unarchiveSession(request) {
+        await ctx.workspaceRegistry.unarchiveSession(request.payload.sessionId)
+        return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+
+      async removeArchivedSession(request) {
+        const { sessionId } = request.payload
+        const live = ctx.agents.get(sessionId)
+        if (live?.status === 'running') {
+          return err(request, {
+            code: 'session-active',
+            message: `cannot permanently remove running session '${sessionId}'`,
+            details: { sessionId },
+          })
+        }
+        const removed = await ctx.workspaceRegistry.removeArchivedSession(sessionId)
+        return ok(request, { removed, archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
       },
     },
 

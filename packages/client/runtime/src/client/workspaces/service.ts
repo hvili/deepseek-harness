@@ -292,6 +292,20 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Restore an archived session to its existing workspace or ungrouped position. */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unarchiveSession(sessionId)
+    if (!result.ok) throw new Error(`session restore failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Permanently remove an archived, non-live session. Attachment objects are retained. */
+  async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
+    const result = await this.manager.removeArchivedSession(sessionId)
+    if (!result.ok) throw new Error(`session delete failed: ${result.error.code}: ${result.error.message}`)
+    if (result.value.removed) this.sessions.remove(sessionId)
+    return result.value.removed
+  }
+
   /**
    * Move a session within its Workspace's manual order (DOM-insertBefore-like).
    * @param workspaceId - owning workspace.

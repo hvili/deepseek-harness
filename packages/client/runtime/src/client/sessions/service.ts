@@ -461,6 +461,17 @@ export class SessionRuntime implements ISessions {
     this.manager.handleHostEnvelope(envelope)
   }
 
+  /**
+   * Remove a session locally after a successful permanent Host deletion.
+   * @param id - permanently deleted session id.
+   */
+  remove(id: SessionId): void {
+    this.manager.handleHostEnvelope({
+      rpcId: 'local/session-remove' as never,
+      payload: { type: 'host/session-removed', sessionId: id },
+    })
+  }
+
   /** Rebuild the Session baseline and every opened window after connection. */
   handleConnected(): void {
     this.manager.handleConnected()

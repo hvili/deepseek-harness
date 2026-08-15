@@ -121,3 +121,41 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
     </div>
   )
 }
+
+/** A checkbox control backed by a boolean CardForm field. */
+export function ToggleField(props: FieldProps) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <label>
+        <input
+          id={props.id}
+          type="checkbox"
+          checked={props.text === 'true'}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(String(event.target.checked)) }}
+        />
+      </label>
+      <p className={props.invalid ? css.invalid : css.hint}>
+        {props.invalid ? props.invalidLabel : props.hint}
+      </p>
+    </div>
+  )
+}

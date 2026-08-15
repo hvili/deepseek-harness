@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AttachmentRail, DropOverlay, ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { AttachmentRailItem } from '@deepseek-ai/dsh-client-ui-attachment'
@@ -35,6 +35,72 @@ import css from './InputBar.module.css'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
+
+/** Maximum source text admitted from one browser-selected file. */
+const MAX_TEXT_FILE_BYTES = 1 * 1024 * 1024
+/** A short video is represented by evenly spaced stills for the image pipeline. */
+const VIDEO_FRAME_COUNT = 4
+/** Source extensions whose bytes can be safely inserted as UTF-8 prompt context. */
+const TEXT_FILE_EXTENSIONS = new Set([
+  'txt', 'md', 'mdx', 'csv', 'tsv', 'json', 'yaml', 'yml', 'xml', 'html', 'htm', 'css',
+  'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cc', 'cpp', 'h', 'hpp',
+  'cs', 'php', 'rb', 'sh', 'ps1', 'sql', 'log', 'ini', 'toml', 'env',
+])
+
+/** Whether a selected browser file can become prompt text without a document parser. */
+function isTextFile(file: File): boolean {
+  if (file.type.startsWith('text/')) return true
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  return extension !== undefined && TEXT_FILE_EXTENSIONS.has(extension)
+}
+
+/** Read a selected text file into a clearly delimited model-visible block. */
+async function textFileBlock(file: File): Promise<string> {
+  if (file.size > MAX_TEXT_FILE_BYTES) {
+    throw new Error(`文件“${file.name}”超过 1 MB，无法直接作为文本发送`)
+  }
+  const text = await file.text()
+  return `\n\n--- 文件：${file.name} ---\n${text}\n--- 文件结束：${file.name} ---\n`
+}
+
+/** Extract evenly-spaced JPEG stills from a browser-decodable video file. */
+async function videoFrames(file: File): Promise<File[]> {
+  const source = URL.createObjectURL(file)
+  const video = document.createElement('video')
+  video.preload = 'metadata'
+  video.muted = true
+  video.src = source
+  const waitFor = (event: 'loadedmetadata' | 'seeked'): Promise<void> => new Promise((resolve, reject) => {
+    video.addEventListener(event, () => { resolve() }, { once: true })
+    video.addEventListener('error', () => { reject(new Error(`无法读取视频“${file.name}”`)) }, { once: true })
+  })
+  try {
+    await waitFor('loadedmetadata')
+    if (!Number.isFinite(video.duration) || video.duration <= 0 || video.videoWidth === 0 || video.videoHeight === 0) {
+      throw new Error(`视频“${file.name}”没有可提取的画面`)
+    }
+    const scale = Math.min(1, 1280 / video.videoWidth)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+    const context = canvas.getContext('2d')
+    if (context === null) throw new Error('浏览器无法创建视频画面')
+    const frames: File[] = []
+    for (let index = 0; index < VIDEO_FRAME_COUNT; index += 1) {
+      video.currentTime = Math.min(video.duration - 0.05, video.duration * ((index + 1) / (VIDEO_FRAME_COUNT + 1)))
+      await waitFor('seeked')
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+      if (blob !== null) frames.push(new File([blob], `${file.name}-frame-${index + 1}.jpg`, { type: 'image/jpeg' }))
+    }
+    if (frames.length === 0) throw new Error(`视频“${file.name}”没有可发送的画面`)
+    return frames
+  } finally {
+    video.removeAttribute('src')
+    video.load()
+    URL.revokeObjectURL(source)
+  }
+}
 
 /** Rail thumbnail carrying its source attachment for the open/remove callbacks. */
 interface ComposerRailItem extends AttachmentRailItem {
@@ -102,6 +168,7 @@ export function InputBar({
       : `${promptError.error.message} (${promptError.error.code})`)
   }, [promptError, showToast, t, imageLimits])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const dragDepthRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -448,6 +515,39 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
+  const insertTextFile = useCallback((block: string): void => {
+    if (keyboard === undefined) return
+    const current = keyboard.snapshot.draft
+    const next = `${current}${block}`
+    keyboard.setDraft(next)
+    keyboard.track(next, next.length)
+    inputRef.current?.focus({ preventScroll: true })
+  }, [keyboard])
+
+  const intakeFiles = useCallback(async (files: readonly File[]): Promise<void> => {
+    if (locked || machineBusy || files.length === 0) return
+    const images: File[] = []
+    for (const file of files) {
+      try {
+        if (file.type.startsWith('image/')) images.push(file)
+        else if (file.type.startsWith('video/')) {
+          images.push(...await videoFrames(file))
+          insertTextFile(`\n\n[视频“${file.name}”已提取 ${VIDEO_FRAME_COUNT} 个画面，请结合这些画面回答。]\n`)
+        } else if (isTextFile(file)) insertTextFile(await textFileBlock(file))
+        else showToast(`暂不支持“${file.name}”。可上传图片、视频，或 1 MB 以内的文本/代码文件`)
+      } catch (error: unknown) {
+        showToast(error instanceof Error ? error.message : `无法读取文件“${file.name}”`)
+      }
+    }
+    if (images.length > 0) intakeImages(images)
+  }, [insertTextFile, intakeImages, locked, machineBusy, showToast])
+
+  const onFileChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = [...(event.target.files ?? [])]
+    event.target.value = ''
+    void intakeFiles(files)
+  }
+
   // Whole-page file-drop intake (DeepSeek Chat behavior): the listeners live
   // on the document so a drop anywhere over the window adds images, not only
   // over the composer card. Safe as document-level state: the composer-bar
@@ -731,6 +831,27 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
+            <Tooltip label={t('input.attach')} side="top" delayMs={500}>
+              <button
+                type="button"
+                className={css.add}
+                aria-label={t('input.attach')}
+                disabled={locked || machineBusy || addImages === undefined}
+                onMouseDown={keepFocus}
+                onClick={() => { fileInputRef.current?.click() }}
+              >
+                <IconPaperclipOutline16 size={14} />
+              </button>
+            </Tooltip>
+            <input
+              ref={fileInputRef}
+              className={css.fileInput}
+              type="file"
+              multiple
+              accept="image/*,video/*,text/*,.md,.mdx,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.cc,.cpp,.h,.hpp,.cs,.php,.rb,.sh,.ps1,.sql,.log,.ini,.toml,.env"
+              onChange={onFileChange}
+              tabIndex={-1}
+            />
             <Tooltip label={t('input.commands')} side="top" delayMs={500}>
               <button
                 type="button"

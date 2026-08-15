@@ -191,6 +191,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async archiveSession(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [request.payload.sessionId] } } }
       },
+      async unarchiveSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [] } } }
+      },
+      async removeArchivedSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [], removed: true } } }
+      },
     },
     agentPresets: {
       list(request: RpcRequest<{}>) {

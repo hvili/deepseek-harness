@@ -99,6 +99,8 @@ export class WorkspaceRegistry extends Service {
   private readonly headers = new Map<SessionId, SessionHeader>()
   private readonly sessionPaths = new Map<SessionId, string>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
+  /** Process-lifetime tombstones stop a detached idle session from resurfacing after its durable record is erased. */
+  private readonly removedSessionIds = new Set<SessionId>()
   private operationTail: Promise<void> = Promise.resolve()
 
   private readonly host: WorkspaceEntityHost = {
@@ -234,6 +236,11 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().archivedSessionIds
   }
 
+  /** Whether this process has permanently deleted the session's durable record. */
+  isPermanentlyRemoved(sessionId: SessionId): boolean {
+    return this.removedSessionIds.has(sessionId)
+  }
+
   /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
@@ -251,6 +258,46 @@ export class WorkspaceRegistry extends Service {
       }
       const state = this.requireState()
       await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+    })
+  }
+
+  /** Restore an archived session to its previous grouping position. */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * Permanently remove an archived idle session's durable log and all workspace
+   * references. A live in-memory copy may remain until the host restarts, but
+   * it is detached from every workspace and cannot be resumed once its log is
+   * gone. Attachments intentionally remain in their independent store: another
+   * session may still reference the same object.
+   */
+  removeArchivedSession(sessionId: SessionId): Promise<boolean> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return false
+      // Delete durable conversation bytes before erasing the sole UI index.
+      // If a later registry write faults, the still-archived id makes a retry
+      // safe and discoverable after restart.
+      await this.ctx.sessionPersistence.remove(sessionId)
+      this.removedSessionIds.add(sessionId)
+      for (const entity of this.entities.values()) await entity.detachSession(sessionId)
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+      return true
     })
   }
 

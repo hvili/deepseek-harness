@@ -91,4 +91,8 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+  /** Restore a session previously hidden by archiveSession. */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /** Permanently remove an archived, non-live session's log and references. */
+  removeArchivedSession(sessionId: SessionId): Promise<boolean>
 }
