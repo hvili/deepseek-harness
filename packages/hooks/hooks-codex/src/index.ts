@@ -12,7 +12,7 @@
 // Each dialect bridge keeps its complete dependency list visible at the entry
 // point; a cross-package facade for imports alone would add indirection.
 /* jscpd:ignore-start */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
@@ -34,7 +34,7 @@ import {
   type MatcherGroup,
   type MergedHookOutcome,
 } from '@deepseek-ai/dsh-hook-protocol'
-import { parseCodexConfig, type CodexHookConfig } from './config.ts'
+import { parseCodexConfig, mergeCodexConfigs, defaultCodexHookPaths, type CodexHookConfig } from './config.ts'
 /* jscpd:ignore-end */
 
 export const name = 'hooks-codex'
@@ -43,12 +43,14 @@ export const inject = ['shell']
 /** Plugin config: where the Codex hooks.json lives + the model name for payloads. */
 export interface Config {
   /**
-   * Path to a Codex `hooks.json`. Process-level: read once at load, a relative
-   * path resolves against the process launch cwd.
+   * Path to a Codex `hooks.json`. Optional: when omitted, the bridge discovers
+   * Codex's standard locations — `<cwd>/.codex/hooks.json` (project, resolved
+   * from the process launch cwd) then `~/.codex/hooks.json` (user), merged with
+   * project hooks running before user hooks. Process-level: read once at load.
    * TODO(per-session-hook-config): per-session project-local discovery from each
    * `session/new.cwd`.
    */
-  configPath: string
+  configPath?: string
   /** The model name stamped on every payload (Codex includes `model` on each event). */
   model?: string
   /** Default per-hook timeout in ms when a hook sets none (Codex default: 600000). */
@@ -58,7 +60,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  configPath: z.string().required(),
+  configPath: z.string(),
   model: z.string().default(''),
   defaultTimeoutMs: z.number().default(DEFAULT_HOOK_TIMEOUT_MS),
   stderrSummaryMaxChars: z.number().default(DEFAULT_STDERR_SUMMARY_MAX_CHARS),
@@ -84,16 +86,28 @@ export function apply(ctx: Context, config: Config): void {
   assertPositiveInteger('stderrSummaryMaxChars', stderrSummaryMaxChars)
   const defaultTimeoutMs = config.defaultTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
   let parsed: CodexHookConfig = {}
-  try {
-    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
-    const result = parseCodexConfig(raw)
-    parsed = result.config
-    for (const s of result.skipped) {
-      ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
+  // An explicit `configPath` is authoritative: it must exist and parse, and a
+  // failure means "no hooks registered" (the previous behavior). Without one,
+  // discover Codex's standard files; a discovered file that is simply absent is
+  // skipped quietly, while a present-but-invalid file is warned and skipped so
+  // one broken layer never blanks the hooks a user did configure.
+  const layers = config.configPath !== undefined
+    ? [config.configPath]
+    : defaultCodexHookPaths()
+  const explicit = config.configPath !== undefined
+  for (const file of layers) {
+    if (!explicit && !existsSync(file)) continue
+    try {
+      const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      const result = parseCodexConfig(raw)
+      for (const s of result.skipped) {
+        ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
+      }
+      parsed = mergeCodexConfigs(parsed, result.config)
+    } catch (error: unknown) {
+      ctx.logger.warn(`hooks-codex: could not load hook config "${file}": ${String(error)} — no hooks registered`)
+      if (explicit) return
     }
-  } catch (error: unknown) {
-    ctx.logger.warn(`hooks-codex: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
-    return
   }
 
   const model = config.model ?? ''

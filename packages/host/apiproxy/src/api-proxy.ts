@@ -109,6 +109,7 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import { expectVisionProbeFinish, onePixelPng } from './vision-probe.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -138,6 +139,12 @@ const COLD_SUMMARY_BATCH_SIZE = 16
 /** Default maximum artifact size eligible for one cold blankness read. */
 export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 
+/** Default timeout for the llm.testModel 1px image probe. */
+const VISION_PROBE_TIMEOUT_MS = 60_000
+
+/** Maximum output tokens for the llm.testModel image probe. */
+const VISION_PROBE_MAX_TOKENS = 32
+
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
@@ -148,6 +155,42 @@ function decodeBase64(data: string): Uint8Array {
     throw new AttachmentError('Image upload is not canonical base64.', 'INVALID_IMAGE_BASE64')
   }
   return new Uint8Array(decoded)
+}
+
+/**
+ * Send one 1x1 transparent image through the exact adapter path a real image
+ * attachment uses. Saving the probe through the durable attachment service
+ * exercises decode, persistence, read-back, and provider serialization in one
+ * round trip; the same bytes are content-addressed, so repeated tests reuse
+ * the object instead of accumulating copies.
+ */
+async function runVisionProbe(ctx: Context, provider: string, model: string, timeoutMs: number): Promise<void> {
+  const attachment = await ctx.attachments.saveImage({
+    data: onePixelPng(),
+    mediaType: 'image/png',
+    name: 'vision-proxy-test.png',
+  })
+  const message = createUserMessage({
+    content: [
+      { type: 'text', text: 'Reply with exactly "ok" to confirm the image-input path.' },
+      { type: 'image', attachment },
+    ],
+    source: { kind: 'plugin', plugin: 'apiproxy' },
+  })
+  const signal = AbortSignal.timeout(timeoutMs)
+  try {
+    await expectVisionProbeFinish(ctx.llm.stream({
+      provider,
+      model,
+      messages: [message],
+      maxTokens: VISION_PROBE_MAX_TOKENS,
+      signal,
+    }))
+    if (signal.aborted) throw new Error(`vision probe timed out after ${timeoutMs}ms`)
+  } catch (error: unknown) {
+    if (signal.aborted) throw new Error(`vision probe timed out after ${timeoutMs}ms`)
+    throw error
+  }
 }
 
 /** Validate one prompt as a batch before publishing any durable image object. */
@@ -654,6 +697,14 @@ export interface ApiProxyDefaults {
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
+  /** The installation's build-manifest version, injected by the launcher; absent when a test mounts the proxy directly. */
+  version?: string
+  /** Short git commit this build came from, when the manifest was stamped; absent otherwise. */
+  commit?: string
+  /** Release-pipeline build hash, when the manifest was stamped; absent otherwise. */
+  buildHash?: string
+  /** Session-log on-disk format version, when the manifest was stamped; absent otherwise. */
+  schemaVersion?: number
   /** Native open-with-default-application; injectable for carrier tests. */
   openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native text-editor handoff; injectable for settings-document tests. */
@@ -2975,10 +3026,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     host: {
       describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
         const selection = defaults.defaultModelSelection()
         return Promise.resolve(ok(request, {
-          version: '0.0.1',
+          version: defaults.version ?? '0.0.0',
           // Same source as session.create's fallback: the UI's default project
           // must match where an unspecified-cwd session actually lands.
           cwd: defaults.cwd,
@@ -2988,6 +3038,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
           canOpenPath: canOpenPaths(),
+          ...(defaults.commit === undefined ? {} : { commit: defaults.commit }),
+          ...(defaults.buildHash === undefined ? {} : { buildHash: defaults.buildHash }),
+          ...(defaults.schemaVersion === undefined ? {} : { schemaVersion: defaults.schemaVersion }),
         }))
       },
 
@@ -3474,6 +3527,34 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             code: 'model-discovery-failed',
             message: error instanceof Error ? error.message : String(error),
             details: { settingsNs, ...baseURL === undefined ? {} : { baseURL } },
+          })
+        }
+      },
+
+      async testModel(request) {
+        const { provider, model } = request.payload
+          const probeVision = request.payload.probeVision
+          const timeoutMs = request.payload.timeoutMs
+        if (!ctx.llm.listProviders().some(entry => entry.id === provider)) {
+          return err(request, {
+            code: 'model-unavailable',
+            message: `provider "${provider}" is not registered`,
+            details: { provider, model },
+          })
+        }
+        try {
+          const info = await ctx.llm.resolveModelInfo(provider, model)
+            if (probeVision === true && (info.inputModalities === undefined || info.inputModalities.includes('image'))) {
+              await runVisionProbe(ctx, provider, model, timeoutMs ?? VISION_PROBE_TIMEOUT_MS)
+            }
+          return ok(request, {
+            ...info.inputModalities === undefined ? {} : { inputModalities: [...info.inputModalities] },
+          })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'model-unavailable',
+            message: error instanceof Error ? error.message : String(error),
+            details: { provider, model },
           })
         }
       },

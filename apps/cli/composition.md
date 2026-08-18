@@ -42,6 +42,10 @@ flowchart LR
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
+  plugin_dsh_base_vision_proxy["vision-proxy<br/>@deepseek-ai/dsh-vision-proxy"]
+  cfg --> plugin_dsh_base_vision_proxy
+  plugin_dsh_base_turn_rewind["turn-rewind<br/>@deepseek-ai/dsh-turn-rewind"]
+  cfg --> plugin_dsh_base_turn_rewind
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
@@ -185,6 +189,8 @@ flowchart LR
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
+| `vision-proxy` | `@deepseek-ai/dsh-vision-proxy` |
+| `turn-rewind` | `@deepseek-ai/dsh-turn-rewind` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |

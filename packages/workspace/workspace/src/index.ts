@@ -236,7 +236,11 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().archivedSessionIds
   }
 
-  /** Whether this process has permanently deleted the session's durable record. */
+  /**
+   * Whether this process has permanently deleted the session's durable record.
+   * @param sessionId - The session identity to check.
+   * @returns whether the session's durable record was permanently removed.
+   */
   isPermanentlyRemoved(sessionId: SessionId): boolean {
     return this.removedSessionIds.has(sessionId)
   }
@@ -261,7 +265,10 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
-  /** Restore an archived session to its previous grouping position. */
+  /**
+   * Restore an archived session to its previous grouping position.
+   * @param sessionId - The archived session to unarchive.
+   */
   unarchiveSession(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       const state = this.requireState()
@@ -279,6 +286,8 @@ export class WorkspaceRegistry extends Service {
    * it is detached from every workspace and cannot be resumed once its log is
    * gone. Attachments intentionally remain in their independent store: another
    * session may still reference the same object.
+   * @param sessionId - The archived session to remove durably.
+   * @returns whether a durable session record was removed.
    */
   removeArchivedSession(sessionId: SessionId): Promise<boolean> {
     return this.enqueueOperation(async () => {

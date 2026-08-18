@@ -154,7 +154,7 @@ function TurnMaxTokensItem({ t }: {
  * scan as the composer, minus the lexicon: sent tokens were validated at
  * compose time, so shape alone decorates).
  */
-function projectUserText(text: string): ReactNode {
+function projectPlainUserText(text: string): ReactNode {
   const re = /(^|\s)([/@][\w-]+)(?=\s|$)/g
   const parts: ReactNode[] = []
   let cursor = 0
@@ -172,6 +172,40 @@ function projectUserText(text: string): ReactNode {
   }
   if (parts.length === 0) return <MessageText text={text} />
   if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
+  return <>{parts}</>
+}
+
+/** Render a persisted text-file delimiter as a compact, opt-in disclosure. */
+function TextFileCard({ name, content }: { name: string; content: string }): ReactNode {
+  return (
+    <details className={css.textFileCard}>
+      <summary className={css.textFileSummary}>
+        <span className={css.textFileIcon} aria-hidden>▤</span>
+        <span className={css.textFileTitle}>{name}</span>
+        <span className={css.textFileHint}>文件</span>
+      </summary>
+      <pre className={css.textFileContent}>{content}</pre>
+    </details>
+  )
+}
+
+/**
+ * Keep persisted file text model-visible while presenting it as a collapsed
+ * file card in the human transcript. Older Chinese and English delimiters
+ * remain readable after the UI upgrade.
+ */
+function projectUserText(text: string): ReactNode {
+  const marker = /\n\n--- (?:文件：|File: )([^\n]+) ---\n([\s\S]*?)\n--- (?:文件结束：|End of file: )\1 ---\n/g
+  const parts: ReactNode[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  while ((match = marker.exec(text)) !== null) {
+    if (match.index > cursor) parts.push(<span key={`text-${cursor}`}>{projectPlainUserText(text.slice(cursor, match.index))}</span>)
+    parts.push(<TextFileCard key={`file-${match.index}`} name={match[1] ?? ''} content={match[2] ?? ''} />)
+    cursor = marker.lastIndex
+  }
+  if (parts.length === 0) return projectPlainUserText(text)
+  if (cursor < text.length) parts.push(<span key={`text-${cursor}`}>{projectPlainUserText(text.slice(cursor))}</span>)
   return <>{parts}</>
 }
 

@@ -50,6 +50,8 @@ export interface GroupNode {
   expanded: boolean
   /** The group contains the selected session (active folder tint; supplied here so the renderer never scans). */
   containsCurrent: boolean
+  /** The group is the cwd-bound project (Host launched in this directory); the renderer marks it. */
+  boundToCwd: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
 }
@@ -239,6 +241,7 @@ function sessionNode(
  * @param workspaces - real workspaces in stable Host order.
  * @param archivedSessionIds - registry-global archive set.
  * @param view - local expansion arrays.
+ * @param cwdWorkspaceId - optional Host cwd-bound project; its group is marked for the renderer.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -246,6 +249,7 @@ export function deriveGroups(
   workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
   view: TreeView,
+  cwdWorkspaceId?: WorkspaceId,
 ): GroupNode[] {
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
@@ -266,6 +270,7 @@ export function deriveGroups(
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
+      boundToCwd: cwdWorkspaceId !== undefined && g.workspaceId === cwdWorkspaceId,
       sessions: expanded ? g.sessions.map(session => sessionNode(session, descendants)) : [],
     })
   }

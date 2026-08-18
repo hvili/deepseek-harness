@@ -8,6 +8,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { TypertContext } from '@deepseek-ai/dsh-typert-protocol'
 import type { MaybeSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from './slots.ts'
+import { createConnectionStateService } from './contract/connection-state.ts'
+import { createAssemblyService } from './contract/assembly.ts'
 import { SessionRuntime } from './sessions/service.ts'
 import type { SessionListState } from './sessions/service.ts'
 import { WorkspaceRuntime } from './workspaces/service.ts'
@@ -34,6 +36,7 @@ export type {
   ConversationViewDefinition, ConversationViewNode, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore, StepLocation, TurnLocation,
 } from './contract/conversation.ts'
+export type { AssemblyService, CapabilityAssemblySnapshot, CapabilitySeam, AssemblyOccupant, AssemblySource } from './contract/assembly.ts'
 export type { ConversationRuntime } from './sessions/conversation-assembler.ts'
 export type { RootOwnerProps } from './slots.ts'
 export { SessionCreateError, SessionRuntime, scopeOf, workspaceTitleOf } from './sessions/service.ts'
@@ -176,6 +179,10 @@ declare module '@deepseek-ai/cordis' {
     sessions: import('./contract/sessions.ts').ISessions
     /** The outward face only; the concrete service stays inside the runtime. */
     workspaces: import('./contract/workspaces.ts').IWorkspaces
+    /** Coarse connection state plus the terminal version-mismatch facts (host vs expected). */
+    connectionState: import('./contract/connection-state.ts').ConnectionStateService
+    /** Observable capability assembly (slot seams + occupants) for the diagnostic surface. */
+    assembly: import('./contract/assembly.ts').AssemblyService
   }
 }
 
@@ -192,11 +199,16 @@ export function apply(ctx: Context): void {
     views: new ConversationViewRegistry(ctx),
   }
   const connection = ctx.get('connection') as ConnectionHandle
+  const connectionState = createConnectionStateService()
+  const assembly = createAssemblyService(ctx)
   const sessions = new SessionRuntime(ctx, connection.api, ctx.remote, conversation)
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
   })
-  const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions)
+  const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions, {
+    getSnapshot: () => connection.hostDescription.getSnapshot()?.cwd,
+    subscribe: connection.hostDescription.subscribe,
+  })
   ctx.effect(
     () => workspaces.startInitialSelection(),
     'runtime: initial Workspace selection',
@@ -221,6 +233,7 @@ export function apply(ctx: Context): void {
       ctx.emit('connection/reset')
     },
     onStateChange: (state) => {
+      connectionState.setState(state)
       // Generation death fires before any next-generation frame can arrive
       // (reconnect replays flow from stream open, ahead of onConnected):
       // the only safe moment to drop generation-scoped interaction state.
@@ -228,6 +241,11 @@ export function apply(ctx: Context): void {
         sessions.handleDisconnected()
       }
     },
+    onVersionMismatch: (hostVersion, expectedVersion) => {
+      connectionState.setVersionMismatch(hostVersion, expectedVersion)
+    },
   })
   ctx.effect(() => () => { loop.stop() }, 'runtime: connection stream loop')
+  ctx.provide('connectionState', connectionState)
+  ctx.provide('assembly', assembly)
 }

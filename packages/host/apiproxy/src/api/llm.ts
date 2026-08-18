@@ -74,6 +74,24 @@ export interface LlmApi {
     }>,
     signal?: AbortSignal,
   ): Promise<RpcResponse<{ models: DiscoveredModelView[] }>>
+
+  /**
+   * Validate that one provider route is registered and that the named model
+   * resolves on it, returning the model's accepted input modalities. This is
+   * the configuration-plane "test connection" call: it performs no model
+   * request and incurs no token cost.
+     * With `probeVision` set, the call additionally sends one generated 1x1
+     * image through the route's real streaming path, spending a tiny token
+     * budget to verify the image-input link end to end.
+   */
+  testModel(
+    request: RpcRequest<{
+        provider: string
+        model: string
+        probeVision?: boolean
+        timeoutMs?: number
+      }>,
+  ): Promise<RpcResponse<{ inputModalities?: string[] }>>
 }
 
 /** Wire view of one model an interrogated endpoint advertises. */

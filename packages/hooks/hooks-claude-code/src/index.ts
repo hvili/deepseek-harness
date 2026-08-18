@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-hooks-claude-code
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
@@ -34,7 +34,7 @@ import {
 // Pulls in the declaration-merged subagent events and the identity pairing their
 // start/end edges.
 import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
-import { parseClaudeCodeConfig, type ClaudeCodeHookConfig } from './config.ts'
+import { parseClaudeCodeConfig, mergeClaudeConfigs, defaultClaudeHookPaths, type ClaudeCodeHookConfig } from './config.ts'
 
 export const name = 'hooks-claude-code'
 // `bash` is required to run hooks; the rest are read opportunistically via
@@ -45,12 +45,15 @@ export const inject = ['shell']
 export interface Config {
   /**
    * Path to a `hooks.json` or a settings file whose `hooks` key holds the config.
-   * Process-level: read once at load, a relative path resolves against the process
-   * launch cwd, so one config applies to the whole process.
+   * Optional: when omitted, the bridge auto-discovers Claude Code's standard
+   * settings files — `<cwd>/.claude/settings.json` (project, resolved from the
+   * process launch cwd) then `~/.claude/settings.json` (user) — and merges the
+   * `hooks` key each carries, with project hooks running before user hooks.
+   * Process-level: read once at load.
    * TODO(per-session-hook-config): per-session discovery of a project-local
    * `hooks.json` from each `session/new.cwd`.
    */
-  configPath: string
+  configPath?: string
   /**
    * Replaces `${CLAUDE_PLUGIN_ROOT}` in command strings (the plugin's root dir).
    */
@@ -70,7 +73,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  configPath: z.string().required(),
+  configPath: z.string(),
   pluginRoot: z.string(),
   projectDir: z.string(),
   defaultTimeoutMs: z.number().default(DEFAULT_HOOK_TIMEOUT_MS),
@@ -98,21 +101,34 @@ export function apply(ctx: Context, config: Config): void {
   const stderrSummaryMaxChars = config.stderrSummaryMaxChars ?? DEFAULT_STDERR_SUMMARY_MAX_CHARS
   assertPositiveInteger('stderrSummaryMaxChars', stderrSummaryMaxChars)
   const defaultTimeoutMs = config.defaultTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
-  // Parse once at load. A read or parse failure logs and registers nothing.
+  const subVars = {
+    ...config.pluginRoot !== undefined ? { pluginRoot: config.pluginRoot } : {},
+    ...config.projectDir !== undefined ? { projectDir: config.projectDir } : {},
+  }
+  // An explicit `configPath` is authoritative: it must exist and parse, and a
+  // failure means "no hooks registered" (the previous behavior). Without one,
+  // discover Claude Code's standard settings files and merge their `hooks` keys.
+  // A discovered file that is simply absent (no `.claude/settings.json`) is
+  // skipped quietly, while a present-but-invalid layer is warned and skipped so
+  // one broken layer never blanks the hooks a user did configure.
+  const layers = config.configPath !== undefined
+    ? [config.configPath]
+    : defaultClaudeHookPaths()
+  const explicit = config.configPath !== undefined
   let parsed: ClaudeCodeHookConfig = {}
-  try {
-    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
-    const result = parseClaudeCodeConfig(raw, {
-      ...config.pluginRoot !== undefined ? { pluginRoot: config.pluginRoot } : {},
-      ...config.projectDir !== undefined ? { projectDir: config.projectDir } : {},
-    })
-    parsed = result.config
-    for (const s of result.skipped) {
-      ctx.logger.warn(`hooks-claude-code: skipping unsupported "${s.type}" hook on ${s.event} (only command hooks run)`)
+  for (const file of layers) {
+    if (!explicit && !existsSync(file)) continue
+    try {
+      const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      const result = parseClaudeCodeConfig(raw, subVars)
+      parsed = mergeClaudeConfigs(parsed, result.config)
+      for (const s of result.skipped) {
+        ctx.logger.warn(`hooks-claude-code: skipping unsupported "${s.type}" hook on ${s.event} (only command hooks run)`)
+      }
+    } catch (error: unknown) {
+      ctx.logger.warn(`hooks-claude-code: could not load hook config "${file}": ${String(error)} — no hooks registered`)
+      if (explicit) return
     }
-  } catch (error: unknown) {
-    ctx.logger.warn(`hooks-claude-code: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
-    return
   }
 
   // Emit-shaped points run detached, so track their chains; disposal aborts

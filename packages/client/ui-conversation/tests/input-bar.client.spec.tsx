@@ -151,7 +151,7 @@ function bench(over?: BenchOptions) {
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-      baselinesReady: true, recentWorkspaceId: undefined,
+      baselinesReady: true, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
     })),
     useProjection: ((key: string, selector?: (v: unknown) => unknown) =>
       (selector ?? (v => v))(key === 'permissions'
@@ -205,7 +205,7 @@ function bench(over?: BenchOptions) {
 }
 
 describe('image draft rail', () => {
-  it('adds browser-selected text files as named prompt context', async () => {
+  it('keeps browser-selected text files as a removable composer card until submission', async () => {
     const { view, shell } = bench()
     const file = new File(['ignored'], 'notes.md', { type: 'text/markdown' })
     Object.defineProperty(file, 'text', { value: () => Promise.resolve('# Notes\nUse the attached plan.') })
@@ -214,7 +214,9 @@ describe('image draft rail', () => {
       fireEvent.change(picker, { target: { files: [file] } })
       await Promise.resolve()
     })
-    expect(shell.snapshot.draft).toBe('\n\n--- 文件：notes.md ---\n# Notes\nUse the attached plan.\n--- 文件结束：notes.md ---\n')
+    expect(shell.snapshot.draft).toBe('')
+    expect(view.getByText('notes.md')).toBeTruthy()
+    expect(view.getByRole('button', { name: '移除文件 notes.md' })).toBeTruthy()
   })
 
   it('opens a browser file picker from the paperclip control', () => {
@@ -249,7 +251,7 @@ describe('image draft rail', () => {
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
     // The drag never touches the composer card: the listeners are page-wide.
     expect(fireEvent.dragEnter(document.body, { dataTransfer })).toBe(false)
-    expect(view.getByRole('status').textContent).toContain('图片拖动到此处即可添加')
+    expect(view.getByRole('status').textContent).toContain('拖动文件到此处即可添加')
     expect(fireEvent.dragOver(document.body, { dataTransfer })).toBe(false)
     expect(dataTransfer.dropEffect).toBe('copy')
     expect(fireEvent.drop(document.body, { dataTransfer })).toBe(false)
@@ -317,7 +319,7 @@ describe('image draft rail', () => {
     expect(within.view.queryByRole('alert')).toBeNull()
   })
 
-  it('announces the format problem before any limit when the batch holds a non-image', () => {
+  it('announces unsupported file types from a drop without delegating to addImages', () => {
     const addImages = vi.fn(() => '仅支持 PNG、JPG、WebP、GIF 格式的图片')
     const { view } = bench({
       addImages,
@@ -329,17 +331,16 @@ describe('image draft rail', () => {
         mediaTypes: ['image/png'] as const,
       },
     })
-    // Oversized AND over-count AND wrong type: the format rejection wins.
+    // Unsupported files are refused locally before any image-limit path.
     const files = [
       new File([new ArrayBuffer(64)], 'a.pdf', { type: 'application/pdf' }),
-      new File([new ArrayBuffer(64)], 'b.pdf', { type: 'application/pdf' }),
     ]
     fireEvent.drop(document.body, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
-    expect(addImages).toHaveBeenCalledWith(files)
-    expect(view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
+    expect(addImages).not.toHaveBeenCalled()
+    expect(view.getByRole('alert').textContent).toContain('暂不支持“a.pdf”')
   })
 
-  it('shows the projected limits in the drop overlay desc line', () => {
+  it('shows the generic file drop hint in the overlay desc line', () => {
     const { view } = bench({
       addImages: vi.fn(() => null),
       imageLimits: {
@@ -351,7 +352,7 @@ describe('image draft rail', () => {
       },
     })
     fireEvent.dragEnter(document.body, { dataTransfer: { types: ['Files'], files: [], dropEffect: 'none' } })
-    expect(view.getByRole('status').textContent).toContain('最多 20 张，每张 5MB')
+    expect(view.getByRole('status').textContent).toContain('支持图片、视频和 1 MB 内的文本/代码文件')
   })
 
   it('announces server attachment rejections as product copy, other codes as developer text', () => {
@@ -377,7 +378,7 @@ describe('image draft rail', () => {
     const image = new File([Uint8Array.of(1)], 'dropped.png', { type: 'image/png' })
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'copy' }
     fireEvent.dragEnter(document.body, { dataTransfer })
-    expect(view.getByRole('status').textContent).toContain('当前无法添加图片')
+    expect(view.getByRole('status').textContent).toContain('当前无法添加文件')
     fireEvent.dragOver(document.body, { dataTransfer })
     expect(dataTransfer.dropEffect).toBe('none')
     fireEvent.drop(document.body, { dataTransfer })

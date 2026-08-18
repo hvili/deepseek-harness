@@ -54,7 +54,7 @@ export type { ArchivedSessionsTabInjected, ArchivedSessionsTabProps } from './Ar
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces', 'sessions']
 
 /**
  * Mount the plugin configuration section and the cards this package ships.
@@ -68,9 +68,30 @@ export function apply(ctx: ClientContext): void {
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
-  const visionProxy = new VisionProxyCardController(ctx.settingsScope.bind({ namespace: VISION_PROXY_NS }))
+  const visionProxy = new VisionProxyCardController(
+    ctx.settingsScope.bind({ namespace: VISION_PROXY_NS }),
+    async (provider, model, options) => {
+      const response = await api.llm.testModel({
+          provider,
+          model,
+          ...options?.probeVision === undefined ? {} : { probeVision: options.probeVision },
+          ...options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+        })
+      if (!response.result.ok) {
+        return { ok: false, error: response.result.error.message }
+      }
+      const { inputModalities } = response.result.value
+      return {
+        ok: true,
+        ...inputModalities === undefined ? {} : { inputModalities },
+      }
+    },
+  )
   const archivedSessionsInjected = (): ArchivedSessionsTabInjected => ({
-    restore: sessionId => ctx.workspaces.unarchiveSession(sessionId),
+    restore: async (sessionId) => {
+      await ctx.workspaces.unarchiveSession(sessionId)
+      ctx.sessions.open(sessionId)
+    },
     remove: sessionId => ctx.workspaces.removeArchivedSession(sessionId),
   })
 

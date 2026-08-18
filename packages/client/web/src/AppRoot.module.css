@@ -64,3 +64,14 @@
   line-height: 18px;
   color: var(--dsw-alias-label-secondary, #61666b);
 }
+
+/* Terminal version-mismatch overlay: covers the whole viewport above the
+   settled UI, gating it until the host matches this build's format version. */
+.versionMismatch {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: var(--dsw-alias-bg-base, #f9fafb);
+}

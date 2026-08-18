@@ -80,6 +80,13 @@ jobs:
       - name: Pack release tarballs
         run: pnpm run release:pack --family dsh --out dist/npm
 
+      # Idempotency guard for the publish path: recompute the stage manifest
+      # against the recording host's own pack. A host that cannot reproduce its
+      # own manifest (a drifted tarball set or a stale lib/) — and therefore the
+      # locked-dependency composition it packed — fails here, before it ships.
+      - name: Verify stage manifest (publish-path idempotency)
+        run: pnpm run release:manifest --family dsh --from dist/npm --verify
+
       # The harness packages declare the vendored framework as a peer, and this
       # verification must not depend on the registry already carrying matching
       # versions — one pull request may bump both families before either

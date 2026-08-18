@@ -233,6 +233,66 @@ describe('WorkspaceRuntime', () => {
     expect(workspaces.list.getSnapshot().items.map(item => item.workspaceId)).toEqual(['stable-first', 'active'])
   })
 
+  it('binds the deepest Workspace containing the Host cwd and prefers it as the initial selection', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const listeners = new Set<() => void>()
+    let cwd: string | undefined = '/w/project/src'
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions, {
+      getSnapshot: () => cwd,
+      subscribe: (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn) } },
+    })
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [
+        { ...workspace('outer', [], '2026-01-03T00:00:00.000Z'), path: '/w' },
+        { ...workspace('project', [], '2026-01-01T00:00:00.000Z'), path: '/w/project' },
+        { ...workspace('sibling', [], '2026-01-02T00:00:00.000Z'), path: '/w/sibling' },
+      ] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+    await Promise.resolve()
+    // Deepest ancestor wins: /w/project binds a /w/project/src launch, not /w or /w/sibling.
+    expect(workspaces.list.getSnapshot().cwdWorkspaceId).toBe('project')
+
+    // No restored session: initial selection opens the cwd-bound project, not recency.
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-proj') }))
+    workspaces.startInitialSelection()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'project' }])
+    expect(sessions.list.getSnapshot().current).toBe('s-proj')
+
+    // A Host cwd outside every registration rebinds to nothing.
+    cwd = '/home/other'
+    for (const fn of listeners) fn()
+    await Promise.resolve()
+    expect(workspaces.list.getSnapshot().cwdWorkspaceId).toBeUndefined()
+  })
+
+  it('targets recency when the Host cwd matches no registered Workspace', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions, {
+      getSnapshot: () => '/unrelated',
+      subscribe: () => () => {},
+    })
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [workspace('stable', [], '2026-01-02T00:00:00.000Z'), workspace('active', [], '2026-01-03T00:00:00.000Z')] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(workspaces.list.getSnapshot().cwdWorkspaceId).toBeUndefined()
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-recent') }))
+    workspaces.startInitialSelection()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'active' }])
+  })
+
   it('connectWorkspace reuses the workspace-member blank session and creates otherwise', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

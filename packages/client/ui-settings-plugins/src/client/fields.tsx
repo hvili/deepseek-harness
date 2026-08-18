@@ -159,3 +159,52 @@ export function ToggleField(props: FieldProps) {
     </div>
   )
 }
+
+/** A bounded-choice control backed by a select CardForm field. */
+export function SelectField(props: FieldProps & {
+  /** Selectable option values (also used as the option labels when `optionLabels` is absent). */
+  options: readonly string[]
+  /** Optional display labels aligned with `options`; defaults to the raw values. */
+  optionLabels?: readonly string[]
+}) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <select
+        id={props.id}
+        className={props.invalid ? css.inputInvalid : css.input}
+        {...props.invalid ? { 'aria-invalid': true } : {}}
+        value={props.text}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      >
+        <option value="">{''}</option>
+        {props.options.map((option, index) => (
+          <option key={option} value={option}>
+            {props.optionLabels?.[index] ?? option}
+          </option>
+        ))}
+      </select>
+      <p className={props.invalid ? css.invalid : css.hint}>
+        {props.invalid ? props.invalidLabel : props.hint}
+      </p>
+    </div>
+  )
+}

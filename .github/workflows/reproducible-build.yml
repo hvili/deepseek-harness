@@ -1,0 +1,132 @@
+# P0 Stage C: reproducible-release E2E across the three supported platforms.
+#
+# A clean checkout on Windows, Linux, and macOS must pack a release with the
+# SAME composition. Each host checks out the tip commit, installs mutably, and
+# packs the dsh sequence; every host's pack step records a stage manifest whose
+# deterministic buildHash folds in version, commit, the plugin graph, and the
+# SBOM. A verifier job then compares each host's manifest against the rest and
+# fails on any divergence — the exit gate that proves "no mixed versions,
+# identical composition on every platform" rather than asserting it by hand.
+#
+# This is a verification pipeline, never a publication path: it runs without
+# credentials, packs into throwaway directories, and uploads only the manifests
+# (not the tarballs) for comparison.
+name: Release reproducible (3 platforms)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel a superseded PR run (it is on a stale commit); never cancel a
+# workflow_dispatch run — it is the on-demand gate and must settle.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # One host per platform: clean checkout -> immutable install -> host build
+  # -> pack -> stage manifest. The manifest name encodes the OS so the compare
+  # job downloads each host's artifact under a distinct directory.
+  pack:
+    name: Pack dsh on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    timeout-minutes: 60
+    steps:
+      # Complete history: the release scripts read tags (commit + version).
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release version
+        run: pnpm run release:verify --family dsh
+
+      # The host pass produces the libs every member's tarball selects.
+      - name: Build (host)
+        run: pnpm run build:lib:host
+
+      - name: Pack release tarballs
+        run: pnpm run release:pack --family dsh --out dist/npm
+
+      # Recompute the stage manifest against the recording host's own pack:
+      # host-local drift (a stray dist/ or stale lib/) fails here, so a host
+      # that cannot reproduce its own manifest is caught before it is compared.
+      - name: Verify stage manifest (host-local reproducibility)
+        run: pnpm run release:manifest --family dsh --from dist/npm --verify
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-release-manifest-${{ matrix.os }}
+          path: dist/npm/release-manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Compare every platform's manifest against the rest. The reference is Ubuntu;
+  # each other host must match it on every release-defining dimension.
+  compare:
+    name: Compare release composition across platforms
+    if: always()
+    needs: pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable, no package scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-release-manifest-ubuntu-latest
+          path: dist/manifests/ubuntu
+        continue-on-error: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-release-manifest-windows-latest
+          path: dist/manifests/windows
+        continue-on-error: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-release-manifest-macos-latest
+          path: dist/manifests/macos
+        continue-on-error: true
+
+      - name: Compare release compositions
+        run: |
+          pnpm run release:compare-artifacts \
+            --from dist/manifests/ubuntu \
+            --from dist/manifests/windows \
+            --from dist/manifests/macos

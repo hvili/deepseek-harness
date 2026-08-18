@@ -11,6 +11,7 @@
   "workspaces": [
     "vendor/*",
     "packages/*/*",
+    "plugins/*",
     "native/landlock-run",
     "native/landlock-run/packages/*",
     "apps/*",
@@ -131,6 +132,8 @@
     "release:vendor": "tsx scripts/release/bump.ts --family vendor",
     "release:verify": "tsx scripts/release/verify.ts",
     "release:pack": "tsx scripts/release/pack.ts",
+    "release:manifest": "tsx scripts/release/manifest.ts",
+    "release:compare-artifacts": "tsx scripts/release/compare-artifacts.ts",
     "release:verify-packed-install": "tsx scripts/release/verify-packed-install.ts",
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
@@ -176,6 +179,7 @@
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "unrun": "^0.3.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8"
   }

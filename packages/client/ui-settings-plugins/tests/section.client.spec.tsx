@@ -5,7 +5,7 @@
  * unavailable, and the save footer that decides when staged edits are written.
  */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -17,11 +17,14 @@ import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
+import { VisionProxyCard } from '../src/client/VisionProxyCard.tsx'
+import type { VisionProxyCardProps } from '../src/client/VisionProxyCard.tsx'
 import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
 import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
+import type { VisionProxyCardState } from '../src/client/vision-proxy-card-controller.ts'
 import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -397,5 +400,71 @@ describe('WebSearchCard', () => {
       ['maxUses', '4'],
     ])
     expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+})
+
+describe('VisionProxyCard', () => {
+  function renderVisionProxy(
+    state: Partial<VisionProxyCardState> = {},
+    testModel = vi.fn(async () => ({ ok: true, inputModalities: ['text', 'image'] })),
+  ) {
+    const store = createSnapshotStore<VisionProxyCardState>({
+      ...settled,
+      enabled: field('false'),
+      visionProvider: field('qwen-token-plan-cn'),
+      visionModel: field('kimi-k2.5'),
+      maxTokens: field('1024'),
+      descriptionPrefix: field(''),
+      errorMode: field('fail'),
+      timeoutMs: field('60000'),
+      ...state,
+    })
+    const actions = cardActions()
+    const props = {
+      ...actions,
+      t,
+      testModel,
+      useVisionProxyCard: bindSnapshotSelector(store),
+    } as unknown as VisionProxyCardProps
+    render(<VisionProxyCard {...props} />)
+    fireEvent.click(screen.getByText(en.visionProxyTitle))
+    return { actions, testModel }
+  }
+
+  it('asks for privacy confirmation before enabling the vision proxy', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      window.localStorage.removeItem('dsh.vision-proxy.privacy-confirmed')
+      const { actions } = renderVisionProxy()
+      fireEvent.click(screen.getByLabelText(en.visionProxyEnabled))
+      expect(confirm).toHaveBeenCalledWith(en.visionProxyPrivacyConfirm)
+      expect(actions.edit).not.toHaveBeenCalled()
+
+      confirm.mockReturnValue(true)
+      fireEvent.click(screen.getByLabelText(en.visionProxyEnabled))
+      expect(actions.edit).toHaveBeenCalledWith('enabled', 'true')
+      expect(window.localStorage.getItem('dsh.vision-proxy.privacy-confirmed')).toBe('1')
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('runs a connection test and reports success when the model accepts images', async () => {
+    const testModel = vi.fn(async () => ({ ok: true, inputModalities: ['text', 'image'] }))
+    renderVisionProxy({}, testModel)
+    fireEvent.click(screen.getByRole('button', { name: en.visionProxyTest }))
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain(en.visionProxyTestSuccess.split('{provider}')[0]!)
+    })
+    expect(testModel).toHaveBeenCalledWith('qwen-token-plan-cn', 'kimi-k2.5', { probeVision: true, timeoutMs: 60000 })
+  })
+
+  it('reports when the configured model does not accept images', async () => {
+    const testModel = vi.fn(async () => ({ ok: true, inputModalities: ['text'] }))
+    renderVisionProxy({}, testModel)
+    fireEvent.click(screen.getByRole('button', { name: en.visionProxyTest }))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain(en.visionProxyTestNoImage.split('{model}')[0]!)
+    })
   })
 })

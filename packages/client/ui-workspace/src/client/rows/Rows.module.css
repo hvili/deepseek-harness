@@ -180,6 +180,26 @@
   line-height: 20px;
 }
 
+/* Project row: keep the title and the current-project badge on one line. */
+.titleRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.currentBadge {
+  flex: none;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
 .renameInput {
   min-width: 0;
   font-size: 14px;

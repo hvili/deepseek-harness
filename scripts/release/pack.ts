@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { releaseFamily, tarballName, type ReleaseFamily, type ReleaseMember } from './families.ts'
+import { makeReleaseManifest, writeReleaseManifest } from './manifest.ts'
 import { isEntry, run } from './process.ts'
 import { PUBLISH_ORDER_FILE, tarballFiles } from './tarball.ts'
 
@@ -55,7 +56,12 @@ function main(): void {
   for (const member of members) order.push(packMember(family, member, destination))
   writeFileSync(join(destination, PUBLISH_ORDER_FILE), `${order.join('\n')}\n`)
 
-  console.log(`release pack: family ${family.id}, ${String(order.length)} tarball(s) in ${values.out ?? DEFAULT_OUTPUT}`)
+  // The stage manifest is the single artifact that ties version, commit, the
+  // every-tarball build hash, the plugin graph, and the SBOM together for this
+  // exact pack — a clean checkout at the same commit reproduces it identically.
+  writeReleaseManifest(destination, makeReleaseManifest(family, members, destination))
+
+  console.log(`release pack: family ${family.id}, ${String(order.length)} tarball(s) + stage manifest in ${values.out ?? DEFAULT_OUTPUT}`)
 }
 
 if (isEntry(import.meta.url)) main()

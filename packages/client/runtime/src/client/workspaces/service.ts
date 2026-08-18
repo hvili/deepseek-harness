@@ -11,6 +11,19 @@ import type { SessionsPort, SessionsPortList } from '../contract/sessions-port.t
 import type { IWorkspaces } from '../contract/workspaces.ts'
 import { WorkspaceManager, type WorkspaceListPhase } from './manager.ts'
 
+/**
+ * Observable source of the Host's current working directory (the directory
+ * this install was launched in). The runtime binds it to the owning Workspace
+ * so a launch-in-a-project focuses that project (Codex alignment) without
+ * dragging the connection package into this domain.
+ */
+export interface HostCwdSource {
+  /** The current working directory, or undefined before a connection handshake. */
+  getSnapshot(): string | undefined
+  /** Subscribe to a replacement or loss of the working directory. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Workspace list plus the two-baseline readiness and default-target projection. */
 export interface WorkspaceListState {
   items: readonly WorkspaceView[]
@@ -29,6 +42,14 @@ export interface WorkspaceListState {
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
+  /**
+   * The Workspace bound to the Host's current working directory: the deepest
+   * registration whose canonical path contains the launch directory. When a
+   * session is already open the kept session wins (no hijack); otherwise the
+   * initial selection prefers this project over recency — launching DSH in a
+   * project focuses that project.
+   */
+  cwdWorkspaceId: WorkspaceId | undefined
 }
 
 /** Structured create failure for UI flows that distinguish Host business errors. */
@@ -57,20 +78,31 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
+  /** Optional Host working-directory source for cwd project binding. */
+  private readonly hostCwd: HostCwdSource | undefined
 
   /**
    * @param ctx - client root context.
    * @param api - shared wire client.
    * @param sessions - cross-domain sessions face used for recency and blank-session reuse.
+   * @param hostCwd - optional Host working-directory source; the deepest Workspace
+   * containing it becomes the cwd-bound project that initial selection prefers.
    */
-  constructor(ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
+  constructor(
+    ctx: Context,
+    private readonly api: IApiClient,
+    private readonly sessions: SessionsPort,
+    hostCwd?: HostCwdSource,
+  ) {
+    this.hostCwd = hostCwd
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
-      baselinesReady: false, recentWorkspaceId: undefined,
+      baselinesReady: false, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
     this.sessions.list.subscribe(() => { this.project() })
+    if (hostCwd !== undefined) hostCwd.subscribe(() => { this.project() })
     ctx.reflect.provide('workspaces', this, undefined)
   }
 
@@ -135,7 +167,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       const workspace = this.list.getSnapshot()
       if (!workspace.baselinesReady) return
       const current = this.sessions.list.getSnapshot().current
-      const target = workspace.recentWorkspaceId
+      const target = workspace.cwdWorkspaceId ?? workspace.recentWorkspaceId
       if (current !== undefined || target === undefined) {
         state = 'done'
         return
@@ -364,8 +396,40 @@ export class WorkspaceRuntime implements IWorkspaces {
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
+      cwdWorkspaceId: this.hostCwd === undefined
+        ? undefined
+        : cwdBoundWorkspace(workspace.items, this.hostCwd.getSnapshot()),
     })
   }
+}
+
+/**
+ * The deepest Workspace whose canonical path contains the Host working
+ * directory: an exact match wins, otherwise the nearest registered project
+ * root above the launch directory. A sub-directory launch still binds to its
+ * project; unrelated directories bind to nothing. Workspace paths are Host
+ * canonical form (native separators, no trailing slash), so segment-safe
+ * prefix matching on the launch cwd is enough.
+ */
+function cwdBoundWorkspace(
+  workspaces: readonly WorkspaceView[],
+  hostCwd: string | undefined,
+): WorkspaceId | undefined {
+  if (workspaces.length === 0 || hostCwd === undefined || hostCwd === '') return undefined
+  const cwd = hostCwd.replace(/[/\\]+$/, '')
+  let bound: WorkspaceId | undefined
+  let boundDepth = -1
+  for (const workspace of workspaces) {
+    const path = workspace.path.replace(/[/\\]+$/, '')
+    const contained = path === cwd
+      || (cwd.length > path.length && cwd.startsWith(path) && /[/\\]/.test(cwd.charAt(path.length)))
+    if (!contained) continue
+    if (path.length > boundDepth) {
+      bound = workspace.workspaceId
+      boundDepth = path.length
+    }
+  }
+  return bound
 }
 
 /** Stable tie-breaking follows Host Workspace order. */

@@ -149,7 +149,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: 
         <IconTriangleRightFill14 className={clsx(css.arrow, row.expanded && css.arrowOpen)} />
       </span>
       <span className={css.projectText}>
-        <span className={css.title}>{label}</span>
+        <span className={css.titleRow}>
+          <span className={css.title}>{label}</span>
+          {group.boundToCwd && <span className={css.currentBadge}>{t('group.current')}</span>}
+        </span>
       </span>
       <span className={css.rowActions}>
         {actions !== undefined && (

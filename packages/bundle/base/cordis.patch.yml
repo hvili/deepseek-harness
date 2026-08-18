@@ -104,6 +104,15 @@
         visionProvider: qwen-token-plan-cn
         visionModel: kimi-k2.5
         maxTokens: 1024
+        errorMode: fail
+        timeoutMs: 60000
+
+    # Turn Rewind: persistent Change Ledger restore points. Disabled by
+    # default; enable in a profile overlay to mount the rewind HTTP endpoint
+    # and the conversation action UI. State lives outside managed workspaces.
+    - id: turn-rewind
+      name: '@deepseek-ai/dsh-turn-rewind'
+      disabled: true
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -116,19 +125,19 @@
     - id: attachment-local
       name: '@deepseek-ai/dsh-attachment-local'
 
-    # Full-text session search is opt-in. `openAt: never` keeps
-    # ctx.sessionQuery mounted — exact reads, titles, and lineage traces
+    # Full-text session search ships enabled by default. `openAt: first-search`
+    # keeps ctx.sessionQuery mounted — exact reads, titles, and lineage traces
     # (session export, subagent-fork Workspace inheritance) stay available —
-    # while search calls fail with SESSION_QUERY_SEARCH_DISABLED and SQLite is
-    # never opened; the Web sidebar search matches titles and workspace names
-    # only. Deployments enabling content search override `openAt` to
-    # `first-search` or `startup` in a later patch layer (profile
-    # cordis.patch.yml or a --patch overlay), typically with a durable `path`.
+    # and defers the node:sqlite import and in-memory handle to the first search,
+    # so Node 22 startup stays quiet. Search calls match session content, and the
+    # Web sidebar search returns content matches (plus title/workspace matches).
+    # A deployment that must keep the feature off restates `openAt: never` in a
+    # later patch layer (profile cordis.patch.yml or a --patch overlay).
     - id: session-query-sqlite
       name: '@deepseek-ai/dsh-session-query-sqlite'
       config:
         path: ':memory:'
-        openAt: never
+        openAt: first-search
 
     # Shared projection registry: subagent catalog identity (mode/label) folds
     # through its registered units, so the `list_agents` surface below fails
@@ -243,6 +252,26 @@
       name: '@deepseek-ai/dsh-agent-instructions'
       config:
         maxBytes: 65536
+
+    # Codex hooks ship enabled by default: the bridge auto-discovers the
+    # standard `./.codex/hooks.json` (project, launch cwd) then
+    # `~/.codex/hooks.json` (user), merged with project hooks running first, so
+    # an existing Codex hook config takes effect with no setup. With no hook
+    # file present it registers nothing and stays quiet. Mounted here so every
+    # agent profile (CLI and Web) honors it; an overlay disables by restating the
+    # row with `disabled: true`.
+    - id: hooks-codex
+      name: '@deepseek-ai/dsh-hooks-codex'
+
+    # Claude Code hooks ship enabled by default: the bridge auto-discovers the
+    # standard `./.claude/settings.json` (project, launch cwd) then
+    # `~/.claude/settings.json` (user), merging the `hooks` key each carries with
+    # project hooks running first, so an existing Claude Code hook config takes
+    # effect with no setup. With no settings file present it registers nothing
+    # and stays quiet. Mounted here so every agent profile (CLI and Web) honors
+    # it; an overlay disables by restating the row with `disabled: true`.
+    - id: hooks-claude-code
+      name: '@deepseek-ai/dsh-hooks-claude-code'
 
     - id: skill
       name: '@deepseek-ai/dsh-skill'

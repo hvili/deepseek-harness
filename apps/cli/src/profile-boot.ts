@@ -11,9 +11,10 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -35,6 +36,9 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
 
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { DSH_BUILD_MANIFEST_KEY } from '@deepseek-ai/dsh-build-manifest'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { assertStoredFormatNotNewer } from '@deepseek-ai/dsh-session-persistence'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
@@ -52,6 +56,39 @@ export function homePatchPath(): string {
 
 /** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
 export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.meta.url))
+
+/**
+ * Read this installation's package.json version, so every surface reports the
+ * artifact it actually runs instead of a hand-maintained placeholder.
+ * @returns the declared version, or `'0.0.0'` when the anchor is unreadable.
+ */
+function readInstallVersion(): string {
+  try {
+    return JSON.parse(readFileSync(INSTALL_ANCHOR, 'utf8')).version as string
+  } catch {
+    return '0.0.0'
+  }
+}
+
+/**
+ * Best-effort short git commit this installation was built from. Reads the
+ * repository at the installation anchor (the repo root is two levels above
+ * apps/cli); source checkouts carry it, published artifacts do not.
+ * @returns the short SHA, or `undefined` when no git metadata is available.
+ */
+function readGitCommit(): string | undefined {
+  try {
+    const repoRoot = resolve(fileURLToPath(new URL('../../', import.meta.url)))
+    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return head === '' ? undefined : head
+  } catch {
+    return undefined
+  }
+}
 
 /** The session-telemetry row id the DSH_TELEMETRY_DISABLED switch targets. */
 const TELEMETRY_ROW_ID = 'session-telemetry-otel'
@@ -250,6 +287,18 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+    // Same immutable-provenance rule for the build identity: surfaces report
+    // the version this actual installation runs, not a launcher-set constant.
+    // commit/schemaVersion are best-effort stamps (absent in published artifacts);
+    // buildHash is a release-pipeline stamp passed through DSH_BUILD_HASH.
+    const commit = readGitCommit()
+    const buildHash = process.env.DSH_BUILD_HASH?.trim()
+    hostCtx.provide(DSH_BUILD_MANIFEST_KEY, {
+      version: readInstallVersion(),
+      ...(commit === undefined ? {} : { commit }),
+      ...(buildHash === undefined || buildHash === '' ? {} : { buildHash }),
+      schemaVersion: SESSION_FORMAT_VERSION,
+    })
     // The command line and bounded exit request are launcher facts available
     // to every app plugin that injects the argument snapshot.
     provideCmdline(hostCtx, {
@@ -258,6 +307,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   })
   app.current = ctx
+  // Startup fail-closed boundary: refuse to continue when persisted session
+  // data was written by a NEWER harness than this build reads. A downgraded
+  // install must not silently carry on into a version it cannot interpret; the
+  // rejection surfaces through installFailLoud as a labelled fatal diagnostic.
+  // Only profiles that mount a persistence backend are audited.
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence !== undefined) {
+    await assertStoredFormatNotNewer(persistence)
+  }
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree

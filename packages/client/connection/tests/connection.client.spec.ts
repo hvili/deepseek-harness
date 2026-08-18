@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '../src/client/api.ts'
 import type { ConnectionState } from '../src/client/connection.ts'
-import { ConnectionController } from '../src/client/connection.ts'
+import { ConnectionController, EXPECTED_SCHEMA_VERSION } from '../src/client/connection.ts'
 import { FakeApiClient, deferred, ok } from './fake-api.client.ts'
 
 const SID = 'fk-c1' as SessionId
@@ -289,6 +289,47 @@ describe('connection lifecycle', () => {
     } finally {
       controller.stop()
       warnSpy.mockRestore()
+    }
+  })
+
+  it('fails closed into version-mismatch when describe reports a differing schemaVersion', async () => {
+    const api = new FakeApiClient()
+    api.onDescribe = () => Promise.resolve(ok({
+      version: '0-fake', cwd: '/f', attachedSessions: 0, canOpenPath: true, schemaVersion: 99,
+    }))
+    const states: ConnectionState[] = []
+    let mismatch: [number, number] | undefined
+    let connected = 0
+    const controller = new ConnectionController(api, {
+      onConnected: () => { connected++ },
+      onStateChange: state => states.push(state),
+      onVersionMismatch: (hostVersion, expectedVersion) => { mismatch = [hostVersion, expectedVersion] },
+    }, FAST)
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(states).toContain('version-mismatch') })
+      expect(states).not.toContain('connected')
+      expect(connected).toBe(0)
+      expect(mismatch).toEqual([99, EXPECTED_SCHEMA_VERSION])
+      expect(api.openMuxCount).toBe(0) // the loop stopped; no reconnect generation
+    } finally {
+      controller.stop()
+    }
+  })
+
+  it('accepts a matching schemaVersion and connects', async () => {
+    const api = new FakeApiClient()
+    api.onDescribe = () => Promise.resolve(ok({
+      version: '0-fake', cwd: '/f', attachedSessions: 0, canOpenPath: true, schemaVersion: EXPECTED_SCHEMA_VERSION,
+    }))
+    let connected = 0
+    const controller = new ConnectionController(api, { onConnected: () => { connected++ } }, FAST)
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(connected).toBe(1) })
+      expect(api.callsOf('host.describe')).toHaveLength(1)
+    } finally {
+      controller.stop()
     }
   })
 

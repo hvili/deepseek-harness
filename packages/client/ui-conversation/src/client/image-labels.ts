@@ -92,12 +92,11 @@ export function messageImageLabels(t: Translate<ConversationKey>): MessageImageL
 export function dropOverlayLabels(
   t: Translate<ConversationKey>,
   accepting: boolean,
-  limits?: { count: number; size: string },
 ): DropOverlayLabels {
-  if (!accepting) return { title: t('image.dropBlocked') }
+  if (!accepting) return { title: t('file.dropBlocked') }
   return {
-    title: t('image.dropTitle'),
-    desc: limits === undefined ? undefined : t('image.dropDesc', { count: limits.count, size: limits.size }),
+    title: t('file.dropTitle'),
+    desc: t('file.dropDesc'),
   }
 }
 

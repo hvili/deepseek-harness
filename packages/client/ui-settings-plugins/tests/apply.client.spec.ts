@@ -37,6 +37,9 @@ async function bench() {
     unarchiveSession: vi.fn(async () => {}),
     removeArchivedSession: vi.fn(async () => true),
   } as never)
+  ctx.provide('sessions', {
+    open: vi.fn(),
+  } as never)
   await ctx.plugin(SettingsScopeBinder).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials }
 }
@@ -50,7 +53,7 @@ function declareRoot(slots: SlotRegistry): () => void {
 
 describe('ui-settings-plugins apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces', 'sessions'])
   })
 
   it('registers Plugins and Archived conversations as separate Settings sections', async () => {

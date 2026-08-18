@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment, ComposerBarProps } from '../contract/slots.ts'
+import type { ConversationKey } from '../locales.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import {
@@ -36,10 +37,37 @@ import css from './InputBar.module.css'
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
 
+/** Max video file size; over this we refuse before touching the decoder. */
+const MAX_VIDEO_FILE_BYTES = 500 * 1024 * 1024
+
+/**
+ * An error whose `message` is a locale key, with interpolation parameters.
+ * `intakeFiles` catches these and localizes them through `t()`.
+ */
+class LocalizedFileError extends Error {
+  readonly key: string
+  readonly params: Record<string, unknown>
+
+  constructor(key: string, params: Record<string, unknown> = {}) {
+    super(key)
+    this.name = 'LocalizedFileError'
+    this.key = key
+    this.params = params
+  }
+}
+
 /** Maximum source text admitted from one browser-selected file. */
 const MAX_TEXT_FILE_BYTES = 1 * 1024 * 1024
 /** A short video is represented by evenly spaced stills for the image pipeline. */
 const VIDEO_FRAME_COUNT = 4
+/** Timeout for video metadata loading (10 seconds). */
+const VIDEO_METADATA_TIMEOUT_MS = 10_000
+/** Timeout for each video seek operation (15 seconds). */
+const VIDEO_SEEK_TIMEOUT_MS = 15_000
+/** Maximum pixel dimension for extracted frames (keeps blob size manageable). */
+const VIDEO_FRAME_MAX_DIM = 1280
+/** JPEG quality for extracted video frames. */
+const VIDEO_JPEG_QUALITY = 0.86
 /** Source extensions whose bytes can be safely inserted as UTF-8 prompt context. */
 const TEXT_FILE_EXTENSIONS = new Set([
   'txt', 'md', 'mdx', 'csv', 'tsv', 'json', 'yaml', 'yml', 'xml', 'html', 'htm', 'css',
@@ -55,46 +83,116 @@ function isTextFile(file: File): boolean {
 }
 
 /** Read a selected text file into a clearly delimited model-visible block. */
-async function textFileBlock(file: File): Promise<string> {
+async function textFileBlock(file: File, t: Translate<ConversationKey>): Promise<string> {
   if (file.size > MAX_TEXT_FILE_BYTES) {
-    throw new Error(`文件“${file.name}”超过 1 MB，无法直接作为文本发送`)
+    throw new LocalizedFileError('input.fileTooLarge', { name: file.name, size: '1 MB' })
   }
   const text = await file.text()
-  return `\n\n--- 文件：${file.name} ---\n${text}\n--- 文件结束：${file.name} ---\n`
+  return `\n\n--- ${t('input.fileHeader', { name: file.name })} ---\n${text}\n--- ${t('input.fileFooter', { name: file.name })} ---\n`
 }
 
-/** Extract evenly-spaced JPEG stills from a browser-decodable video file. */
-async function videoFrames(file: File): Promise<File[]> {
+/**
+ * Create a promise that resolves when the event fires or rejects on timeout.
+ * Uses AbortController to clean up both the event listener and the timeout.
+ */
+function videoEventPromise(
+  video: HTMLVideoElement,
+  event: string,
+  timeoutMs: number,
+  file: File,
+  label: 'metadata' | 'seek',
+): Promise<void> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+    // If the video element is still attached, revoke its source to prevent
+    // further resource usage.
+    if (video.src !== '') { video.removeAttribute('src'); video.load() }
+  }, timeoutMs)
+  return new Promise<void>((resolve, reject) => {
+    const done = (): void => {
+      clearTimeout(timeout)
+      resolve()
+    }
+    const fail = (): void => {
+      clearTimeout(timeout)
+      reject(new LocalizedFileError(`video.${label}Failed`, { name: file.name }))
+    }
+    controller.signal.addEventListener('abort', () => {
+      reject(new LocalizedFileError(`video.${label}Timeout`, { name: file.name, timeoutMs }))
+    }, { once: true })
+    video.addEventListener(event, done, { once: true })
+    video.addEventListener('error', fail, { once: true })
+  })
+}
+
+/** Result of video frame extraction with display metadata for the inserted note. */
+interface VideoFramesResult {
+  readonly frames: File[]
+  readonly durationSeconds: number
+  readonly width: number
+  readonly height: number
+}
+
+/** Format a duration as `M:SS` or `H:MM:SS`, omitting zero leading parts. */
+function formatDuration(totalSeconds: number): string {
+  const whole = Math.max(0, Math.round(totalSeconds))
+  const hours = Math.floor(whole / 3600)
+  const minutes = Math.floor((whole % 3600) / 60)
+  const seconds = whole % 60
+  const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes)
+  const ss = String(seconds).padStart(2, '0')
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+/**
+ * Extract evenly-spaced JPEG stills from a browser-decodable video file.
+ *
+ * Uses OffscreenCanvas when available to avoid blocking the main thread on
+ * the canvas.toBlob() encode step. Falls back to <canvas> for older browsers.
+ * Both paths share the same decoding pipeline: the browser's own <video>
+ * decoder (which is always off-thread in modern engines).
+ */
+async function videoFrames(file: File): Promise<VideoFramesResult> {
+  if (file.size > MAX_VIDEO_FILE_BYTES) {
+    throw new LocalizedFileError('video.tooLarge', { name: file.name })
+  }
   const source = URL.createObjectURL(file)
   const video = document.createElement('video')
   video.preload = 'metadata'
   video.muted = true
+  video.playsInline = true
   video.src = source
-  const waitFor = (event: 'loadedmetadata' | 'seeked'): Promise<void> => new Promise((resolve, reject) => {
-    video.addEventListener(event, () => { resolve() }, { once: true })
-    video.addEventListener('error', () => { reject(new Error(`无法读取视频“${file.name}”`)) }, { once: true })
-  })
   try {
-    await waitFor('loadedmetadata')
+    await videoEventPromise(video, 'loadedmetadata', VIDEO_METADATA_TIMEOUT_MS, file, 'metadata')
     if (!Number.isFinite(video.duration) || video.duration <= 0 || video.videoWidth === 0 || video.videoHeight === 0) {
-      throw new Error(`视频“${file.name}”没有可提取的画面`)
+      throw new LocalizedFileError('video.noFrames', { name: file.name })
     }
-    const scale = Math.min(1, 1280 / video.videoWidth)
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
-    const context = canvas.getContext('2d')
-    if (context === null) throw new Error('浏览器无法创建视频画面')
+    const scale = Math.min(1, VIDEO_FRAME_MAX_DIM / Math.max(video.videoWidth, video.videoHeight))
+    const width = Math.max(1, Math.round(video.videoWidth * scale))
+    const height = Math.max(1, Math.round(video.videoHeight * scale))
+    const useOffscreen = typeof OffscreenCanvas !== 'undefined'
+    const canvas = useOffscreen
+      ? new OffscreenCanvas(width, height)
+      : document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    // The conditional canvas type otherwise widens getContext() to the broad
+    // RenderingContext union, which does not expose the shared 2D API.
+    const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+    if (context === null) throw new LocalizedFileError('video.noContext')
     const frames: File[] = []
     for (let index = 0; index < VIDEO_FRAME_COUNT; index += 1) {
       video.currentTime = Math.min(video.duration - 0.05, video.duration * ((index + 1) / (VIDEO_FRAME_COUNT + 1)))
-      await waitFor('seeked')
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+      await videoEventPromise(video, 'seeked', VIDEO_SEEK_TIMEOUT_MS, file, 'seek')
+      context.drawImage(video, 0, 0, width, height)
+      const blob = useOffscreen
+        ? await (canvas as OffscreenCanvas).convertToBlob({ type: 'image/jpeg', quality: VIDEO_JPEG_QUALITY })
+        : await new Promise<Blob | null>(resolve => (canvas as HTMLCanvasElement).toBlob(resolve, 'image/jpeg', VIDEO_JPEG_QUALITY))
       if (blob !== null) frames.push(new File([blob], `${file.name}-frame-${index + 1}.jpg`, { type: 'image/jpeg' }))
     }
-    if (frames.length === 0) throw new Error(`视频“${file.name}”没有可发送的画面`)
-    return frames
+    if (frames.length === 0) throw new LocalizedFileError('video.noFrames', { name: file.name })
+    return { frames, durationSeconds: video.duration, width: video.videoWidth, height: video.videoHeight }
   } finally {
     video.removeAttribute('src')
     video.load()
@@ -105,6 +203,13 @@ async function videoFrames(file: File): Promise<File[]> {
 /** Rail thumbnail carrying its source attachment for the open/remove callbacks. */
 interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
+}
+
+/** A text file held locally until the next message is submitted. */
+interface PendingTextFile {
+  readonly id: string
+  readonly name: string
+  readonly block: string
 }
 
 export type InputBarProps = ComposerBarProps
@@ -138,7 +243,8 @@ export function InputBar({
     () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
     [draftImages, input?.imageIds],
   )
-  const empty = draft.trim() === '' && attachments.length === 0
+  const [textFiles, setTextFiles] = useState<readonly PendingTextFile[]>([])
+  const empty = draft.trim() === '' && attachments.length === 0 && textFiles.length === 0
   const [preview, setPreview] = useState<ComposerAttachment | null>(null)
   const [dragActive, setDragActive] = useState(false)
   // Transient error banner (image-intake rejections and prompt failures): the
@@ -312,6 +418,17 @@ export function InputBar({
     })
   }
 
+  /** Submit visible draft text plus any locally staged text-file context. */
+  const submit = (mode: Parameters<NonNullable<typeof keyboard>['submit']>[0]): void => {
+    if (keyboard === undefined) return
+    if (textFiles.length > 0) {
+      const next = `${keyboard.snapshot.draft}${textFiles.map(file => file.block).join('')}`
+      keyboard.setDraft(next)
+      setTextFiles([])
+    }
+    keyboard.submit(mode)
+  }
+
   // Wheel chaining on the draft scrollport, one lifetime (it is never
   // unmounted — the inert state renders the same element disabled). While the
   // capped box can still move in this direction, keep the native scroll; only
@@ -399,7 +516,7 @@ export function InputBar({
       keyboard.steerQueue()
       return
     }
-    keyboard.submit(resolveSubmitMode(
+    submit(resolveSubmitMode(
       running,
       accelerated ? 'accelerated' : 'enter',
       subagent === null,
@@ -515,10 +632,14 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
-  const insertTextFile = useCallback((block: string): void => {
+  const addTextFile = useCallback((file: File, block: string): void => {
+    setTextFiles(current => [...current, { id: crypto.randomUUID(), name: file.name, block }])
+    inputRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const insertVideoNote = useCallback((block: string): void => {
     if (keyboard === undefined) return
-    const current = keyboard.snapshot.draft
-    const next = `${current}${block}`
+    const next = `${keyboard.snapshot.draft}${block}`
     keyboard.setDraft(next)
     keyboard.track(next, next.length)
     inputRef.current?.focus({ preventScroll: true })
@@ -531,16 +652,27 @@ export function InputBar({
       try {
         if (file.type.startsWith('image/')) images.push(file)
         else if (file.type.startsWith('video/')) {
-          images.push(...await videoFrames(file))
-          insertTextFile(`\n\n[视频“${file.name}”已提取 ${VIDEO_FRAME_COUNT} 个画面，请结合这些画面回答。]\n`)
-        } else if (isTextFile(file)) insertTextFile(await textFileBlock(file))
-        else showToast(`暂不支持“${file.name}”。可上传图片、视频，或 1 MB 以内的文本/代码文件`)
+          showToast(t('input.videoProcessing', { name: file.name }))
+          const result = await videoFrames(file)
+          images.push(...result.frames)
+          insertVideoNote(t('input.videoFrames', {
+            name: file.name,
+            count: result.frames.length,
+            duration: formatDuration(result.durationSeconds),
+            resolution: `${result.width}×${result.height}`,
+          }))
+        } else if (isTextFile(file)) addTextFile(file, await textFileBlock(file, t))
+        else showToast(t('input.unsupportedFile', { name: file.name }))
       } catch (error: unknown) {
-        showToast(error instanceof Error ? error.message : `无法读取文件“${file.name}”`)
+        if (error instanceof LocalizedFileError) {
+          showToast((t as Translate)(error.key, { name: file.name, ...error.params }))
+        } else {
+          showToast(error instanceof Error ? error.message : t('input.fileError', { name: file.name }))
+        }
       }
     }
     if (images.length > 0) intakeImages(images)
-  }, [insertTextFile, intakeImages, locked, machineBusy, showToast])
+  }, [addTextFile, insertVideoNote, intakeImages, locked, machineBusy, showToast, t])
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const files = [...(event.target.files ?? [])]
@@ -589,7 +721,7 @@ export function InputBar({
       event.preventDefault()
       reset()
       if (!canAcceptDrop) return
-      intakeImages([...(event.dataTransfer?.files ?? [])])
+      void intakeFiles([...(event.dataTransfer?.files ?? [])])
     }
     document.addEventListener('dragenter', onDragEnter)
     document.addEventListener('dragover', onDragOver)
@@ -603,7 +735,7 @@ export function InputBar({
       document.removeEventListener('drop', onDrop)
       window.removeEventListener('dragend', reset)
     }
-  }, [canAcceptDrop, intakeImages])
+  }, [canAcceptDrop, intakeFiles])
 
   const closePreview = useCallback(() => { setPreview(null) }, [])
 
@@ -651,7 +783,7 @@ export function InputBar({
     }
     if (inputActions === undefined) return // absent machine: the button is disabled
     /* v8 ignore next -- defensive: the primary button is disabled while empty||disabled, so a click cannot reach the false arm. */
-    if (!empty && !disabled && !machineBusy) inputActions.submit()
+    if (!empty && !disabled && !machineBusy) submit('queue')
   }
 
   // The Access seat: the projection-fed permission chip (renders nothing
@@ -742,10 +874,7 @@ export function InputBar({
       {dragActive && (
         <DropOverlay
           disabled={!canAcceptDrop}
-          labels={dropOverlayLabels(t, canAcceptDrop, imageLimits === undefined ? undefined : {
-            count: imageLimits.maxImagesPerMessage,
-            size: imageSizeText(imageLimits.maxImageBytes),
-          })}
+          labels={dropOverlayLabels(t, canAcceptDrop)}
         />
       )}
       {toast !== null && (
@@ -784,6 +913,23 @@ export function InputBar({
               onOpen={(item) => { setPreview(item.attachment) }}
               onRemove={(item) => { removeImage?.(item.attachment.id) }}
             />
+          </div>
+        )}
+        {textFiles.length > 0 && (
+          <div className={css.textFiles} role="group" aria-label={t('input.attachedFiles')}>
+            {textFiles.map(file => (
+              <span key={file.id} className={css.textFile}>
+                <span className={css.textFileName}>{file.name}</span>
+                <button
+                  type="button"
+                  className={css.textFileRemove}
+                  aria-label={t('input.removeFile', { name: file.name })}
+                  onClick={() => { setTextFiles(current => current.filter(item => item.id !== file.id)) }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the

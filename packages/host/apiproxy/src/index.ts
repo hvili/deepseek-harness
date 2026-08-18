@@ -15,6 +15,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { buildManifestOf } from '@deepseek-ai/dsh-build-manifest'
 import type { ApiProxy } from './api/index.ts'
 import { createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './api-proxy.ts'
 import {
@@ -95,10 +96,15 @@ export class ApiProxyService extends Service implements ApiProxy {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'apiProxy')
+    const manifest = buildManifestOf(ctx)
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
       cwd: process.cwd(),
+      ...(manifest?.version === undefined ? {} : { version: manifest.version }),
+      ...(manifest?.commit === undefined ? {} : { commit: manifest.commit }),
+      ...(manifest?.buildHash === undefined ? {} : { buildHash: manifest.buildHash }),
+      ...(manifest?.schemaVersion === undefined ? {} : { schemaVersion: manifest.schemaVersion }),
       ...config.nativeOpen === undefined ? {} : { canOpenPath: () => config.nativeOpen as boolean },
       ...(config.sessionExportCompressionLevel === undefined
         ? {}

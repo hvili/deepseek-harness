@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { releaseFamily } from './families.ts'
+import { readReleaseManifest, verifyReleaseManifest } from './manifest.ts'
 import { attempt, isEntry } from './process.ts'
 import { packedIdentity, readPublishOrder } from './tarball.ts'
 
@@ -135,6 +136,11 @@ async function main(): Promise<void> {
 
   const family = releaseFamily(values.family)
   const directory = resolve(process.cwd(), values.from)
+
+  // A stage manifest must be present and must still match this exact pack: a
+  // tampered manifest or a tarball set that drifted from what was packed would
+  // otherwise ship with a stale build hash and a mismatched phantom "identity".
+  verifyReleaseManifest(readReleaseManifest(directory), family, family.members(process.cwd()), directory)
 
   let published = 0
   let skipped = 0

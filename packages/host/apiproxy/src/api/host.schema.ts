@@ -18,6 +18,9 @@ export const hostDescribeValueSchema = z.object({
   model: z.string().optional(),
   attachedSessions: z.number().int().nonnegative(),
   canOpenPath: z.boolean(),
+  commit: z.string().optional(),
+  buildHash: z.string().optional(),
+  schemaVersion: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.describe'>>>
 
 /** host.pickDirectory request payload (empty object literal). */

@@ -48,9 +48,11 @@ export {
   PersistenceCoordinator,
   SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
+  assertStoredFormatNotNewer,
   sessionFormatVersionRefusal,
 } from './coordinator.ts'
 export type {
+  FormatPreflightSource,
   PersistenceBackend,
   PersistenceCoordinatorOptions,
   StoredPrefix,
@@ -145,7 +147,7 @@ export abstract class SessionPersistence extends Service {
   /**
    * Permanently remove one materialized session's durable log and header.
    * Callers must first ensure that no live Session owns this identity.
-   * @param id - Stored session identity to remove.
+   * @param _id - Stored session identity to remove.
    * @returns whether a stored session was removed.
    */
   remove(_id: SessionId): Promise<boolean> {

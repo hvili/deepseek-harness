@@ -203,6 +203,16 @@ describe('deriveGroups', () => {
     const looseGroups = deriveGroups({ ...list(owned, loose), current: loose.id }, [ws], noArchive, view())
     expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
   })
+
+  it('marks only the cwd-bound project group (and never the ungrouped bucket)', () => {
+    const sessions = list(summary('owned', 1), summary('loose', 2))
+    const ws = workspace('project', ['owned'])
+    const bound = deriveGroups(sessions, [ws], noArchive, view(), wid('project'))
+    expect(bound.find(group => group.key === 'project')!.boundToCwd).toBe(true)
+    expect(bound.find(group => group.key === UNGROUPED_KEY)!.boundToCwd).toBe(false)
+    const unbound = deriveGroups(sessions, [ws], noArchive, view(), wid('other'))
+    expect(unbound.find(group => group.key === 'project')!.boundToCwd).toBe(false)
+  })
 })
 
 describe('deriveFlat', () => {
