@@ -112,6 +112,7 @@ async function harness(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
   ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
+  ctx.provide('workspaceRegistry', { list: () => [], isPermanentlyRemoved: () => false } as never)
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
 
   const factory: AgentFactory = {
@@ -377,10 +378,6 @@ describe('agentPreset.select', () => {
   it('forwards the owner event so clients can drop that session\'s catalogs', async () => {
     const { api, ctx } = await harness(['standard', 'minimal'])
     await api.sessions.create(request({ sessionId: SessionId('sel-frame'), agentPreset: 'standard' }))
-    // The host-stream opener reads the committed-workspace baseline; this
-    // spec owns preset identity, so the stub suffices (api-proxy-commands
-    // precedent).
-    ctx.provide('workspaceRegistry', { list: () => [] } as never)
     const abort = new AbortController()
     const frames: HostFrame[] = []
     const stream = api.events.host(request({}), abort.signal)

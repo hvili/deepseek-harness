@@ -141,10 +141,13 @@ function initAssembly(): CapabilityAssemblySnapshot {
  */
 export function createAssemblyService(ctx: Context): AssemblyService {
   const store: SnapshotStore<CapabilityAssemblySnapshot> = createSnapshotStore(initAssembly())
+  let slots: { snapshot(): LiveSlotNode[] } | undefined
   const refresh = (): void => {
+    slots ??= ctx.get('slots') as { snapshot(): LiveSlotNode[] } | undefined
+    if (slots === undefined) return
     const seams: CapabilitySeam[] = []
     const totals = { occupants: 0 }
-    for (const node of ctx.slots.snapshot()) project(node, seams, totals)
+    for (const node of slots.snapshot()) project(node, seams, totals)
     store.set({ seams, seamCount: seams.length, occupantCount: totals.occupants })
   }
   refresh()

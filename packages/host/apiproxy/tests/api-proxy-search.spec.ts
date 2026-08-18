@@ -64,6 +64,7 @@ async function baseContext(): Promise<Context> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
+  ctx.provide('workspaceRegistry', { isPermanentlyRemoved: () => false } as never)
   return ctx
 }
 
