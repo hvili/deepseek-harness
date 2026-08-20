@@ -1584,6 +1584,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
   const favoriteSessionIds: SessionId[] = []
+  const workspaceTagsById: Record<string, string[]> = {}
+  const sessionTagsById: Record<string, string[]> = {}
 
   // In-memory browse tree behind the fixture's `browse` picker capability —
   // deterministic content mirroring the design mock so assembled Web tests
@@ -2663,6 +2665,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
         favoriteSessionIds: [...favoriteSessionIds],
+        workspaceTagsById: Object.fromEntries(Object.entries(workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+        sessionTagsById: Object.fromEntries(Object.entries(sessionTagsById).map(([id, tags]) => [id, [...tags]])),
       }),
       create: (request) => {
         const { path } = request.payload
@@ -2813,6 +2817,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           emitHost({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] })
         }
         return ok(request, { favoriteSessionIds: [...favoriteSessionIds] })
+      },
+      setWorkspaceTags: (request) => {
+        const { workspaceId, tags } = request.payload
+        workspaceTagsById[workspaceId] = [...tags]
+        emitHost({ type: 'host/workspace-tags-changed', workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+        return ok(request, { workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+      },
+      setSessionTags: (request) => {
+        const { sessionId, tags } = request.payload
+        sessionTagsById[sessionId] = [...tags]
+        emitHost({ type: 'host/workspace-tags-changed', workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+        return ok(request, { workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
       },
       removeArchivedSession: (request) => {
         const { sessionId } = request.payload
@@ -3245,6 +3261,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
       case 'workspace.favoriteSession': return this.api.workspace.favoriteSession(request)
       case 'workspace.unfavoriteSession': return this.api.workspace.unfavoriteSession(request)
+      case 'workspace.setWorkspaceTags': return this.api.workspace.setWorkspaceTags(request)
+      case 'workspace.setSessionTags': return this.api.workspace.setSessionTags(request)
       case 'workspace.removeArchivedSession': return this.api.workspace.removeArchivedSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)

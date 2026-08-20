@@ -279,9 +279,19 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().workspaceTagsById[workspaceId] ?? []
   }
 
+  /** Complete workspace tag snapshot for reconnect and cross-client projection. */
+  get workspaceTagsById(): Readonly<Record<string, readonly string[]>> {
+    return this.requireState().workspaceTagsById
+  }
+
   /** Durable tags attached to one known session. */
   sessionTags(sessionId: SessionId): readonly string[] {
     return this.requireState().sessionTagsById[sessionId] ?? []
+  }
+
+  /** Complete session tag snapshot for reconnect and cross-client projection. */
+  get sessionTagsById(): Readonly<Record<string, readonly string[]>> {
+    return this.requireState().sessionTagsById
   }
 
   /** Replace one registered workspace's tag set with normalized user input. */

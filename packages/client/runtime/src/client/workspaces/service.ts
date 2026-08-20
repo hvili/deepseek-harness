@@ -37,6 +37,8 @@ export interface WorkspaceListState {
   archivedSessionIds: readonly SessionId[]
   /** Optional only for legacy in-memory consumers; runtime snapshots always include it. */
   favoriteSessionIds?: readonly SessionId[]
+  workspaceTagsById?: Readonly<Record<string, readonly string[]>>
+  sessionTagsById?: Readonly<Record<string, readonly string[]>>
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -100,6 +102,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
       items: [], archivedSessionIds: [], favoriteSessionIds: [], state: 'idle', phase: 'pending', error: null,
+      workspaceTagsById: {}, sessionTagsById: {},
       baselinesReady: false, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
@@ -344,6 +347,18 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session unfavorite failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Replace a Workspace's durable tags. */
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void> {
+    const result = await this.manager.setWorkspaceTags(workspaceId, tags)
+    if (!result.ok) throw new Error(`workspace tags failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Replace a Session's durable tags. */
+  async setSessionTags(sessionId: SessionId, tags: string[]): Promise<void> {
+    const result = await this.manager.setSessionTags(sessionId, tags)
+    if (!result.ok) throw new Error(`session tags failed: ${result.error.code}: ${result.error.message}`)
+  }
+
   /** Permanently remove an archived, non-live session. Attachment objects are retained. */
   async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
     const result = await this.manager.removeArchivedSession(sessionId)
@@ -406,6 +421,8 @@ export class WorkspaceRuntime implements IWorkspaces {
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
       favoriteSessionIds: workspace.favoriteSessionIds ?? [],
+      workspaceTagsById: workspace.workspaceTagsById ?? {},
+      sessionTagsById: workspace.sessionTagsById ?? {},
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,

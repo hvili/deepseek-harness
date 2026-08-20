@@ -81,7 +81,7 @@ function scriptedApi(overrides: {
       ...overrides.host,
     },
     workspace: {
-      list: r => ok(r, { items: [], archivedSessionIds: [], favoriteSessionIds: [] }),
+      list: r => ok(r, { items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {} }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       delete: r => ok(r, { deleted: true as const }),
@@ -91,6 +91,8 @@ function scriptedApi(overrides: {
       unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
       favoriteSession: r => ok(r, { favoriteSessionIds: [r.payload.sessionId] }),
       unfavoriteSession: r => ok(r, { favoriteSessionIds: [] }),
+      setWorkspaceTags: r => ok(r, { workspaceTagsById: { [r.payload.workspaceId]: r.payload.tags }, sessionTagsById: {} }),
+      setSessionTags: r => ok(r, { workspaceTagsById: {}, sessionTagsById: { [r.payload.sessionId]: r.payload.tags } }),
       removeArchivedSession: r => ok(r, { archivedSessionIds: [], removed: true }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
@@ -429,15 +431,19 @@ describe('unary round trip', () => {
 })
 
 describe('workspace domain round trip', () => {
-  it('routes both workspace methods through their handler rows and value schemas', async () => {
+  it('routes workspace methods through their handler rows and value schemas', async () => {
     const c = client(scriptedApi())
     const list = await c.workspace.list({})
-    expect(list.result).toEqual({ ok: true, value: { items: [], archivedSessionIds: [] } })
+    expect(list.result).toEqual({ ok: true, value: {
+      items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {},
+    } })
     const created = await c.workspace.create({ path: '/t' })
     expect(created.result.ok).toBe(true)
     if (created.result.ok) expect(created.result.value.created).toBe(true)
     const archivedResponse = await c.workspace.archiveSession({ sessionId: 's-arch' as never })
     expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
+    const tags = await c.workspace.setSessionTags({ sessionId: 's-arch' as never, tags: ['review'] })
+    expect(tags.result).toEqual({ ok: true, value: { workspaceTagsById: {}, sessionTagsById: { 's-arch': ['review'] } } })
   })
 
   it('rejects a pathless create payload at the handler schema', async () => {

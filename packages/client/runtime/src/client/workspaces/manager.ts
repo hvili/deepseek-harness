@@ -22,6 +22,8 @@ export interface WorkspaceListSnapshot {
    */
   archivedSessionIds: readonly SessionId[]
   favoriteSessionIds: readonly SessionId[]
+  workspaceTagsById: Readonly<Record<string, readonly string[]>>
+  sessionTagsById: Readonly<Record<string, readonly string[]>>
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -41,6 +43,8 @@ export class WorkspaceManager {
   // carry the complete set), so deltas never merge — installs replace.
   private archivedSessionIds: readonly SessionId[] = []
   private favoriteSessionIds: readonly SessionId[] = []
+  private workspaceTagsById: Readonly<Record<string, readonly string[]>> = {}
+  private sessionTagsById: Readonly<Record<string, readonly string[]>> = {}
   private state: WorkspaceListSnapshot['state'] = 'idle'
   private phase: WorkspaceListPhase = 'pending'
   private error: RpcError | null = null
@@ -55,6 +59,8 @@ export class WorkspaceManager {
   private archivedSupersedesRefresh = false
   /** A favorite-set frame during refresh is newer than its list baseline. */
   private favoritesSupersedeRefresh = false
+  /** A tags frame during refresh is newer than its list baseline. */
+  private tagsSupersedeRefresh = false
   /** Latest local reorder request; only its unary echo may install order. */
   private orderRequestGeneration = 0
   /** Increments on order frames so a later remote commit outranks an older unary echo. */
@@ -104,6 +110,10 @@ export class WorkspaceManager {
           this.installViews(items)
           if (!this.archivedSupersedesRefresh) this.installArchived(result.value.archivedSessionIds)
           if (!this.favoritesSupersedeRefresh) this.installFavorites(result.value.favoriteSessionIds)
+          if (!this.tagsSupersedeRefresh
+            && result.value.workspaceTagsById !== undefined && result.value.sessionTagsById !== undefined) {
+            this.installTags(result.value)
+          }
           this.state = 'idle'
           this.phase = 'ready'
         } else {
@@ -119,6 +129,7 @@ export class WorkspaceManager {
         this.refreshFrames = null
         this.archivedSupersedesRefresh = false
         this.favoritesSupersedeRefresh = false
+        this.tagsSupersedeRefresh = false
         this.inflight = null
         this.notifier.markDirty()
       }
@@ -255,6 +266,22 @@ export class WorkspaceManager {
     return result
   }
 
+  async setWorkspaceTags(
+    workspaceId: WorkspaceId, tags: string[],
+  ): Promise<RpcResult<{ workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> }>> {
+    const { result } = await this.api.workspace.setWorkspaceTags({ workspaceId, tags })
+    if (result.ok) this.installTags(result.value)
+    return result
+  }
+
+  async setSessionTags(
+    sessionId: SessionId, tags: string[],
+  ): Promise<RpcResult<{ workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> }>> {
+    const { result } = await this.api.workspace.setSessionTags({ sessionId, tags })
+    if (result.ok) this.installTags(result.value)
+    return result
+  }
+
   async removeArchivedSession(
     sessionId: SessionId,
   ): Promise<RpcResult<{ archivedSessionIds: SessionId[]; removed: boolean }>> {
@@ -280,6 +307,9 @@ export class WorkspaceManager {
     }
     else if (envelope.payload.type === 'host/favorite-sessions-changed') {
       this.installFavorites(envelope.payload.favoriteSessionIds)
+    }
+    else if (envelope.payload.type === 'host/workspace-tags-changed') {
+      this.installTags(envelope.payload)
     }
   }
 
@@ -311,6 +341,8 @@ export class WorkspaceManager {
       items: this.itemViews(),
       archivedSessionIds: this.archivedSessionIds,
       favoriteSessionIds: this.favoriteSessionIds,
+      workspaceTagsById: this.workspaceTagsById,
+      sessionTagsById: this.sessionTagsById,
       state: this.state,
       phase: this.phase,
       error: this.error,
@@ -335,6 +367,19 @@ export class WorkspaceManager {
     if (favoriteSessionIds.length === this.favoriteSessionIds.length
       && favoriteSessionIds.every((id, index) => id === this.favoriteSessionIds[index])) return
     this.favoriteSessionIds = [...favoriteSessionIds]
+    this.notifier.markDirty()
+  }
+
+  /** Replace both full tag maps when their exact ordered contents changed. */
+  private installTags(tags: {
+    workspaceTagsById: Readonly<Record<string, readonly string[]>>
+    sessionTagsById: Readonly<Record<string, readonly string[]>>
+  }): void {
+    if (this.refreshFrames !== null) this.tagsSupersedeRefresh = true
+    if (sameTagMaps(tags.workspaceTagsById, this.workspaceTagsById)
+      && sameTagMaps(tags.sessionTagsById, this.sessionTagsById)) return
+    this.workspaceTagsById = copyTagMap(tags.workspaceTagsById)
+    this.sessionTagsById = copyTagMap(tags.sessionTagsById)
     this.notifier.markDirty()
   }
 
@@ -432,6 +477,18 @@ export class WorkspaceManager {
     })
     return this.itemViewsCache
   }
+}
+
+function copyTagMap(tags: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> {
+  return Object.fromEntries(Object.entries(tags).map(([id, values]) => [id, [...values]]))
+}
+
+function sameTagMaps(left: Readonly<Record<string, readonly string[]>>, right: Readonly<Record<string, readonly string[]>>): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return leftKeys.length === rightKeys.length && leftKeys.every(id =>
+    Object.hasOwn(right, id) && left[id]?.length === right[id]?.length
+      && left[id]?.every((tag, index) => tag === right[id]?.[index]))
 }
 
 /** Known ids retain their position; a newly created Workspace enters first. */

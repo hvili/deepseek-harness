@@ -34,6 +34,7 @@ import {
 import {
   workspaceArchiveSessionValueSchema,
   workspaceFavoriteSessionValueSchema, workspaceUnfavoriteSessionValueSchema,
+  workspaceSetWorkspaceTagsValueSchema, workspaceSetSessionTagsValueSchema,
   workspaceUnarchiveSessionValueSchema, workspaceRemoveArchivedSessionValueSchema,
   workspaceCreateValueSchema,
   workspaceDeleteValueSchema,
@@ -125,6 +126,8 @@ export interface IApiClient {
     unarchiveSession(payload: RequestPayload<'workspace.unarchiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.unarchiveSession'>>>
     favoriteSession(payload: RequestPayload<'workspace.favoriteSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.favoriteSession'>>>
     unfavoriteSession(payload: RequestPayload<'workspace.unfavoriteSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.unfavoriteSession'>>>
+    setWorkspaceTags(payload: RequestPayload<'workspace.setWorkspaceTags'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.setWorkspaceTags'>>>
+    setSessionTags(payload: RequestPayload<'workspace.setSessionTags'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.setSessionTags'>>>
     removeArchivedSession(payload: RequestPayload<'workspace.removeArchivedSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.removeArchivedSession'>>>
   }
   skills: {
@@ -208,6 +211,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.unarchiveSession': workspaceUnarchiveSessionValueSchema,
   'workspace.favoriteSession': workspaceFavoriteSessionValueSchema,
   'workspace.unfavoriteSession': workspaceUnfavoriteSessionValueSchema,
+  'workspace.setWorkspaceTags': workspaceSetWorkspaceTagsValueSchema,
+  'workspace.setSessionTags': workspaceSetSessionTagsValueSchema,
   'workspace.removeArchivedSession': workspaceRemoveArchivedSessionValueSchema,
   'skill.list': skillListValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
@@ -466,6 +471,8 @@ export abstract class AbstractApiClient implements IApiClient {
     unarchiveSession: (payload, signal) => this.callUnary('workspace.unarchiveSession', payload, signal),
     favoriteSession: (payload, signal) => this.callUnary('workspace.favoriteSession', payload, signal),
     unfavoriteSession: (payload, signal) => this.callUnary('workspace.unfavoriteSession', payload, signal),
+    setWorkspaceTags: (payload, signal) => this.callUnary('workspace.setWorkspaceTags', payload, signal),
+    setSessionTags: (payload, signal) => this.callUnary('workspace.setSessionTags', payload, signal),
     removeArchivedSession: (payload, signal) => this.callUnary('workspace.removeArchivedSession', payload, signal),
   }
 

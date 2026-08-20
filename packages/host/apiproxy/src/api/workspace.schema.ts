@@ -30,6 +30,8 @@ export const workspaceListValueSchema = z.object({
   items: z.array(workspaceViewSchema),
   archivedSessionIds: z.array(sessionIdSchema),
   favoriteSessionIds: z.array(sessionIdSchema),
+  workspaceTagsById: z.record(z.string(), z.array(z.string())),
+  sessionTagsById: z.record(z.string(), z.array(z.string())),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.list'>>>
 
 /** workspace.create request payload: the existing directory to adopt. */
@@ -112,6 +114,15 @@ export const workspaceFavoriteSessionRequestSchema = z.object({ sessionId: sessi
 export const workspaceFavoriteSessionValueSchema = z.object({ favoriteSessionIds: z.array(sessionIdSchema) }) satisfies z.ZodType<Wire<ResponseValue<'workspace.favoriteSession'>>>
 export const workspaceUnfavoriteSessionRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'workspace.unfavoriteSession'>>>
 export const workspaceUnfavoriteSessionValueSchema = z.object({ favoriteSessionIds: z.array(sessionIdSchema) }) satisfies z.ZodType<Wire<ResponseValue<'workspace.unfavoriteSession'>>>
+
+const workspaceTagsSnapshotSchema = z.object({
+  workspaceTagsById: z.record(z.string(), z.array(z.string())),
+  sessionTagsById: z.record(z.string(), z.array(z.string())),
+})
+export const workspaceSetWorkspaceTagsRequestSchema = z.object({ workspaceId: workspaceIdSchema, tags: z.array(z.string()) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.setWorkspaceTags'>>>
+export const workspaceSetWorkspaceTagsValueSchema = workspaceTagsSnapshotSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.setWorkspaceTags'>>>
+export const workspaceSetSessionTagsRequestSchema = z.object({ sessionId: sessionIdSchema, tags: z.array(z.string()) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.setSessionTags'>>>
+export const workspaceSetSessionTagsValueSchema = workspaceTagsSnapshotSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.setSessionTags'>>>
 
 export const workspaceRemoveArchivedSessionRequestSchema = z.object({
   sessionId: sessionIdSchema,

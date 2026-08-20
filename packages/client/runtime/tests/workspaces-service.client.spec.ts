@@ -17,6 +17,23 @@ function workspace(id: string, sessionIds: SessionId[] = [], createdAt = '2026-0
 }
 
 describe('WorkspaceManager', () => {
+  it('installs tag snapshots from actions and newer host frames', async () => {
+    const api = new FakeApiClient()
+    const manager = new WorkspaceManager(api)
+    api.onWorkspaceSetWorkspaceTags = () => Promise.resolve(ok({
+      workspaceTagsById: { project: ['review'] }, sessionTagsById: { session: ['todo'] },
+    }))
+    await expect(manager.setWorkspaceTags(wid('project'), ['review'])).resolves.toMatchObject({ ok: true })
+    expect(manager.getSnapshot()).toMatchObject({
+      workspaceTagsById: { project: ['review'] }, sessionTagsById: { session: ['todo'] },
+    })
+    manager.handleHostEnvelope({
+      rpcId: 'tags-frame' as never,
+      payload: { type: 'host/workspace-tags-changed', workspaceTagsById: { project: ['done'] }, sessionTagsById: {} },
+    })
+    expect(manager.getSnapshot()).toMatchObject({ workspaceTagsById: { project: ['done'] }, sessionTagsById: {} })
+  })
+
   it('replays changed frames over hydration and adopts the durable order on refresh', async () => {
     const api = new FakeApiClient()
     const gate = deferred<Awaited<ReturnType<FakeApiClient['onWorkspaceList']>>>()

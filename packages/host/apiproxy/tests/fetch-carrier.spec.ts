@@ -162,7 +162,13 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     },
     workspace: {
       async list(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { items: [], archivedSessionIds: [], favoriteSessionIds: [] } } }
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: { items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {} },
+          },
+        }
       },
       async create(request) {
         return {
@@ -199,6 +205,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       async unfavoriteSession(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { favoriteSessionIds: [] } } }
+      },
+      async setWorkspaceTags(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { workspaceTagsById: { [request.payload.workspaceId]: request.payload.tags }, sessionTagsById: {} } },
+        }
+      },
+      async setSessionTags(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { workspaceTagsById: {}, sessionTagsById: { [request.payload.sessionId]: request.payload.tags } } },
+        }
       },
       async removeArchivedSession(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [], removed: true } } }

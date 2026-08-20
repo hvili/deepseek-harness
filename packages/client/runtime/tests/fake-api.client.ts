@@ -189,6 +189,8 @@ export class FakeApiClient implements IApiClient {
     items: never[]
     archivedSessionIds?: SessionId[]
     favoriteSessionIds?: SessionId[]
+    workspaceTagsById?: Record<string, string[]>
+    sessionTagsById?: Record<string, string[]>
   }>> =
     () => Promise.resolve(ok({ items: [] }))
   onWorkspaceCreate: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>> =
@@ -214,6 +216,18 @@ export class FakeApiClient implements IApiClient {
     payload => Promise.resolve(ok({ favoriteSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
   onWorkspaceUnfavoriteSession: (payload: unknown) => Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>> =
     () => Promise.resolve(ok({ favoriteSessionIds: [] }))
+  onWorkspaceSetWorkspaceTags: (payload: unknown) => Promise<RpcResponse<{
+    workspaceTagsById: Record<string, string[]>
+    sessionTagsById: Record<string, string[]>
+  }>> = payload => Promise.resolve(ok({
+    workspaceTagsById: { [(payload as { workspaceId: string }).workspaceId]: (payload as { tags: string[] }).tags }, sessionTagsById: {},
+  }))
+  onWorkspaceSetSessionTags: (payload: unknown) => Promise<RpcResponse<{
+    workspaceTagsById: Record<string, string[]>
+    sessionTagsById: Record<string, string[]>
+  }>> = payload => Promise.resolve(ok({
+    workspaceTagsById: {}, sessionTagsById: { [(payload as { sessionId: string }).sessionId]: (payload as { tags: string[] }).tags },
+  }))
   onWorkspaceRemoveArchivedSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[]; removed: boolean }>> =
     () => Promise.resolve(ok({ archivedSessionIds: [], removed: true }))
 
@@ -224,7 +238,10 @@ export class FakeApiClient implements IApiClient {
           ...response,
           result: {
             ok: true as const,
-            value: { archivedSessionIds: [] as never[], favoriteSessionIds: [] as never[], ...response.result.value },
+            value: {
+              archivedSessionIds: [] as never[], favoriteSessionIds: [] as never[],
+              workspaceTagsById: {}, sessionTagsById: {}, ...response.result.value,
+            },
           },
         }
         : response
@@ -244,6 +261,10 @@ export class FakeApiClient implements IApiClient {
       this.record('workspace.favoriteSession', payload, this.onWorkspaceFavoriteSession(payload)),
     unfavoriteSession: (payload: unknown) =>
       this.record('workspace.unfavoriteSession', payload, this.onWorkspaceUnfavoriteSession(payload)),
+    setWorkspaceTags: (payload: unknown) =>
+      this.record('workspace.setWorkspaceTags', payload, this.onWorkspaceSetWorkspaceTags(payload)),
+    setSessionTags: (payload: unknown) =>
+      this.record('workspace.setSessionTags', payload, this.onWorkspaceSetSessionTags(payload)),
     removeArchivedSession: (payload: unknown) =>
       this.record('workspace.removeArchivedSession', payload, this.onWorkspaceRemoveArchivedSession(payload)),
   }

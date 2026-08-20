@@ -585,4 +585,31 @@ describe('Host Workspace increments', () => {
     expect(expectOk(await api.workspace.unfavoriteSession(request({ sessionId }))).favoriteSessionIds).toEqual([])
     abort.abort()
   })
+
+  it('replaces durable workspace and session tags and streams the complete snapshots', async () => {
+    const { api, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'tags-home') }))).workspace
+    const sessionId = SessionId('session-with-tags')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const abort = new AbortController()
+    const stream = api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const changed = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.setWorkspaceTags(request({
+      workspaceId: workspace.workspaceId, tags: ['  review ', 'review', 'important'],
+    })))).toMatchObject({ workspaceTagsById: { [workspace.workspaceId]: ['review', 'important'] } })
+    expect(await changed).toMatchObject({
+      payload: { type: 'host/workspace-tags-changed', workspaceTagsById: { [workspace.workspaceId]: ['review', 'important'] } },
+    })
+    expect(expectOk(await api.workspace.setSessionTags(request({ sessionId, tags: ['todo'] })))).toMatchObject({
+      sessionTagsById: { [sessionId]: ['todo'] },
+    })
+    expect(expectOk(await api.workspace.list(request({})))).toMatchObject({
+      workspaceTagsById: { [workspace.workspaceId]: ['review', 'important'] },
+      sessionTagsById: { [sessionId]: ['todo'] },
+    })
+    expect((await api.workspace.setSessionTags(request({ sessionId: SessionId('missing'), tags: ['todo'] }))).result).toMatchObject({
+      ok: false, error: { code: 'session-not-found' },
+    })
+    abort.abort()
+  })
 })

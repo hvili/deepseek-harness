@@ -143,6 +143,24 @@ function decodeBase64(data: string): Uint8Array {
   return new Uint8Array(decoded)
 }
 
+/** Copy durable tag maps into JSON-safe wire snapshots. */
+function workspaceTagsSnapshot(ctx: Context): { workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> } {
+  return {
+    workspaceTagsById: Object.fromEntries(Object.entries(ctx.workspaceRegistry.workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+    sessionTagsById: Object.fromEntries(Object.entries(ctx.workspaceRegistry.sessionTagsById).map(([id, tags]) => [id, [...tags]])),
+  }
+}
+
+/** Exact ordered comparison for a JSON tag map. */
+function sameTagMaps(left: Record<string, readonly string[]>, right: Record<string, readonly string[]>): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every(key => Object.hasOwn(right, key)
+      && left[key]?.length === right[key]?.length
+      && left[key]?.every((tag, index) => tag === right[key]?.[index]))
+}
+
 /**
  * Send one 1x1 transparent image through the exact adapter path a real image
  * attachment uses. Saving the probe through the durable attachment service
@@ -2831,6 +2849,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           items: ctx.workspaceRegistry.list().map(workspaceView),
           archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
           favoriteSessionIds: [...ctx.workspaceRegistry.favoriteSessionIds],
+          ...workspaceTagsSnapshot(ctx),
         }))
       },
 
@@ -2963,6 +2982,28 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async unfavoriteSession(request) {
         await ctx.workspaceRegistry.unfavoriteSession(request.payload.sessionId)
         return ok(request, { favoriteSessionIds: [...ctx.workspaceRegistry.favoriteSessionIds] })
+      },
+
+      async setWorkspaceTags(request) {
+        const { workspaceId, tags } = request.payload
+        try {
+          await ctx.workspaceRegistry.setWorkspaceTags(brandWorkspaceId(workspaceId), tags)
+        } catch (error: unknown) {
+          if (error instanceof WorkspaceOrderInvalidError) return workspaceNotFound(request, workspaceId)
+          throw error
+        }
+        return ok(request, workspaceTagsSnapshot(ctx))
+      },
+
+      async setSessionTags(request) {
+        const { sessionId, tags } = request.payload
+        try {
+          await ctx.workspaceRegistry.setSessionTags(sessionId, tags)
+        } catch (error: unknown) {
+          if (!(error instanceof WorkspaceUnknownSessionError)) throw error
+          return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+        }
+        return ok(request, workspaceTagsSnapshot(ctx))
       },
 
       async removeArchivedSession(request) {
@@ -3631,6 +3672,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // reconnecting clients, so only later changes need frames.
         let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
         let favoriteSessionIds = ctx.workspaceRegistry.favoriteSessionIds
+        let workspaceTagsById = workspaceTagsSnapshot(ctx).workspaceTagsById
+        let sessionTagsById = workspaceTagsSnapshot(ctx).sessionTagsById
         const disposers = [
           ctx.on('session/created', (session: Session) => {
             queue.push(frame({
@@ -3688,6 +3731,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 || state.favoriteSessionIds.some((id, index) => id !== favoriteSessionIds[index])) {
                 favoriteSessionIds = state.favoriteSessionIds
                 queue.push(frame({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] }))
+              }
+              if (!sameTagMaps(state.workspaceTagsById, workspaceTagsById)
+                || !sameTagMaps(state.sessionTagsById, sessionTagsById)) {
+                workspaceTagsById = state.workspaceTagsById
+                sessionTagsById = state.sessionTagsById
+                queue.push(frame({
+                  type: 'host/workspace-tags-changed',
+                  workspaceTagsById: Object.fromEntries(Object.entries(workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+                  sessionTagsById: Object.fromEntries(Object.entries(sessionTagsById).map(([id, tags]) => [id, [...tags]])),
+                }))
               }
               return
             }

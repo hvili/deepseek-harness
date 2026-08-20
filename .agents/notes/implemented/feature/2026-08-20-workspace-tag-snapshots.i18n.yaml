@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-workspace-tag-snapshots.md
+2026-08-20-workspace-tag-snapshots.md: 9d0e5cab9a83162ae559c12230ef6855e3f458c2
+2026-08-20-workspace-tag-snapshots.zh.md: 75bb19ccffc5e7f4b7f9fb4334544daf97ce1004

@@ -35,6 +35,12 @@ export interface WorkspaceView {
   updatedAt: string
 }
 
+/** Complete durable tag projections keyed by workspace and session id. */
+export interface WorkspaceTagsSnapshot {
+  workspaceTagsById: Record<string, string[]>
+  sessionTagsById: Record<string, string[]>
+}
+
 /** Workspace-domain unary methods (the map keys workspace.* of RpcMethodMap). */
 export interface WorkspaceApi {
   /**
@@ -47,7 +53,7 @@ export interface WorkspaceApi {
     items: WorkspaceView[]
     archivedSessionIds: SessionId[]
     favoriteSessionIds: SessionId[]
-  }>>
+  } & WorkspaceTagsSnapshot>>
 
   /**
    * Creates (or idempotently resolves) a workspace over an EXISTING directory
@@ -120,6 +126,14 @@ export interface WorkspaceApi {
 
   unfavoriteSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>>
+
+  /** Replace one workspace's normalized durable tags. */
+  setWorkspaceTags(request: RpcRequest<{ workspaceId: WorkspaceId; tags: string[] }>):
+  Promise<RpcResponse<WorkspaceTagsSnapshot>>
+
+  /** Replace one session's normalized durable tags. */
+  setSessionTags(request: RpcRequest<{ sessionId: SessionId; tags: string[] }>):
+  Promise<RpcResponse<WorkspaceTagsSnapshot>>
 
   /** Permanently remove an archived cold session's log and registry references. */
   removeArchivedSession(request: RpcRequest<{ sessionId: SessionId }>):

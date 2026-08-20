@@ -244,6 +244,20 @@ export class TestWorkspaces implements IWorkspaces {
     })
   }
 
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void> {
+    this.calls.push({ method: 'setWorkspaceTags', args: [workspaceId, tags] })
+    const stub = this.stubs.get('setWorkspaceTags')
+    if (stub !== undefined) return await (stub(workspaceId, tags) as Promise<void>)
+    await this.update((draft) => { draft.workspaceTagsById = { ...(draft.workspaceTagsById ?? {}), [workspaceId]: tags } })
+  }
+
+  async setSessionTags(sessionId: SessionId, tags: string[]): Promise<void> {
+    this.calls.push({ method: 'setSessionTags', args: [sessionId, tags] })
+    const stub = this.stubs.get('setSessionTags')
+    if (stub !== undefined) return await (stub(sessionId, tags) as Promise<void>)
+    await this.update((draft) => { draft.sessionTagsById = { ...(draft.sessionTagsById ?? {}), [sessionId]: tags } })
+  }
+
   async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
     this.calls.push({ method: 'removeArchivedSession', args: [sessionId] })
     const stub = this.stubs.get('removeArchivedSession')

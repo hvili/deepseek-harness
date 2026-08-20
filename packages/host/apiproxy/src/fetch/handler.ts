@@ -37,6 +37,7 @@ import {
 import {
   workspaceArchiveSessionRequestSchema,
   workspaceFavoriteSessionRequestSchema, workspaceUnfavoriteSessionRequestSchema,
+  workspaceSetWorkspaceTagsRequestSchema, workspaceSetSessionTagsRequestSchema,
   workspaceUnarchiveSessionRequestSchema, workspaceRemoveArchivedSessionRequestSchema,
   workspaceCreateRequestSchema,
   workspaceDeleteRequestSchema,
@@ -121,6 +122,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.unarchiveSession': { schema: workspaceUnarchiveSessionRequestSchema, invoke: (api, r) => api.workspace.unarchiveSession(r) },
   'workspace.favoriteSession': { schema: workspaceFavoriteSessionRequestSchema, invoke: (api, r) => api.workspace.favoriteSession(r) },
   'workspace.unfavoriteSession': { schema: workspaceUnfavoriteSessionRequestSchema, invoke: (api, r) => api.workspace.unfavoriteSession(r) },
+  'workspace.setWorkspaceTags': { schema: workspaceSetWorkspaceTagsRequestSchema, invoke: (api, r) => api.workspace.setWorkspaceTags(r) },
+  'workspace.setSessionTags': { schema: workspaceSetSessionTagsRequestSchema, invoke: (api, r) => api.workspace.setSessionTags(r) },
   'workspace.removeArchivedSession': { schema: workspaceRemoveArchivedSessionRequestSchema, invoke: (api, r) => api.workspace.removeArchivedSession(r) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.list': { schema: agentPresetListRequestSchema, invoke: (api, r) => api.agentPresets.list(r) },
