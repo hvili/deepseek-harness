@@ -55,6 +55,21 @@ describe('deriveGroups', () => {
     expect(groups[1]!.sessions.map(session => session.id)).toEqual([sid('loose')])
   })
 
+  it('keeps visible fork descendants adjacent to their parent with lineage depths', () => {
+    const parent = summary('parent', 1)
+    const child = { ...summary('child', 3), parentId: parent.id }
+    const grandchild = { ...summary('grandchild', 2), parentId: child.id }
+    const orphan = { ...summary('orphan', 4), parentId: sid('missing') }
+    const groups = deriveGroups(
+      list(child, orphan, parent, grandchild),
+      [workspace('project', ['child', 'orphan', 'parent', 'grandchild'])],
+      noArchive,
+      view(['project']),
+    )
+    expect(groups[0]!.sessions.map(session => session.id)).toEqual([orphan.id, parent.id, child.id, grandchild.id])
+    expect(groups[0]!.sessions.map(session => session.lineageDepth)).toEqual([0, 0, 1, 2])
+  })
+
   it('applies stored Ungrouped order and appends new loose Sessions by recency', () => {
     const sessions = list(summary('one', 3), summary('two', 2), summary('new', 4))
     const groups = deriveGroups(
@@ -141,7 +156,7 @@ describe('deriveGroups', () => {
     ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
   })
 
-  it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {
+  it('retains recency root order while grouping visible ungrouped forks by lineage', () => {
     const parent = summary('parent', 1)
     const oldChild = { ...summary('old-child', 10), parentId: parent.id }
     const newChild = { ...summary('new-child', 20), parentId: parent.id }
@@ -160,8 +175,8 @@ describe('deriveGroups', () => {
 
     expect(groups).toHaveLength(1)
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([
-      newChild.id, tieA.id, tieB.id, oldChild.id,
-      cycleB.id, cycleA.id, orphan.id, self.id, parent.id,
+      orphan.id, parent.id, newChild.id, tieA.id, tieB.id, oldChild.id,
+      cycleB.id, cycleA.id, self.id,
     ])
 
     // Equal timestamps use ids as a deterministic tiebreak in either input order.

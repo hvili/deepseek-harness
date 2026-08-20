@@ -5,7 +5,7 @@
  * except workspace Rename/Delete and session Rename/Fork/Archive/Favorite; the session
  * and workspace hover cards are suppressed while a menu is open.
  */
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
@@ -423,6 +423,7 @@ export function SessionNodeItem({
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
+      style={{ '--dsh-session-lineage-depth': node.lineageDepth ?? 0 } as CSSProperties}
       role="treeitem"
       aria-selected={selected}
       onClick={() => { onOpen(node.id) }}

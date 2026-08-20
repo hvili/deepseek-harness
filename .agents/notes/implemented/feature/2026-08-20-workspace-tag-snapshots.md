@@ -18,6 +18,8 @@ The workspace sidebar renders each target's tags beside its title. The project a
 
 Sidebar search treats workspace and session tags as local metadata alongside titles and workspace names. Archived sessions remain excluded before any metadata matching.
 
+Project groups project visible ordinary fork lineage from `SessionSummary.parentId`: a child follows its visible parent with a bounded sidebar indent. An absent parent and cycles degrade to visible roots, and subagent-origin rows remain owned by the separate subagent catalog.
+
 ## Alternatives considered
 
 **Per-tag incremental frames.** Rejected because a set/remove operation would require merge, deletion, ordering, and reconnect reconciliation rules in every client.

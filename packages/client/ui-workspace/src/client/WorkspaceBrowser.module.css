@@ -485,6 +485,10 @@
   white-space: nowrap;
 }
 
+.sessionRow {
+  padding-left: calc(8px + min(var(--dsh-session-lineage-depth, 0), 4) * 12px);
+}
+
 .renameInput:disabled {
   color: var(--dsw-alias-label-dimmed);
 }

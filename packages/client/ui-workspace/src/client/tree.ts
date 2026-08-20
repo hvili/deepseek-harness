@@ -30,6 +30,8 @@ export interface SessionNode {
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   updatedAt: number
+  /** Fork depth inside this project group; roots and orphaned sessions use zero. */
+  lineageDepth?: number
 }
 
 /** Session order selected by the Workspace browser. */
@@ -90,7 +92,13 @@ interface Group {
   cwd: string | undefined
   createdAt: number | undefined
   label: string
-  sessions: SessionSummary[]
+  sessions: GroupSession[]
+}
+
+/** Session ordered next to its visible fork parent, with a renderer indentation depth. */
+interface GroupSession {
+  summary: SessionSummary
+  depth: number
 }
 
 /**
@@ -132,7 +140,33 @@ function sessionTitle(session: SessionSummary): string {
   return session.blank ? 'New Session' : session.displayTitle
 }
 
-/** Build one group without projecting session lineage into presentation. */
+/** Keep a group-local fork child adjacent to its parent without dropping orphaned or cyclic sessions. */
+function orderLineage(sessions: readonly SessionSummary[]): GroupSession[] {
+  const byId = new Map(sessions.map(session => [session.id, session]))
+  const children = new Map<SessionId, SessionSummary[]>()
+  const roots: SessionSummary[] = []
+  for (const session of sessions) {
+    if (session.parentId !== undefined && byId.has(session.parentId)) {
+      const siblings = children.get(session.parentId) ?? []
+      siblings.push(session)
+      children.set(session.parentId, siblings)
+    } else roots.push(session)
+  }
+  const ordered: GroupSession[] = []
+  const visited = new Set<SessionId>()
+  const append = (session: SessionSummary, depth: number): void => {
+    if (visited.has(session.id)) return
+    visited.add(session.id)
+    ordered.push({ summary: session, depth })
+    for (const child of children.get(session.id) ?? []) append(child, depth + 1)
+  }
+  for (const root of roots) append(root, 0)
+  // A cycle has no root. Keep every member reachable as a visible root.
+  for (const session of sessions) append(session, 0)
+  return ordered
+}
+
+/** Build one group with project-local fork lineage in presentation order. */
 function buildGroup(
   key: string,
   workspaceId: WorkspaceId | undefined,
@@ -146,7 +180,7 @@ function buildGroup(
   // Real Workspace order comes from sessionIds. Ungrouped falls back to
   // recency until the browser supplies its persisted local order.
   if (order === 'recency') sessions.sort(byRecency)
-  return { key, workspaceId, cwd, createdAt, label, sessions }
+  return { key, workspaceId, cwd, createdAt, label, sessions: orderLineage(sessions) }
 }
 
 /** Apply a stored Ungrouped order and append newly loose Sessions by recency. */
@@ -214,7 +248,7 @@ function groupByWorkspace(
 }
 
 function sessionNode(
-  s: SessionSummary,
+  { summary: s, depth }: GroupSession,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
 ): SessionNode {
   return {
@@ -225,6 +259,7 @@ function sessionNode(
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,
     updatedAt: s.updatedAt,
+    lineageDepth: depth,
     ...(s.pendingInteraction === undefined ? {} : { pendingInteraction: s.pendingInteraction }),
   }
 }
@@ -299,7 +334,7 @@ export function deriveFlat(
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants))
+  return rows.map(summary => sessionNode({ summary, depth: 0 }, descendants))
 }
 
 /** Relative-time bucket of a session row's trailing label. */
