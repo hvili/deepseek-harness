@@ -61,12 +61,9 @@ export interface IConversation {
 
 /** Create one browser-only draft descriptor; only its id enters input state. */
 function browserDraftAttachment(file: File): ComposerAttachment {
-  return {
-    kind: 'image',
-    id: crypto.randomUUID() as DraftAttachmentId,
-    previewUrl: URL.createObjectURL(file),
-    file,
-  }
+  const id = crypto.randomUUID() as DraftAttachmentId
+  if (isImageMediaType(file.type)) return { kind: 'image', id, previewUrl: URL.createObjectURL(file), file }
+  return { kind: 'file', id, file }
 }
 
 interface ImageUrlEntry {
@@ -153,7 +150,7 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
+    const uploaded = await this.serializeAttachments(attachments.map(attachment => attachment.file))
     const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode, signal)
     if (!result.ok) return { kind: 'error' }
@@ -162,16 +159,15 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Create runtime-only draft images and their object URLs.
-   * @param files - browser files to register after MIME validation.
+   * Create runtime-only draft attachments and image object URLs where applicable.
+   * @param files - browser files to register for host-side admission.
    * @returns ordered draft descriptors.
    */
   createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
-    for (const file of files) imageMediaType(file.type)
     return files.map((file) => {
       const attachment = browserDraftAttachment(file)
       this.draftAttachments.set(attachment.id, attachment)
-      this.createdImageUrls.add(attachment.previewUrl)
+      if (attachment.kind === 'image') this.createdImageUrls.add(attachment.previewUrl)
       return attachment
     })
   }
@@ -202,6 +198,9 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.serializeDraftImages: one or more draft images are no longer available')
     }
+    if (attachments.some(attachment => attachment.kind !== 'image')) {
+      throw new Error('generic file attachments are not supported by slash commands')
+    }
     return Promise.all(attachments.map(attachment => this.encodeImage(attachment.file)))
   }
 
@@ -213,8 +212,10 @@ export class ConversationController extends Service implements IConversation {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     this.draftAttachments.delete(id)
-    this.createdImageUrls.delete(attachment.previewUrl)
-    revokePreview(attachment.previewUrl)
+    if (attachment.kind === 'image') {
+      this.createdImageUrls.delete(attachment.previewUrl)
+      revokePreview(attachment.previewUrl)
+    }
   }
 
   /**
@@ -333,8 +334,16 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /** Convert browser files to canonical base64 prompt parts. */
-  private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
+  private serializeAttachments(files: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
+    return Promise.all(files.map(async (file) => {
+      if (isImageMediaType(file.type)) return { type: 'image' as const, ...await this.encodeImage(file) }
+      return {
+        type: 'file' as const,
+        mediaType: file.type || 'application/octet-stream',
+        data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+        ...(file.name === '' ? {} : { name: file.name }),
+      }
+    }))
   }
 
   /** Canonical base64 wire form of one browser image file. */
@@ -357,6 +366,11 @@ function imageMediaType(value: string): ImageMediaType {
     default:
       throw new UnsupportedImageMediaTypeError(value)
   }
+}
+
+/** True for media types admitted by the image-specific browser path. */
+function isImageMediaType(value: string): value is ImageMediaType {
+  return value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif'
 }
 
 function bytesToBase64(data: Uint8Array): string {

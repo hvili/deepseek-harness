@@ -11,14 +11,14 @@ import css from './ComposerAttachments.module.css'
 
 /** Rail item retaining its browser-owned attachment for callbacks. */
 interface ComposerRailItem extends AttachmentRailItem {
-  attachment: ComposerAttachment
+  attachment: Extract<ComposerAttachment, { kind: 'image' }>
 }
 
 /** Draft-image rail, document drop target, and original-image preview slot entry. */
 export function ComposerAttachments({
   attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, t,
 }: ComposerAttachmentsProps) {
-  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
+  const [preview, setPreview] = useState<Extract<ComposerAttachment, { kind: 'image' }> | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
   const closePreview = useCallback(() => { setPreview(null) }, [])
@@ -78,13 +78,14 @@ export function ComposerAttachments({
     }
   }, [canAcceptDrop, onAddImages])
 
-  const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
+  const railItems = useMemo<ComposerRailItem[]>(() => attachments.filter((attachment): attachment is Extract<ComposerAttachment, { kind: 'image' }> => attachment.kind === 'image').map(attachment => ({
     id: attachment.id,
     previewUrl: attachment.previewUrl,
     alt: attachment.file.name || t('image.pending'),
     removeLabel: t('image.remove', { name: attachment.file.name }),
     attachment,
   })), [attachments, t])
+  const files = useMemo(() => attachments.filter((attachment): attachment is Extract<ComposerAttachment, { kind: 'file' }> => attachment.kind === 'file'), [attachments])
 
   return (
     <>
@@ -102,6 +103,16 @@ export function ComposerAttachments({
             onOpen={(item) => { setPreview(item.attachment) }}
             onRemove={(item) => { onRemoveImage(item.attachment.id) }}
           />
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className={css.files} aria-label={t('file.attachments')}>
+          {files.map(attachment => (
+            <div key={attachment.id} className={css.file}>
+              <span>{attachment.file.name || t('file.unnamed')}</span>
+              <button type="button" aria-label={t('input.removeFile', { name: attachment.file.name })} onClick={() => { onRemoveImage(attachment.id) }}>×</button>
+            </div>
+          ))}
         </div>
       )}
       {preview !== null && (

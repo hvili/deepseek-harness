@@ -1,6 +1,7 @@
 /** Conversation slot declarations and their composed component props. */
 import type { ReactNode, RefObject } from 'react'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileExtraction } from '@deepseek-ai/dsh-llm/types'
 import type {
   InjectFace, MaybeSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
   SlotHookFactory, SnapshotSelectorHook,
@@ -23,12 +24,22 @@ import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
-export interface ComposerAttachment {
+export interface ComposerImageAttachment {
   kind: 'image'
   id: DraftAttachmentId
   file: File
   previewUrl: string
 }
+
+/** Browser-owned generic file that has not crossed the durable host boundary. */
+export interface ComposerFileAttachment {
+  kind: 'file'
+  id: DraftAttachmentId
+  file: File
+}
+
+/** Browser-owned draft material, retained only until host admission succeeds. */
+export type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment
 
 /** Input state handed to the optional attachment presentation plugin. */
 export interface ComposerAttachmentsOwnerProps {
@@ -56,6 +67,17 @@ export interface MessageImagesOwnerProps {
 
 /** Slot-backed renderer used by chat nodes without importing an attachment implementation. */
 export type RenderMessageImages = (owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode
+
+/** Historical generic-file group handed to the optional attachment presentation plugin. */
+export interface MessageFilesOwnerProps {
+  /** Durable file blocks in source order. */
+  files: readonly { readonly attachment: FileAttachmentRef; readonly preview?: string; readonly extraction?: FileExtraction }[]
+  /** Message-side alignment. */
+  align: 'start' | 'end'
+}
+
+/** Slot-backed renderer used by chat nodes without importing a file-card implementation. */
+export type RenderMessageFiles = (owner: MessageFilesOwnerProps) => ReactNode
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -112,6 +134,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     }
     /** Optional renderer for one consecutive group of durable message images. */
     'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
+    /** Optional renderer for durable file references and their extraction status. */
+    'conversation.message.files': { kind: 'single'; scope: 'session'; owner: MessageFilesOwnerProps }
     /**
      * The chat view's per-command row hole: keyed dispatch on the command
      * name (`command/run.name`; a run-less cross-window node has none and
@@ -403,6 +427,8 @@ export interface ChatNodeOwnerProps {
   forkAt: (seq: number) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
+  /** Render historical generic files through the attachment slot. */
+  renderMessageFiles?: RenderMessageFiles
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 
@@ -763,7 +789,7 @@ export interface ChatViewInjected {
 /** Full chat-view component props: runtime & its Tool/command/tail render shares & store & injected & locale seat. */
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
-  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.message.files'>
   & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
 
 /** Full props of the attachment plugin's composer entry. */
@@ -772,6 +798,9 @@ export type ComposerAttachmentsProps =
 
 /** Full props of the attachment plugin's message-gallery entry. */
 export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & PropsLocale<'conversation'>
+
+/** Full props of the attachment plugin's historical file-card entry. */
+export type MessageFilesProps = PropsRuntime<'conversation.message.files'> & PropsLocale<'conversation'>
 
 /**
  * Injected share of the details slot: the panel is otherwise a pure reader of

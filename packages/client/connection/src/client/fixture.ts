@@ -20,7 +20,7 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   SessionEvent,
   SessionId,
@@ -2511,6 +2511,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          if (block.type === 'file') {
+            const attachment: FileAttachmentRef = {
+              kind: 'file',
+              attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
+              mediaType: block.mediaType,
+              bytes: Math.max(1, Math.floor(block.data.length * 3 / 4)),
+              ...block.name === undefined ? {} : { name: block.name },
+            }
+            return {
+              type: 'file', attachment,
+              preview: `[Attached file: ${attachment.name ?? 'unnamed file'} (${attachment.mediaType})]`,
+              extraction: { status: 'failed', code: 'UNSUPPORTED_FILE_TYPE', message: 'Fixture does not extract files.' },
+            }
+          }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,
