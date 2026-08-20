@@ -81,7 +81,21 @@ export interface FileBlock {
   attachment: FileAttachmentRef
   /** Bounded parser preview for adapters that only accept text. */
   preview?: string
+  /** Explainable result of the host-side intake attempt, retained with the reference. */
+  extraction?: FileExtraction
 }
+
+/** Durable status of bounded text extraction for one file attachment. */
+export type FileExtraction =
+  | { status: 'ready'; extractedChars: number; truncated: boolean }
+  | { status: 'failed'; code: FileExtractionFailureCode; message: string }
+
+/** Stable reasons that preserve an intake failure across session restoration. */
+export type FileExtractionFailureCode =
+  | 'PDF_TEXT_EXTRACTION_UNAVAILABLE'
+  | 'UNSUPPORTED_FILE_TYPE'
+  | 'MALFORMED_OFFICE_DOCUMENT'
+  | 'INVALID_TEXT_ENCODING'
 
 /** A tool invocation requested by the model. */
 export interface ToolCallBlock {

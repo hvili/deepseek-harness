@@ -271,10 +271,11 @@ describe('Web session model selection', () => {
 
     expect(result.result.ok).toBe(true)
     expect(saveFile).toHaveBeenCalledWith({ data: Uint8Array.of(1, 2), mediaType: 'application/pdf', name: 'brief.pdf' })
-    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toEqual([
+    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toMatchObject([
       {
         type: 'file',
         attachment: { kind: 'file', attachmentId: 'file-1', mediaType: 'application/pdf', bytes: 2, name: 'brief.pdf' },
+        extraction: { status: 'failed', code: 'PDF_TEXT_EXTRACTION_UNAVAILABLE' },
       },
       { type: 'text', text: 'summarize this' },
     ])

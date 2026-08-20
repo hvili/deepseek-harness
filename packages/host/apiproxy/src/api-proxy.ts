@@ -51,6 +51,7 @@ import {
   type SessionLogExportReady,
   type SessionLogCompressionLevel,
 } from './session-export.ts'
+import { intakeFileText } from './file-intake.ts'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -227,7 +228,8 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
         mediaType: item.part.mediaType,
         ...item.part.name === undefined ? {} : { name: item.part.name },
       })
-      blocks.push({ type: 'file', attachment })
+      const intake = intakeFileText(attachment, item.data)
+      blocks.push({ type: 'file', attachment, ...intake })
       continue
     }
     const attachment = refs[imageIndex++]
