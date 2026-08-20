@@ -236,6 +236,30 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().archivedSessionIds
   }
 
+  /** Registry-global durable favorites in user-selected order. */
+  get favoriteSessionIds(): readonly SessionId[] {
+    return this.requireState().favoriteSessionIds
+  }
+
+  /** Add one existing session to the durable favorites set. */
+  favoriteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (this.requireState().favoriteSessionIds.includes(sessionId)) return
+      if (!(await this.sessionKnown(sessionId))) throw new WorkspaceUnknownSessionError(sessionId)
+      const state = this.requireState()
+      await this.setState({ ...state, favoriteSessionIds: [...state.favoriteSessionIds, sessionId] })
+    })
+  }
+
+  /** Remove one session from the durable favorites set. */
+  unfavoriteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.favoriteSessionIds.includes(sessionId)) return
+      await this.setState({ ...state, favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId) })
+    })
+  }
+
   /**
    * Whether this process has permanently deleted the session's durable record.
    * @param sessionId - The session identity to check.
@@ -276,6 +300,7 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
       })
     })
   }
@@ -305,6 +330,7 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
       })
       return true
     })
@@ -386,7 +412,7 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
-        archivedSessionIds: state.archivedSessionIds,
+        archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -418,7 +444,7 @@ export class WorkspaceRegistry extends Service {
     const nextState = {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
-      archivedSessionIds: state.archivedSessionIds,
+      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -475,7 +501,7 @@ export class WorkspaceRegistry extends Service {
     await this.setState({
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
-      archivedSessionIds: state.archivedSessionIds,
+      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
     })
   }
 
@@ -558,9 +584,15 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false, workspaceIds,
+        archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true, workspaceIds,
+      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {

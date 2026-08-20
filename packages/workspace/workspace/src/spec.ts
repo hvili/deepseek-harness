@@ -42,7 +42,8 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
 /**
  * Durable registry state. `initialized` distinguishes a valid empty registry
  * from one that still needs the header-only history bootstrap;
- * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
+ * `workspaceIds` is the authoritative display order. `archivedSessionIds` and
+ * `favoriteSessionIds` are
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
@@ -52,6 +53,7 @@ export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(SessionId)).default([]),
+  favoriteSessionIds: z.array(z.string().transform(SessionId)).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -69,7 +71,7 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], favoriteSessionIds: [] },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })
