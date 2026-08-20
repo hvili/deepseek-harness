@@ -14,6 +14,8 @@ The attachment seam now exposes a `FileAttachmentRef` with a `kind: 'file'` disc
 
 PDF and Office intake can now retain one immutable source object before any parser runs. Parser progress, extracted preview, and prompt references can attach to the durable id instead of retaining browser-local bytes. This change deliberately does not claim parsing or session-reference integration is complete.
 
+The shared message model now also has a `file` content block. It persists the file reference plus an optional bounded parser preview, never raw bytes or a host path; provider adapters that do not understand it retain their existing unknown-block fallback.
+
 ## Verification
 
 `pnpm exec vitest run packages/attachment/attachment/tests packages/attachment/attachment-local/tests` passed: 32 tests passed, 1 skipped. `pnpm exec tsc -b tsconfig.host.json --pretty false` passed.

@@ -5,7 +5,7 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CallId, ProviderRequestId, ReasoningEffortId } from './brand.ts'
 import type { Message } from './message.ts'
 
@@ -74,6 +74,15 @@ export interface ImageBlock {
   attachment: ImageAttachmentRef
 }
 
+/** A durable material source whose extracted text is supplied by attachment intake. */
+export interface FileBlock {
+  type: 'file'
+  /** Immutable source object, retained across session recovery and forks. */
+  attachment: FileAttachmentRef
+  /** Bounded parser preview for adapters that only accept text. */
+  preview?: string
+}
+
 /** A tool invocation requested by the model. */
 export interface ToolCallBlock {
   type: 'tool-call'
@@ -100,6 +109,7 @@ export interface ContentBlockMap {
   'text': TextBlock
   'reasoning': ReasoningBlock
   'image': ImageBlock
+  'file': FileBlock
   'tool-call': ToolCallBlock
   'tool-result': ToolResultBlock
 }

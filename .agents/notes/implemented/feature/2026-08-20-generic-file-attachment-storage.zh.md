@@ -14,6 +14,8 @@ Status: implemented
 
 PDF 与 Office 输入现在可以在任意解析开始前保留一个不可变源对象。解析进度、抽取预览和提示词引用可绑定到这个持久 id，而不再保留浏览器本地字节。本变更刻意不宣称解析或会话引用集成已经完成。
 
+共享消息模型现在也具有 `file` 内容块。它持久化文件引用和可选的受限解析预览，绝不保存原始字节或主机路径；尚不了解该块的 provider adapter 仍使用既有未知块降级策略。
+
 ## 验证
 
 `pnpm exec vitest run packages/attachment/attachment/tests packages/attachment/attachment-local/tests` 通过：32 个测试通过、1 个跳过。`pnpm exec tsc -b tsconfig.host.json --pretty false` 通过。

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-generic-file-attachment-storage.md
-2026-08-20-generic-file-attachment-storage.md: 8d2946331cf4ac615b6df55e8137d3e1dc6ec9fc
-2026-08-20-generic-file-attachment-storage.zh.md: 74ebbf04a1166ff37a0e39c03259e10b22015c8d
+2026-08-20-generic-file-attachment-storage.md: 40473adb59ca0679eedd4e3e1dbadcc2e1694ca7
+2026-08-20-generic-file-attachment-storage.zh.md: 2a3a178cac77a7c49cd0381fb392df50c4f88537

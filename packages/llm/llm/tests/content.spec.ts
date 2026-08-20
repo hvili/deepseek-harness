@@ -18,6 +18,16 @@ function image(bytes: number): ContentBlock {
   }
 }
 
+it('models a durable file source without embedding host paths or raw bytes', () => {
+  const block = {
+    type: 'file',
+    attachment: { kind: 'file', attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'application/pdf', bytes: 42, name: 'brief.pdf' },
+    preview: 'Extracted preview',
+  } satisfies ContentBlock
+  expect(block.attachment.attachmentId).not.toContain('/')
+  expect(block.preview).toBe('Extracted preview')
+})
+
 describe('offloadRequestImages', () => {
   it('preserves the original request when its base64 payload fits exactly', () => {
     const messages = [createUserMessage({ content: [image(3), image(3)], source })]
