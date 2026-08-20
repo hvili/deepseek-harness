@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
-import { readImageFile, saveImageFile } from '../src/store.ts'
+import { readFileAttachmentFile, readImageFile, saveFileAttachmentFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
@@ -233,5 +233,22 @@ describe('local attachment store', () => {
 
     await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+  })
+
+  it('persists generic material files with the same opaque identity and integrity checks', async () => {
+    const storageRoot = await root()
+    const data = Uint8Array.from(Buffer.from('%PDF-1.7\nmaterial', 'utf8'))
+    const ref = await saveFileAttachmentFile(storageRoot, {
+      data, mediaType: 'application/pdf', name: 'C:\\private\\brief.pdf',
+    })
+    expect(ref).toMatchObject({ kind: 'file', mediaType: 'application/pdf', bytes: data.byteLength, name: 'brief.pdf' })
+    expect(String(ref.attachmentId)).toMatch(/^sha256:[a-f0-9]{64}$/)
+    await expect(readFileAttachmentFile(storageRoot, ref)).resolves.toEqual({ ref, data })
+    await expect(saveFileAttachmentFile(storageRoot, { data: new Uint8Array(), mediaType: 'application/pdf' }))
+      .rejects.toMatchObject({ code: 'INVALID_FILE' })
+    await expect(saveFileAttachmentFile(storageRoot, { data, mediaType: 'application/\u0000pdf' }))
+      .rejects.toMatchObject({ code: 'INVALID_MEDIA_TYPE' })
+    await expect(readFileAttachmentFile(storageRoot, { ...ref, bytes: ref.bytes + 1 }))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
   })
 })

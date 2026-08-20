@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import LocalAttachmentStore, {
   DEFAULT_MAX_IMAGE_BYTES,
+  DEFAULT_MAX_FILE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -16,6 +17,7 @@ describe('local attachment service', () => {
   it('resolves every omitted admission limit explicitly', () => {
     const service = new LocalAttachmentStore(new Context(), {})
     expect(DEFAULT_MAX_IMAGE_BYTES).toBe(3.5 * 1024 * 1024)
+    expect(service.maxFileBytes).toBe(DEFAULT_MAX_FILE_BYTES)
     expect(service.imageLimits).toEqual({
       maxImageBytes: DEFAULT_MAX_IMAGE_BYTES,
       maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -36,6 +38,20 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('enforces generic file limits through the service boundary', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-file-attachment-service-'))
+    try {
+      const data = Uint8Array.from(Buffer.from('%PDF-1.7', 'utf8'))
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxFileBytes: data.byteLength })
+      const ref = await service.saveFile({ data, mediaType: 'application/pdf', name: 'brief.pdf' })
+      await expect(service.readFile(ref)).resolves.toEqual({ ref, data })
+      await expect(service.saveFile({ data: Uint8Array.of(...data, 0), mediaType: 'application/pdf' }))
+        .rejects.toMatchObject({ code: 'FILE_TOO_LARGE' })
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }

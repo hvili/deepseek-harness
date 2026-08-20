@@ -11,7 +11,10 @@ import {
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  FileAttachmentRef,
   SaveImageAttachment,
+  SaveFileAttachment,
+  StoredFileAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { detectImage, probeImage } from './image.ts'
@@ -41,6 +44,19 @@ function ensureReference(ref: ImageAttachmentRef): string {
   const match = ID_PATTERN.exec(String(ref.attachmentId))
   if (match?.[1] === undefined) throw new AttachmentError('Attachment reference is invalid.', 'INVALID_ATTACHMENT_REF')
   return match[1]
+}
+
+function ensureFileReference(ref: FileAttachmentRef): string {
+  const match = ID_PATTERN.exec(String(ref.attachmentId))
+  if (ref.kind !== 'file' || match?.[1] === undefined || !mediaType(ref.mediaType)) {
+    throw new AttachmentError('File attachment reference is invalid.', 'INVALID_ATTACHMENT_REF')
+  }
+  return match[1]
+}
+
+/** MIME syntax is retained for parser routing; it is never trusted as a path. */
+function mediaType(value: string): boolean {
+  return /^[!#$&^_.+\-0-9A-Za-z]+\/[!#$&^_.+\-0-9A-Za-z]+(?:\s*;\s*[!#$&^_.+\-0-9A-Za-z]+=(?:[!#$&^_.+\-0-9A-Za-z]+|"[^"]*"))*$/.test(value)
 }
 
 async function inspectMetadata(
@@ -226,6 +242,76 @@ export async function readImageFile(
   if (metadata.mediaType !== ref.mediaType || data.byteLength !== ref.bytes
     || metadata.width !== ref.width || metadata.height !== ref.height) {
     throw new AttachmentError('Stored attachment metadata does not match its reference.', 'ATTACHMENT_CORRUPT')
+  }
+  return { ref, data }
+}
+
+/**
+ * Persist immutable generic file bytes under the same private content-addressed
+ * object tree as images. Parsing is intentionally separate: this boundary only
+ * establishes durable identity, MIME routing metadata, and byte integrity.
+ */
+export async function saveFileAttachmentFile(root: string, input: SaveFileAttachment): Promise<FileAttachmentRef> {
+  if (input.data.byteLength === 0) throw new AttachmentError('File is empty.', 'INVALID_FILE')
+  if (!mediaType(input.mediaType)) throw new AttachmentError('File media type is invalid.', 'INVALID_MEDIA_TYPE')
+  const sha256 = digest(input.data)
+  const bucket = join(root, 'objects', sha256.slice(0, 2))
+  const staging = join(root, 'tmp')
+  const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
+  await ensureDurableDirectory(bucket, boundary)
+  await ensureDurableDirectory(staging, boundary)
+  const temporary = join(staging, randomUUID())
+  const target = objectPath(root, sha256)
+  let handle
+  try {
+    handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
+    await handle.writeFile(input.data)
+    await handle.sync()
+    await handle.close()
+    handle = undefined
+    try {
+      await link(temporary, target)
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+      if (digest(new Uint8Array(await readFile(target))) !== sha256) {
+        throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
+      }
+    }
+    await syncDirectory(bucket)
+    await syncDirectory(join(root, 'objects'))
+    await unlink(temporary)
+  } catch (error) {
+    if (handle !== undefined) await handle.close().catch(() => {})
+    await unlink(temporary).catch(() => {})
+    if (error instanceof AttachmentError) throw error
+    throw new AttachmentError('Unable to persist file attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
+  }
+  const name = displayName(input.name)
+  return {
+    kind: 'file', attachmentId: AttachmentId(`sha256:${sha256}`), mediaType: input.mediaType,
+    bytes: input.data.byteLength, ...(name === undefined ? {} : { name }),
+  }
+}
+
+/** Read a generic file and verify its immutable content-addressed identity. */
+export async function readFileAttachmentFile(
+  root: string, ref: FileAttachmentRef, signal?: AbortSignal,
+): Promise<StoredFileAttachment> {
+  signal?.throwIfAborted()
+  const sha256 = ensureFileReference(ref)
+  let data: Uint8Array
+  try {
+    data = new Uint8Array(await readFile(objectPath(root, sha256), { signal }))
+  } catch (error) {
+    signal?.throwIfAborted()
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      throw new AttachmentError('Attachment object is missing.', 'ATTACHMENT_NOT_FOUND')
+    }
+    throw new AttachmentError('Unable to read file attachment.', 'ATTACHMENT_READ_FAILED', { cause: error })
+  }
+  signal?.throwIfAborted()
+  if (digest(data) !== sha256 || data.byteLength !== ref.bytes) {
+    throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
   }
   return { ref, data }
 }

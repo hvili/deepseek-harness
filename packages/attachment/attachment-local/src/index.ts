@@ -3,12 +3,12 @@
 import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, SaveFileAttachment, SaveImageAttachment, StoredFileAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+import { readFileAttachmentFile, readImageFile, saveFileAttachmentFile, saveImageFile, validateImageFile } from './store.ts'
 
-export { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export { readFileAttachmentFile, readImageFile, saveFileAttachmentFile, saveImageFile, validateImageFile } from './store.ts'
 
 /** Default maximum encoded bytes for one image. */
 export const DEFAULT_MAX_IMAGE_BYTES = 3.5 * 1024 * 1024
@@ -26,6 +26,8 @@ export const DEFAULT_MAX_IMAGE_PIXELS = 40_000_000
  * to keep the durable history streamable.
  */
 export const DEFAULT_MAX_IMAGE_DIMENSION = 2000
+/** Default maximum encoded bytes for one generic material file. */
+export const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
 
 /** Local attachment backend configuration. */
 export interface Config {
@@ -41,6 +43,8 @@ export interface Config {
   maxImagePixels?: number
   /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
   maxImageDimension?: number
+  /** Maximum encoded bytes accepted for one generic material file. */
+  maxFileBytes?: number
 }
 
 /** Persistent content-addressed local attachment store. */
@@ -52,11 +56,13 @@ export class LocalAttachmentStore extends AttachmentStore {
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
     maxImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_PIXELS),
     maxImageDimension: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_DIMENSION),
+    maxFileBytes: z.number().step(1).min(1).default(DEFAULT_MAX_FILE_BYTES),
   })
 
   /** Absolute versioned storage root. */
   readonly root: string
   readonly imageLimits: ImageAttachmentLimits
+  readonly maxFileBytes: number
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -69,6 +75,7 @@ export class LocalAttachmentStore extends AttachmentStore {
       maxImageDimension: config.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const),
     })
+    this.maxFileBytes = config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
@@ -81,6 +88,17 @@ export class LocalAttachmentStore extends AttachmentStore {
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     return readImageFile(this.root, ref, signal)
+  }
+
+  override async saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef> {
+    if (input.data.byteLength > this.maxFileBytes) {
+      throw new AttachmentError('File exceeds the configured byte limit.', 'FILE_TOO_LARGE')
+    }
+    return saveFileAttachmentFile(this.root, input)
+  }
+
+  override async readFile(ref: FileAttachmentRef, signal?: AbortSignal): Promise<StoredFileAttachment> {
+    return readFileAttachmentFile(this.root, ref, signal)
   }
 }
 

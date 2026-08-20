@@ -1,0 +1,19 @@
+# Agent Note: Add durable generic file attachment storage
+
+Status: implemented
+
+English | [中文](2026-08-20-generic-file-attachment-storage.zh.md)
+
+## Decision
+
+The attachment seam now exposes a `FileAttachmentRef` with a `kind: 'file'` discriminator, MIME routing metadata, byte count, sanitized display name, and the same opaque content-addressed id used by image objects. `AttachmentStore.saveFile` and `readFile` have explicit unsupported defaults so older test and third-party stores remain source-compatible rather than accidentally accepting files.
+
+`LocalAttachmentStore` overrides both methods. Generic bytes are published through the existing private staging, exclusive hard-link, directory-sync, SHA-256 verification path. The local service applies a separate 100 MiB default file limit. It stores no host path or browser object URL.
+
+## Consequences
+
+PDF and Office intake can now retain one immutable source object before any parser runs. Parser progress, extracted preview, and prompt references can attach to the durable id instead of retaining browser-local bytes. This change deliberately does not claim parsing or session-reference integration is complete.
+
+## Verification
+
+`pnpm exec vitest run packages/attachment/attachment/tests packages/attachment/attachment-local/tests` passed: 32 tests passed, 1 skipped. `pnpm exec tsc -b tsconfig.host.json --pretty false` passed.

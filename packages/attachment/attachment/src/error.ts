@@ -23,6 +23,10 @@ export type AttachmentErrorCode =
   | 'ATTACHMENT_WRITE_FAILED'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_READ_FAILED'
+  | 'INVALID_FILE'
+  | 'INVALID_MEDIA_TYPE'
+  | 'FILE_TOO_LARGE'
+  | 'UNSUPPORTED_FILE_ATTACHMENT'
 
 /** Runtime membership for structurally compatible errors crossing package boundaries. */
 const IMAGE_ADMISSION_ERROR_CODE_SET: ReadonlySet<string> = new Set(IMAGE_ADMISSION_ERROR_CODES)

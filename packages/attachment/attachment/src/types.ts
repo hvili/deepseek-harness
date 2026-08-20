@@ -58,3 +58,32 @@ export interface StoredImageAttachment {
   ref: ImageAttachmentRef
   data: Uint8Array
 }
+
+/** Durable metadata for one immutable non-image file object. */
+export interface FileAttachmentRef {
+  /** Distinguishes generic files from the legacy image reference shape. */
+  kind: 'file'
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Caller-declared MIME type, syntax-checked before persistence. */
+  mediaType: string
+  /** Exact encoded byte length. */
+  bytes: number
+  /** Optional display name stripped of local path information. */
+  name?: string
+}
+
+/** Request to persist a generic binary material. */
+export interface SaveFileAttachment {
+  data: Uint8Array
+  /** MIME type carried into the durable reference for later parsing policy. */
+  mediaType: string
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Stored generic-file bytes returned after reference and digest verification. */
+export interface StoredFileAttachment {
+  ref: FileAttachmentRef
+  data: Uint8Array
+}

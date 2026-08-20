@@ -5,8 +5,11 @@ import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  FileAttachmentRef,
   SaveImageAttachment,
+  SaveFileAttachment,
   StoredImageAttachment,
+  StoredFileAttachment,
 } from './types.ts'
 
 export { AttachmentId } from './brand.ts'
@@ -19,7 +22,10 @@ export type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageMediaType,
+  FileAttachmentRef,
+  SaveFileAttachment,
   SaveImageAttachment,
+  StoredFileAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -90,6 +96,19 @@ export abstract class AttachmentStore extends Service {
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Persist a generic material attachment. Backends that predate structured
+   * file intake fail explicitly instead of silently treating it as an image.
+   */
+  async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef> {
+    throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
+  }
+
+  /** Read a generic material attachment, preserving cancellation semantics. */
+  async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
+    throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
+  }
 }
 
 export default AttachmentStore
