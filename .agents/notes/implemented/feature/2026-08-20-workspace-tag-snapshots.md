@@ -32,4 +32,4 @@ Every connected client converges on one durable tag snapshot after a mutation, h
 
 ## Verification
 
-The workspace API test covers normalized persistence, full-list rebaselining, a host frame, and unknown-session rejection. The runtime test covers unary installation and a newer host-frame replacement. The fetch carrier and compiler cover every typed route and fixture implementation.
+The workspace API test covers normalized persistence, full-list rebaselining, a host frame, and unknown-session rejection. The runtime test covers unary installation and a newer host-frame replacement. The fetch carrier and compiler cover every typed route and fixture implementation. The built Web workspace-management browser suite drives the row menu to favorite and tag a session, then proves the favorite marker, tags, and tag-only search survive a reload.

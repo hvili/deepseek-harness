@@ -630,6 +630,57 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('persists a session favorite and tags through the row menu, reload, and tag search', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-favorite-tags'))
+    const sessionRow = await seededSessionRow()
+    const rowTitle = await sessionRow.locator('[class*="title"]').innerText()
+
+    // Both controls must use the row's real menu actions rather than direct
+    // registry setup: this proves their RPC replies and global-state frames
+    // redraw the row immediately.
+    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
+    await page.getByRole('menuitem', { name: 'Favorite session' }).click()
+    await expect.poll(
+      () => scaffold.ctx.workspaceRegistry.favoriteSessionIds,
+      { timeout: 10_000 },
+    ).toEqual([SessionId(SEED_ID)])
+    expect(await sessionRow.getByLabel('Favorite').isVisible()).toBe(true)
+
+    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
+    await page.getByRole('menuitem', { name: 'Edit tags' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Edit session tags' })
+    await dialog.getByLabel('Tags (comma-separated)').fill('cross-project, durable')
+    await dialog.getByRole('button', { name: 'Save tags' }).click()
+    await expect.poll(
+      () => scaffold.ctx.workspaceRegistry.sessionTags(SessionId(SEED_ID)),
+      { timeout: 10_000 },
+    ).toEqual(['cross-project', 'durable'])
+    expect(await sessionRow.getByText('cross-project', { exact: true }).isVisible()).toBe(true)
+
+    // A full reload must rebuild both projections from workspace.list, not
+    // leave the row dependent on optimistic component-local state.
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    const restoredRow = await seededSessionRow()
+    expect(await restoredRow.getByLabel('Favorite').isVisible()).toBe(true)
+    expect(await restoredRow.getByText('durable', { exact: true }).isVisible()).toBe(true)
+
+    // Local metadata search spans session tags even where host content search
+    // has no matching transcript text.
+    await page.getByRole('button', { name: 'Search sessions' }).click()
+    await page.getByPlaceholder('Search sessions...').fill('cross-project')
+    const results = page.getByRole('tree', { name: 'Search results' })
+    expect(await results.getByText(rowTitle, { exact: true }).isVisible()).toBe(true)
+    // Search deliberately hides header actions while expanded. Restore the
+    // neutral workspace-browser state for the independently runnable folder
+    // adoption scenario that follows.
+    await page.getByRole('button', { name: 'Clear search' }).click()
+    expect(await page.getByRole('button', { name: 'Add workspace' }).isVisible()).toBe(true)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
   it('opens folders with identical basenames as distinct workspaces', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-duplicate-basename'))
     const firstPath = join(scaffold.workspaceCwd, 'same-basename-a', 'xx')

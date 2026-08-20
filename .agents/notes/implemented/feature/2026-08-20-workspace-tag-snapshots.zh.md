@@ -32,4 +32,4 @@ workspace 侧栏在每个目标标题旁渲染标签。项目和会话操作菜�
 
 ## 验证
 
-workspace API 测试覆盖了规范化持久化、完整 list 重建基线、host frame 与未知会话拒绝。runtime 测试覆盖 unary 安装与较新的 host frame 替换。fetch carrier 和编译器覆盖全部有类型的 route 与 fixture 实现。
+workspace API 测试覆盖了规范化持久化、完整 list 重建基线、host frame 与未知会话拒绝。runtime 测试覆盖 unary 安装与较新的 host frame 替换。fetch carrier 和编译器覆盖全部有类型的 route 与 fixture 实现。构建后的 Web workspace-management 浏览器套件通过行菜单收藏并标记会话，再证明收藏标记、标签与仅标签搜索都能跨刷新保留。
