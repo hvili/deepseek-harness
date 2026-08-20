@@ -82,6 +82,20 @@ const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): b
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
+/** Canonical user-managed labels: trimmed, non-blank, unique, and stable-order. */
+function normalizeTags(tags: readonly string[]): string[] {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const raw of tags) {
+    const tag = raw.trim()
+    if (tag === '' || seen.has(tag)) continue
+    if (tag.length > 64) throw new RangeError('workspace tags must be at most 64 characters')
+    seen.add(tag)
+    normalized.push(tag)
+  }
+  return normalized
+}
+
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
  * one canonical-cwd header index, and completes the one-time history
@@ -260,6 +274,46 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
+  /** Durable tags attached to one registered workspace. */
+  workspaceTags(workspaceId: WorkspaceId): readonly string[] {
+    return this.requireState().workspaceTagsById[workspaceId] ?? []
+  }
+
+  /** Durable tags attached to one known session. */
+  sessionTags(sessionId: SessionId): readonly string[] {
+    return this.requireState().sessionTagsById[sessionId] ?? []
+  }
+
+  /** Replace one registered workspace's tag set with normalized user input. */
+  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (!this.entities.has(workspaceId)) throw new WorkspaceOrderInvalidError(workspaceId)
+      const state = this.requireState()
+      const nextTags = normalizeTags(tags)
+      const previous = state.workspaceTagsById[workspaceId] ?? []
+      if (previous.length === nextTags.length && previous.every((tag, index) => tag === nextTags[index])) return
+      const workspaceTagsById = nextTags.length === 0
+        ? Object.fromEntries(Object.entries(state.workspaceTagsById).filter(([id]) => id !== workspaceId))
+        : { ...state.workspaceTagsById, [workspaceId]: nextTags }
+      await this.setState({ ...state, workspaceTagsById })
+    })
+  }
+
+  /** Replace one known session's tag set with normalized user input. */
+  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (!(await this.sessionKnown(sessionId))) throw new WorkspaceUnknownSessionError(sessionId)
+      const state = this.requireState()
+      const nextTags = normalizeTags(tags)
+      const previous = state.sessionTagsById[sessionId] ?? []
+      if (previous.length === nextTags.length && previous.every((tag, index) => tag === nextTags[index])) return
+      const sessionTagsById = nextTags.length === 0
+        ? Object.fromEntries(Object.entries(state.sessionTagsById).filter(([id]) => id !== sessionId))
+        : { ...state.sessionTagsById, [sessionId]: nextTags }
+      await this.setState({ ...state, sessionTagsById })
+    })
+  }
+
   /**
    * Whether this process has permanently deleted the session's durable record.
    * @param sessionId - The session identity to check.
@@ -330,6 +384,7 @@ export class WorkspaceRegistry extends Service {
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
         favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
+        sessionTagsById: Object.fromEntries(Object.entries(state.sessionTagsById).filter(([id]) => id !== sessionId)),
       })
       return true
     })
@@ -412,6 +467,7 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+        workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -440,10 +496,14 @@ export class WorkspaceRegistry extends Service {
     const entity = this.entities.get(id)
     if (entity === undefined) return false
     const state = this.requireState()
+    const workspaceTagsById = Object.fromEntries(
+      Object.entries(state.workspaceTagsById).filter(([workspaceId]) => workspaceId !== id),
+    )
     const nextState = {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+      workspaceTagsById, sessionTagsById: state.sessionTagsById,
     }
     await this.setState({
       ...nextState,
@@ -501,6 +561,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+      workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
     })
   }
 
@@ -586,11 +647,13 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         initialized: false, workspaceIds,
         archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+        workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
       })
     }
     await this.setState({
       initialized: true, workspaceIds,
       archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
+      workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
     })
   }
 
