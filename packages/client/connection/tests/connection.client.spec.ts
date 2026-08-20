@@ -295,7 +295,7 @@ describe('connection lifecycle', () => {
   it('fails closed into version-mismatch when describe reports a differing schemaVersion', async () => {
     const api = new FakeApiClient()
     api.onDescribe = () => Promise.resolve(ok({
-      version: '0-fake', cwd: '/f', attachedSessions: 0, canOpenPath: true, schemaVersion: 99,
+      version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true, schemaVersion: 99,
     }))
     const states: ConnectionState[] = []
     let mismatch: [number, number] | undefined
@@ -320,7 +320,7 @@ describe('connection lifecycle', () => {
   it('accepts a matching schemaVersion and connects', async () => {
     const api = new FakeApiClient()
     api.onDescribe = () => Promise.resolve(ok({
-      version: '0-fake', cwd: '/f', attachedSessions: 0, canOpenPath: true, schemaVersion: EXPECTED_SCHEMA_VERSION,
+      version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true, schemaVersion: EXPECTED_SCHEMA_VERSION,
     }))
     let connected = 0
     const controller = new ConnectionController(api, { onConnected: () => { connected++ } }, FAST)
