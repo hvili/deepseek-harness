@@ -321,6 +321,7 @@ export interface RelativeTime {
  * @param archivedSessionIds - registry-global archive set (members never match).
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param tags - durable workspace and session tag maps used for local matching.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(
@@ -330,20 +331,29 @@ export function deriveSearchResults(
   archivedSessionIds: readonly SessionId[],
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  tags: {
+    workspaceTagsById: Readonly<Record<string, readonly string[]>>
+    sessionTagsById: Readonly<Record<string, readonly string[]>>
+  } = { workspaceTagsById: {}, sessionTagsById: {} },
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
 
-  const workspaceBySession = new Map<SessionId, string>()
+  const workspaceBySession = new Map<SessionId, { title: string; tags: readonly string[] }>()
   for (const workspace of workspaces) {
     for (const sessionId of workspace.sessionIds) {
-      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.title)
+      if (!workspaceBySession.has(sessionId)) {
+        workspaceBySession.set(sessionId, {
+          title: workspace.title,
+          tags: tags.workspaceTagsById[workspace.workspaceId] ?? [],
+        })
+      }
     }
   }
   const labelOf = (summary: SessionSummary): string =>
-    workspaceBySession.get(summary.id) ?? workspaceLabel(summary.cwd)
+    workspaceBySession.get(summary.id)?.title ?? workspaceLabel(summary.cwd)
   const contentBySession = new Map<SessionId, SessionSearchResultItem>()
   for (const item of content.items) {
     if (!contentBySession.has(item.sessionId)) contentBySession.set(item.sessionId, item)
@@ -358,6 +368,8 @@ export function deriveSearchResults(
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
+      || workspaceBySession.get(summary.id)?.tags.some(tag => tag.toLowerCase().includes(q)) === true
+      || tags.sessionTagsById[summary.id]?.some(tag => tag.toLowerCase().includes(q)) === true
     ) {
       local.push(summary)
     }

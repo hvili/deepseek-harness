@@ -16,6 +16,8 @@ The registry exposes read-only complete tag maps for that projection. The API pr
 
 The workspace sidebar renders each target's tags beside its title. The project and session action menus both open one browser-owned comma-separated editor; submission preserves the raw list for registry normalization, then the returned snapshot updates every visible row.
 
+Sidebar search treats workspace and session tags as local metadata alongside titles and workspace names. Archived sessions remain excluded before any metadata matching.
+
 ## Alternatives considered
 
 **Per-tag incremental frames.** Rejected because a set/remove operation would require merge, deletion, ordering, and reconnect reconciliation rules in every client.

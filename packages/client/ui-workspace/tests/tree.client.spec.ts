@@ -280,6 +280,23 @@ describe('deriveSearchResults archive filtering', () => {
 })
 
 describe('deriveSearchResults', () => {
+  it('matches session and owning workspace tags locally', () => {
+    const projectSession = summary('project-tag', 2, '/projects/a')
+    const sessionTag = summary('session-tag', 1, '/projects/b')
+    const sessions = list(projectSession, sessionTag)
+    const workspaces = [workspace('a', ['project-tag'], 'Alpha'), workspace('b', ['session-tag'], 'Beta')]
+    const projectMatches = deriveSearchResults(
+      sessions, workspaces, 'review', noArchive, { items: [], hasMore: false }, 10,
+      { workspaceTagsById: { a: ['review'] }, sessionTagsById: { 'session-tag': ['todo'] } },
+    )
+    expect(projectMatches.items.map(item => item.id)).toEqual(['project-tag'])
+    const sessionMatches = deriveSearchResults(
+      sessions, workspaces, 'todo', noArchive, { items: [], hasMore: false }, 10,
+      { workspaceTagsById: { a: ['review'] }, sessionTagsById: { 'session-tag': ['todo'] } },
+    )
+    expect(sessionMatches.items.map(item => item.id)).toEqual(['session-tag'])
+  })
+
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
     titleHit.displayTitle = 'Needle title'

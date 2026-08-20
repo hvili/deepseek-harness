@@ -708,6 +708,8 @@ function SearchResults({
   open,
   workspaces,
   archivedSessionIds,
+  workspaceTagsById,
+  sessionTagsById,
   query,
   remote,
   resultLimit,
@@ -715,6 +717,8 @@ function SearchResults({
 }: Pick<SessionTreeProps, 'useSessions' | 'open' | 't'> & {
   workspaces: readonly WorkspaceView[]
   archivedSessionIds: readonly SessionNode['id'][]
+  workspaceTagsById: Readonly<Record<string, readonly string[]>>
+  sessionTagsById: Readonly<Record<string, readonly string[]>>
   query: string
   remote: RemoteSearchState
   resultLimit: number
@@ -724,8 +728,10 @@ function SearchResults({
     ? remote
     : { query, status: 'loading' as const, items: [], hasMore: false }
   const results = useMemo(
-    () => deriveSearchResults(list, workspaces, query, archivedSessionIds, currentRemote, resultLimit),
-    [list, workspaces, query, archivedSessionIds, currentRemote, resultLimit],
+    () => deriveSearchResults(list, workspaces, query, archivedSessionIds, currentRemote, resultLimit, {
+      workspaceTagsById, sessionTagsById,
+    }),
+    [list, workspaces, query, archivedSessionIds, currentRemote, resultLimit, workspaceTagsById, sessionTagsById],
   )
   const pending = currentRemote.status === 'loading'
   const failed = currentRemote.status === 'error'
@@ -1207,6 +1213,8 @@ export function WorkspaceBrowser({
               open={open}
               workspaces={workspaces}
               archivedSessionIds={archivedSessionIds}
+              workspaceTagsById={workspaceTagsById}
+              sessionTagsById={sessionTagsById}
               query={normalizedQuery}
               remote={remoteSearch}
               resultLimit={searchResultLimit}
