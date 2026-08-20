@@ -235,6 +235,8 @@ type SessionTreeProps = Pick<
   setSessionOrder: (accountKey: string, order: string[]) => void
   /** Registry-global archive set (hidden rows). */
   archivedSessionIds: readonly SessionNode['id'][]
+  /** Registry-global favorites set (marked rows). */
+  favoriteSessionIds: readonly SessionNode['id'][]
   /** Host cwd-bound project: its group is marked as the current project. */
   cwdWorkspaceId: WorkspaceId | undefined
   /** Open the browser-owned rename dialog for a real Workspace group. */
@@ -245,20 +247,23 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Toggle a session's durable favorite membership. */
+  onSessionFavorite: (sessionId: SessionNode['id'], favorite: boolean) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, cwdWorkspaceId,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, favoriteSessionIds, cwdWorkspaceId,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionFavorite,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
 }: SessionTreeProps) {
   const list = useSessions(s => s)
   const current = list.current
+  const favorites = new Set(favoriteSessionIds)
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -521,6 +526,8 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    favorite={favorites.has(node.id)}
+                    onFavorite={onSessionFavorite}
                     drag={dragProps}
                     t={t}
                   />
@@ -549,7 +556,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionArchive, onSessionFavorite, archivedSessionIds, favoriteSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -558,7 +565,9 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onSessionFavorite'
   | 'archivedSessionIds'
+  | 'favoriteSessionIds'
   | 'orderBy'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
@@ -567,6 +576,7 @@ function FlatList({
   | 't'
 >) {
   const list = useSessions(s => s)
+  const favorites = new Set(favoriteSessionIds)
   const baseRows = useMemo(
     () => deriveFlat(list, archivedSessionIds),
     [list, archivedSessionIds],
@@ -637,6 +647,8 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              favorite={favorites.has(node.id)}
+              onFavorite={onSessionFavorite}
               flat
               drag={{
                 start: () => {
@@ -758,6 +770,8 @@ export function WorkspaceBrowser({
   deleteWorkspace,
   insertWorkspaceBefore,
   archiveSession,
+  favoriteSession,
+  unfavoriteSession,
   insertSessionBefore,
   createWorkspace,
   searchSessions,
@@ -771,6 +785,7 @@ export function WorkspaceBrowser({
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const favoriteSessionIds = useWorkspaces(state => state.favoriteSessionIds ?? [])
   const cwdWorkspaceId = useWorkspaces(state => state.cwdWorkspaceId)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
@@ -947,6 +962,12 @@ export function WorkspaceBrowser({
   const onSessionArchive = (sessionId: SessionNode['id']) => {
     archiveSession(sessionId).catch((reason: unknown) => {
       console.warn('session archive rejected:', reason)
+    })
+  }
+  const onSessionFavorite = (sessionId: SessionNode['id'], favorite: boolean) => {
+    const request = favorite ? favoriteSession(sessionId) : unfavoriteSession(sessionId)
+    request.catch((reason: unknown) => {
+      console.warn('session favorite rejected:', reason)
     })
   }
 
@@ -1137,7 +1158,9 @@ export function WorkspaceBrowser({
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionFavorite={onSessionFavorite}
                 archivedSessionIds={archivedSessionIds}
+                favoriteSessionIds={favoriteSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
@@ -1151,6 +1174,7 @@ export function WorkspaceBrowser({
                 useSessions={useSessions}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onSessionFavorite={onSessionFavorite}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1160,6 +1184,7 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
+                favoriteSessionIds={favoriteSessionIds}
                 cwdWorkspaceId={cwdWorkspaceId}
                 startSession={startSession}
                 open={open}

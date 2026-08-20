@@ -187,8 +187,8 @@ export class FakeApiClient implements IApiClient {
   // the pre-state `{ items }` shape; a stub carrying either field wins.
   onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{
     items: never[]
-    archivedSessionIds?: never[]
-    favoriteSessionIds?: never[]
+    archivedSessionIds?: SessionId[]
+    favoriteSessionIds?: SessionId[]
   }>> =
     () => Promise.resolve(ok({ items: [] }))
   onWorkspaceCreate: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>> =

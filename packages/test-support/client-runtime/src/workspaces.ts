@@ -228,8 +228,8 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('favoriteSession')
     if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
     await this.update((draft) => {
-      if (!draft.favoriteSessionIds.includes(sessionId)) {
-        draft.favoriteSessionIds = [...draft.favoriteSessionIds, sessionId]
+      if (!(draft.favoriteSessionIds ?? []).includes(sessionId)) {
+        draft.favoriteSessionIds = [...(draft.favoriteSessionIds ?? []), sessionId]
       }
     })
   }
@@ -240,7 +240,7 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('unfavoriteSession')
     if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
     await this.update((draft) => {
-      draft.favoriteSessionIds = draft.favoriteSessionIds.filter(id => id !== sessionId)
+      draft.favoriteSessionIds = (draft.favoriteSessionIds ?? []).filter(id => id !== sessionId)
     })
   }
 
@@ -251,7 +251,7 @@ export class TestWorkspaces implements IWorkspaces {
     const wasArchived = this.list.getSnapshot().archivedSessionIds.includes(sessionId)
     await this.update((draft) => {
       draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
-      draft.favoriteSessionIds = draft.favoriteSessionIds.filter(id => id !== sessionId)
+      draft.favoriteSessionIds = (draft.favoriteSessionIds ?? []).filter(id => id !== sessionId)
     })
     return wasArchived
   }

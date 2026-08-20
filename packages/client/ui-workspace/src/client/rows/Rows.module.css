@@ -216,6 +216,14 @@
   flex: 1;
 }
 
+.favoriteMark {
+  flex: none;
+  margin-right: 4px;
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
 .meta {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -35,7 +35,8 @@ export interface WorkspaceListState {
    * build their own transient Set.
    */
   archivedSessionIds: readonly SessionId[]
-  favoriteSessionIds: readonly SessionId[]
+  /** Optional only for legacy in-memory consumers; runtime snapshots always include it. */
+  favoriteSessionIds?: readonly SessionId[]
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -404,7 +405,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.list.set({
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
-      favoriteSessionIds: workspace.favoriteSessionIds,
+      favoriteSessionIds: workspace.favoriteSessionIds ?? [],
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,

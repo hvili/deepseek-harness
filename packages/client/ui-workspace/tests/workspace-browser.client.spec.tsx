@@ -38,8 +38,12 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const workspaceState = (items: readonly WorkspaceView[], archivedSessionIds: readonly SessionId[] = []): WorkspaceListState => ({
-  items, archivedSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
+const workspaceState = (
+  items: readonly WorkspaceView[],
+  archivedSessionIds: readonly SessionId[] = [],
+  favoriteSessionIds: readonly SessionId[] = [],
+): WorkspaceListState => ({
+  items, archivedSessionIds, favoriteSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
   recentWorkspaceId: items[0]?.workspaceId, cwdWorkspaceId: undefined,
 })
 function hook<T>(snapshot: T) {
@@ -76,6 +80,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    favoriteSession: vi.fn(async () => {}),
+    unfavoriteSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -355,6 +361,32 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     expect(screen.getByText('kept-s')).toBeTruthy()
     expect(screen.queryByText('gone-s')).toBeNull()
+  })
+
+  it('toggles durable favorites from the session menu and marks favorite rows', () => {
+    const favoriteSession = vi.fn(async () => {})
+    const unfavoriteSession = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 1), summary('two', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('one')])),
+      favoriteSession,
+      unfavoriteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByLabelText('已收藏')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '收藏会话' }))
+    expect(favoriteSession).toHaveBeenCalledWith(sid('two'))
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消收藏' }))
+    expect(unfavoriteSession).toHaveBeenCalledWith(sid('one'))
+
+    rerender(b, {
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('two')])),
+    })
+    expect(screen.getByLabelText('已收藏').previousSibling?.textContent).toBe('two')
   })
 
   it('logs and keeps the tree when the archive call rejects', async () => {
