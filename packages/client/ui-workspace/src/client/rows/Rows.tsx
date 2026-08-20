@@ -109,12 +109,14 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, tags = [], drag, home, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
-  actions?: { rename: () => void; delete: () => void } | undefined
+  actions?: { rename: () => void; delete: () => void; editTags: () => void } | undefined
+  /** Durable workspace tags, displayed beside the workspace title. */
+  tags?: readonly string[] | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
@@ -128,6 +130,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
+    { id: 'tags', label: t('menu.editTags') },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
   const ownRow = (
@@ -156,6 +159,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
         <span className={css.titleRow}>
           <span className={css.title}>{label}</span>
           {group.boundToCwd && <span className={css.currentBadge}>{t('group.current')}</span>}
+          {tags.map(tag => <span className={css.tag} key={tag}>{tag}</span>)}
         </span>
       </span>
       <span className={css.rowActions}>
@@ -169,8 +173,9 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
               // Unknown ids leave before the dispatch: a future menu row must
               // not inherit the destructive branch as an else fallback.
               /* v8 ignore next -- workspaceMenuItems carries exactly these two rows today. */
-              if (id !== 'rename' && id !== 'delete') return
+              if (id !== 'rename' && id !== 'delete' && id !== 'tags') return
               if (id === 'rename') actions.rename()
+              else if (id === 'tags') actions.editTags()
               else actions.delete()
             }}
             portal
@@ -365,7 +370,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, favorite = false, onFavorite = () => {}, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onTags,
+  tags = [], favorite = false, onFavorite = () => {}, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -377,6 +383,10 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Open the browser-owned durable tag editor. */
+  onTags?: ((id: SessionNode['id']) => void) | undefined
+  /** Durable tags, displayed in the session title cell. */
+  tags?: readonly string[] | undefined
   /** Durable favorites membership, projected from the workspace runtime. */
   favorite?: boolean | undefined
   /** Change durable favorites membership (row menu action). */
@@ -401,6 +411,7 @@ export function SessionNodeItem({
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
     { id: 'favorite', label: t(favorite ? 'menu.unfavoriteSession' : 'menu.favoriteSession') },
+    { id: 'tags', label: t('menu.editTags') },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -449,6 +460,7 @@ export function SessionNodeItem({
         </span>
       )}
       <span className={css.title}>{title}</span>
+      {tags.map(tag => <span className={css.tag} key={tag}>{tag}</span>)}
       {favorite && <span className={css.favoriteMark} aria-label={t('favorite.aria')}>★</span>}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -466,6 +478,7 @@ export function SessionNodeItem({
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'favorite') onFavorite(node.id, !favorite)
+              if (id === 'tags') onTags?.(node.id)
               if (id === 'archive') onArchive(node.id)
             }}
             portal

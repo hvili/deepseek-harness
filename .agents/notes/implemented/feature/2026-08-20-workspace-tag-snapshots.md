@@ -14,6 +14,8 @@ Workspace and session tags persist in the workspace domain, but a browser client
 
 The registry exposes read-only complete tag maps for that projection. The API proxy copies every array before emitting it. The client workspace manager replaces both maps together, copies incoming arrays, and gives a frame or unary result that arrives during a refresh precedence over that refresh's older baseline.
 
+The workspace sidebar renders each target's tags beside its title. The project and session action menus both open one browser-owned comma-separated editor; submission preserves the raw list for registry normalization, then the returned snapshot updates every visible row.
+
 ## Alternatives considered
 
 **Per-tag incremental frames.** Rejected because a set/remove operation would require merge, deletion, ordering, and reconnect reconciliation rules in every client.
@@ -22,7 +24,7 @@ The registry exposes read-only complete tag maps for that projection. The API pr
 
 ## Consequences
 
-Every connected client converges on one durable tag snapshot after a mutation, host frame, or reconnect. The wire payload repeats small maps, which deliberately trades bytes for simple replacement semantics and recovery from missed frames.
+Every connected client converges on one durable tag snapshot after a mutation, host frame, or reconnect. The wire payload repeats small maps, which deliberately trades bytes for simple replacement semantics and recovery from missed frames. The shared editor keeps tags accessible without adding inline controls to compact sidebar rows.
 
 ## Verification
 

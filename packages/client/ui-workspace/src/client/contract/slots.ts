@@ -133,6 +133,10 @@ export type WorkspaceBrowserInjected = {
   favoriteSession: (sessionId: SessionId) => Promise<void>
   /** Remove a Session from the durable registry-global favorites set. */
   unfavoriteSession: (sessionId: SessionId) => Promise<void>
+  /** Replace a Workspace's durable tag list. */
+  setWorkspaceTags: (workspaceId: WorkspaceId, tags: string[]) => Promise<void>
+  /** Replace a Session's durable tag list. */
+  setSessionTags: (sessionId: SessionId, tags: string[]) => Promise<void>
   /**
    * Reorder a session inside its Workspace account (DOM-insertBefore
    * semantics: omitted anchor appends to the end). The view refreshes from

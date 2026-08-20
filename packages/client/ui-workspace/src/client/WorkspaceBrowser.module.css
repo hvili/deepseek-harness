@@ -470,6 +470,21 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.tag {
+  display: inline-block;
+  max-width: 84px;
+  overflow: hidden;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .renameInput:disabled {
   color: var(--dsw-alias-label-dimmed);
 }

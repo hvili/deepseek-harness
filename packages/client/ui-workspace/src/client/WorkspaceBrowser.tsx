@@ -237,6 +237,8 @@ type SessionTreeProps = Pick<
   archivedSessionIds: readonly SessionNode['id'][]
   /** Registry-global favorites set (marked rows). */
   favoriteSessionIds: readonly SessionNode['id'][]
+  workspaceTagsById: Readonly<Record<string, readonly string[]>>
+  sessionTagsById: Readonly<Record<string, readonly string[]>>
   /** Host cwd-bound project: its group is marked as the current project. */
   cwdWorkspaceId: WorkspaceId | undefined
   /** Open the browser-owned rename dialog for a real Workspace group. */
@@ -249,14 +251,17 @@ type SessionTreeProps = Pick<
   onSessionArchive: (sessionId: SessionNode['id']) => void
   /** Toggle a session's durable favorite membership. */
   onSessionFavorite: (sessionId: SessionNode['id'], favorite: boolean) => void
+  onWorkspaceTags: (workspaceId: WorkspaceId) => void
+  onSessionTags: (sessionId: SessionNode['id']) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, favoriteSessionIds, cwdWorkspaceId,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionFavorite,
+  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, favoriteSessionIds,
+  workspaceTagsById, sessionTagsById, cwdWorkspaceId,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionFavorite, onWorkspaceTags, onSessionTags,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -459,6 +464,7 @@ function SessionTree({
             >
               <ProjectRowItem
                 group={group}
+                tags={group.workspaceId === undefined ? [] : workspaceTagsById[group.workspaceId] ?? []}
                 home={home}
                 t={t}
                 onToggle={() => {
@@ -484,6 +490,9 @@ function SessionTree({
                     delete: () => {
                     /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                       if (group.workspaceId !== undefined) onDeleteRequest(group.workspaceId, group.label)
+                    },
+                    editTags: () => {
+                      if (group.workspaceId !== undefined) onWorkspaceTags(group.workspaceId)
                     },
                   }}
               />
@@ -526,6 +535,8 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onTags={onSessionTags}
+                    tags={sessionTagsById[node.id] ?? []}
                     favorite={favorites.has(node.id)}
                     onFavorite={onSessionFavorite}
                     drag={dragProps}
@@ -556,7 +567,8 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, onSessionFavorite, archivedSessionIds, favoriteSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionArchive, onSessionFavorite, onSessionTags,
+  archivedSessionIds, favoriteSessionIds, sessionTagsById,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -566,8 +578,10 @@ function FlatList({
   | 'onSessionRename'
   | 'onSessionArchive'
   | 'onSessionFavorite'
+  | 'onSessionTags'
   | 'archivedSessionIds'
   | 'favoriteSessionIds'
+  | 'sessionTagsById'
   | 'orderBy'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
@@ -647,6 +661,8 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onTags={onSessionTags}
+              tags={sessionTagsById[node.id] ?? []}
               favorite={favorites.has(node.id)}
               onFavorite={onSessionFavorite}
               flat
@@ -772,6 +788,8 @@ export function WorkspaceBrowser({
   archiveSession,
   favoriteSession,
   unfavoriteSession,
+  setWorkspaceTags,
+  setSessionTags,
   insertSessionBefore,
   createWorkspace,
   searchSessions,
@@ -786,6 +804,8 @@ export function WorkspaceBrowser({
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
   const favoriteSessionIds = useWorkspaces(state => state.favoriteSessionIds ?? [])
+  const workspaceTagsById = useWorkspaces(state => state.workspaceTagsById ?? {})
+  const sessionTagsById = useWorkspaces(state => state.sessionTagsById ?? {})
   const cwdWorkspaceId = useWorkspaces(state => state.cwdWorkspaceId)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
@@ -968,6 +988,46 @@ export function WorkspaceBrowser({
     const request = favorite ? favoriteSession(sessionId) : unfavoriteSession(sessionId)
     request.catch((reason: unknown) => {
       console.warn('session favorite rejected:', reason)
+    })
+  }
+
+  const [tagTarget, setTagTarget] = useState<
+    | { kind: 'workspace'; id: WorkspaceId }
+    | { kind: 'session'; id: SessionNode['id'] }
+    | null
+  >(null)
+  const [tagDraft, setTagDraft] = useState('')
+  const [savingTags, setSavingTags] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
+  const openWorkspaceTags = (workspaceId: WorkspaceId) => {
+    setTagTarget({ kind: 'workspace', id: workspaceId })
+    setTagDraft((workspaceTagsById[workspaceId] ?? []).join(', '))
+    setTagError(null)
+  }
+  const openSessionTags = (sessionId: SessionNode['id']) => {
+    setTagTarget({ kind: 'session', id: sessionId })
+    setTagDraft((sessionTagsById[sessionId] ?? []).join(', '))
+    setTagError(null)
+  }
+  const closeTags = () => {
+    if (savingTags) return
+    setTagTarget(null)
+    setTagError(null)
+  }
+  const saveTags = () => {
+    if (tagTarget === null || savingTags) return
+    setSavingTags(true)
+    setTagError(null)
+    const tags = tagDraft.split(',')
+    const request = tagTarget.kind === 'workspace'
+      ? setWorkspaceTags(tagTarget.id, tags)
+      : setSessionTags(tagTarget.id, tags)
+    request.then(() => {
+      setSavingTags(false)
+      setTagTarget(null)
+    }).catch((reason: unknown) => {
+      setSavingTags(false)
+      setTagError(reason instanceof Error ? reason.message : String(reason))
     })
   }
 
@@ -1159,8 +1219,10 @@ export function WorkspaceBrowser({
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 onSessionFavorite={onSessionFavorite}
+                onSessionTags={openSessionTags}
                 archivedSessionIds={archivedSessionIds}
                 favoriteSessionIds={favoriteSessionIds}
+                sessionTagsById={sessionTagsById}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
@@ -1175,6 +1237,8 @@ export function WorkspaceBrowser({
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 onSessionFavorite={onSessionFavorite}
+                onWorkspaceTags={openWorkspaceTags}
+                onSessionTags={openSessionTags}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1185,6 +1249,8 @@ export function WorkspaceBrowser({
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
                 favoriteSessionIds={favoriteSessionIds}
+                workspaceTagsById={workspaceTagsById}
+                sessionTagsById={sessionTagsById}
                 cwdWorkspaceId={cwdWorkspaceId}
                 startSession={startSession}
                 open={open}
@@ -1296,6 +1362,34 @@ export function WorkspaceBrowser({
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
+      </Modal>
+      <Modal
+        open={tagTarget !== null}
+        onClose={closeTags}
+        closeLabel={t('close')}
+        title={t(tagTarget?.kind === 'workspace' ? 'tags.workspace.title' : 'tags.session.title')}
+        footer={(
+          <>
+            <Button variant="outline" disabled={savingTags} onClick={closeTags}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={savingTags || tagTarget === null} onClick={saveTags}>{t('tags.save')}</Button>
+          </>
+        )}
+      >
+        <input
+          className={css.renameInput}
+          value={tagDraft}
+          aria-label={t('field.tags')}
+          autoFocus
+          disabled={savingTags}
+          onChange={(e) => { setTagDraft(e.target.value); setTagError(null) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !composingRef.current) {
+              e.preventDefault()
+              saveTags()
+            }
+          }}
+        />
+        {tagError !== null && <div className={css.renameError} role="alert">{tagError}</div>}
       </Modal>
     </div>
   )

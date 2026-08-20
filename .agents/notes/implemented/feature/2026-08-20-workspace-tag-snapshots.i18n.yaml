@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-workspace-tag-snapshots.md
-2026-08-20-workspace-tag-snapshots.md: 9d0e5cab9a83162ae559c12230ef6855e3f458c2
-2026-08-20-workspace-tag-snapshots.zh.md: 75bb19ccffc5e7f4b7f9fb4334544daf97ce1004
+2026-08-20-workspace-tag-snapshots.md: 8f94ee58c933c26664a06ea44aba4d1a694c38f9
+2026-08-20-workspace-tag-snapshots.zh.md: 1f2bff40d10387c1a4f4998cc9d77c51f439cf4c
