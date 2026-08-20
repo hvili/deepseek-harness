@@ -468,8 +468,9 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * @returns the session row locator, already present.
    */
   async function seededSessionRow() {
-    const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
-    const ungroupedSection = ungroupedRow.locator('..')
+    const ungroupedRow = page.getByText('Ungrouped', { exact: true })
+      .locator('xpath=ancestor::*[@role="treeitem"][1]')
+    const ungroupedSection = ungroupedRow.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
     // Initial-current auto-expansion can race this gesture; converge on
     // expanded rather than assuming which update wins first.
     await expect.poll(async () => {
@@ -553,8 +554,9 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive'))
     // The seeded session lives under Ungrouped (expanded by the hover-card
     // test's gesture; converge again for order independence).
-    const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
-    const ungroupedSection = ungroupedRow.locator('..')
+    const ungroupedRow = page.getByText('Ungrouped', { exact: true })
+      .locator('xpath=ancestor::*[@role="treeitem"][1]')
+    const ungroupedSection = ungroupedRow.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
     await expect.poll(async () => {
       if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
         await page.getByText('Ungrouped', { exact: true }).click()
@@ -594,6 +596,37 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // reappear if selection restore lands on another stray — not this test's
     // concern).
     expect(await page.getByText(rowTitle, { exact: true }).count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
+  it('restores an archived session through Settings and keeps its original grouping after reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive-restore'))
+    // Seed the precondition through the real registry so this recovery path
+    // remains independently runnable; the preceding scenario owns the row
+    // menu gesture that creates the same durable archive state.
+    if (!scaffold.ctx.workspaceRegistry.archivedSessionIds.includes(SessionId(SEED_ID))) {
+      await scaffold.ctx.workspaceRegistry.archiveSession(SessionId(SEED_ID))
+    }
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([SessionId(SEED_ID)])
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Archived conversations', exact: true }).click()
+    await dialog.getByRole('heading', { name: 'Archived conversations', exact: true }).waitFor({ timeout: 10_000 })
+    const archivedRow = dialog.locator('li').filter({ hasText: SEED_ID })
+    await archivedRow.getByRole('button', { name: 'Restore', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.workspaceRegistry.archivedSessionIds, { timeout: 10_000 }).toEqual([])
+    await expect.poll(() => archivedRow.count(), { timeout: 10_000 }).toBe(0)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
+    // The restored session becomes the selected conversation and returns to
+    // the same Ungrouped account it had before archival.
+    await seededSessionRow()
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await seededSessionRow()
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
