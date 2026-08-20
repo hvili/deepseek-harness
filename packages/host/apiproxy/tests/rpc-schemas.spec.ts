@@ -37,7 +37,6 @@ import { approvalRequestIdSchema, approvalResponsePayloadSchema } from '../src/a
 import { askUserQuestionAnswerSchema, questionResponsePayloadSchema } from '../src/api/questions.schema.ts'
 import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
-import { llmTestModelRequestSchema, llmTestModelValueSchema } from '../src/api/llm.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -291,24 +290,6 @@ describe('sessions domain schemas', () => {
   })
 })
 
-describe('llm domain schemas', () => {
-  it('validates the llm.testModel payload and value', () => {
-    expect(llmTestModelRequestSchema.parse({ provider: 'p', model: 'm' }))
-      .toEqual({ provider: 'p', model: 'm' })
-    expect(llmTestModelRequestSchema.parse({ provider: 'p', model: 'm', probeVision: true }))
-      .toEqual({ provider: 'p', model: 'm', probeVision: true })
-    expect(llmTestModelRequestSchema.parse({ provider: 'p', model: 'm', timeoutMs: 60000 }).timeoutMs)
-      .toBe(60000)
-    expect(() => llmTestModelRequestSchema.parse({ provider: '', model: 'm' })).toThrow()
-    expect(() => llmTestModelRequestSchema.parse({ provider: 'p', model: 'm', timeoutMs: 0 })).toThrow()
-    expect(() => llmTestModelRequestSchema.parse({ provider: 'p', model: 'm', timeoutMs: 300001 })).toThrow()
-    expect(llmTestModelValueSchema.parse({ inputModalities: ['text', 'image'] }).inputModalities)
-      .toEqual(['text', 'image'])
-    expect(llmTestModelValueSchema.parse({}).inputModalities).toBeUndefined()
-  })
-})
-
-
 describe('subagent domain schemas', () => {
   it('carries optional request-local browser-zone provenance on prompts', () => {
     expect(subagentPromptRequestSchema.parse({
@@ -331,18 +312,17 @@ describe('host domain schemas', () => {
   it('validates describe request/value', () => {
     expect(hostDescribeRequestSchema.parse({})).toEqual({})
     const value = hostDescribeValueSchema.parse({
-      version: '1', cwd: '/x', provider: 'p', model: 'm', attachedSessions: 2, canOpenPath: true,
-      commit: 'abc123', buildHash: 'sha', schemaVersion: 3,
+      version: '1', cwd: '/x', provider: 'p', model: 'm', attachedSessions: 2, home: '/h', canOpenPath: true,
     })
-    expect(value).toMatchObject({ provider: 'p', model: 'm', attachedSessions: 2, canOpenPath: true, commit: 'abc123', buildHash: 'sha', schemaVersion: 3 })
+    expect(value).toMatchObject({ provider: 'p', model: 'm', attachedSessions: 2, canOpenPath: true })
     expect(hostDescribeValueSchema.parse({
-      version: '1', cwd: '/x', attachedSessions: 0, canOpenPath: false,
+      version: '1', cwd: '/x', attachedSessions: 0, home: '/h', canOpenPath: false,
     }).provider).toBeUndefined()
-    expect(hostDescribeValueSchema.parse({
-      version: '1', cwd: '/x', attachedSessions: 0, canOpenPath: false,
-    }).buildHash).toBeUndefined()
     expect(() => hostDescribeValueSchema.parse({
       version: '1', cwd: '/x', attachedSessions: 0,
+    })).toThrow()
+    expect(() => hostDescribeValueSchema.parse({
+      version: '1', cwd: '/x', attachedSessions: 0, canOpenPath: true,
     })).toThrow()
   })
 
