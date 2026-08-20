@@ -596,6 +596,45 @@ describe('WorkspaceRuntime', () => {
     await workspaces.refresh()
     expect(workspaces.list.getSnapshot().archivedSessionIds).toEqual([])
   })
+
+  it('projects favorites from the response, list, and frame, and shields a remote frame from a stale baseline', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+
+    await expect(workspaces.favoriteSession(sid('s-one'))).resolves.toBeUndefined()
+    expect(api.callsOf('workspace.favoriteSession')).toEqual([{ sessionId: 's-one' }])
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual(['s-one'])
+
+    api.onWorkspaceUnfavoriteSession = () => Promise.resolve(ok({ favoriteSessionIds: [] }))
+    await expect(workspaces.unfavoriteSession(sid('s-one'))).resolves.toBeUndefined()
+    expect(api.callsOf('workspace.unfavoriteSession')).toEqual([{ sessionId: 's-one' }])
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual([])
+
+    workspaces.handleHostEnvelope({
+      rpcId: 'frame' as never,
+      payload: { type: 'host/favorite-sessions-changed', favoriteSessionIds: [sid('s-frame')] },
+    } as never)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual(['s-frame'])
+
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [], favoriteSessionIds: [sid('s-list')] }) as never)
+    await workspaces.refresh()
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual(['s-list'])
+
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onWorkspaceList']>>>()
+    api.onWorkspaceList = () => gate.promise
+    const hydration = workspaces.refresh()
+    workspaces.handleHostEnvelope({
+      rpcId: 'frame' as never,
+      payload: { type: 'host/favorite-sessions-changed', favoriteSessionIds: [sid('s-newer')] },
+    } as never)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    gate.resolve(ok({ items: [], favoriteSessionIds: [sid('s-stale')] }))
+    await hydration
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual(['s-newer'])
+  })
 })
 
 describe('startInitialSelection', () => {

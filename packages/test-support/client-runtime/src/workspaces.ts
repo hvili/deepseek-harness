@@ -222,6 +222,28 @@ export class TestWorkspaces implements IWorkspaces {
     })
   }
 
+  /** Add a session to the user-maintained favorites set (recorded). */
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'favoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('favoriteSession')
+    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    await this.update((draft) => {
+      if (!draft.favoriteSessionIds.includes(sessionId)) {
+        draft.favoriteSessionIds = [...draft.favoriteSessionIds, sessionId]
+      }
+    })
+  }
+
+  /** Remove a session from the user-maintained favorites set (recorded). */
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unfavoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('unfavoriteSession')
+    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    await this.update((draft) => {
+      draft.favoriteSessionIds = draft.favoriteSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
   async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
     this.calls.push({ method: 'removeArchivedSession', args: [sessionId] })
     const stub = this.stubs.get('removeArchivedSession')
@@ -229,6 +251,7 @@ export class TestWorkspaces implements IWorkspaces {
     const wasArchived = this.list.getSnapshot().archivedSessionIds.includes(sessionId)
     await this.update((draft) => {
       draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+      draft.favoriteSessionIds = draft.favoriteSessionIds.filter(id => id !== sessionId)
     })
     return wasArchived
   }

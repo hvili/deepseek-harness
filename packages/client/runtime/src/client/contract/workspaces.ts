@@ -93,6 +93,10 @@ export interface IWorkspaces {
   archiveSession(sessionId: SessionId): Promise<void>
   /** Restore a session previously hidden by archiveSession. */
   unarchiveSession(sessionId: SessionId): Promise<void>
+  /** Add a session to the durable favorites set. */
+  favoriteSession(sessionId: SessionId): Promise<void>
+  /** Remove a session from the durable favorites set. */
+  unfavoriteSession(sessionId: SessionId): Promise<void>
   /** Permanently remove an archived, non-live session's log and references. */
   removeArchivedSession(sessionId: SessionId): Promise<boolean>
 }

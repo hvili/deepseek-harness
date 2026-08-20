@@ -35,6 +35,7 @@ export interface WorkspaceListState {
    * build their own transient Set.
    */
   archivedSessionIds: readonly SessionId[]
+  favoriteSessionIds: readonly SessionId[]
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -97,7 +98,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.hostCwd = hostCwd
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
+      items: [], archivedSessionIds: [], favoriteSessionIds: [], state: 'idle', phase: 'pending', error: null,
       baselinesReady: false, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
@@ -330,6 +331,18 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session restore failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Add one session to the Host's durable favorites set. */
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.favoriteSession(sessionId)
+    if (!result.ok) throw new Error(`session favorite failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Remove one session from the Host's durable favorites set. */
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unfavoriteSession(sessionId)
+    if (!result.ok) throw new Error(`session unfavorite failed: ${result.error.code}: ${result.error.message}`)
+  }
+
   /** Permanently remove an archived, non-live session. Attachment objects are retained. */
   async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
     const result = await this.manager.removeArchivedSession(sessionId)
@@ -391,6 +404,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.list.set({
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
+      favoriteSessionIds: workspace.favoriteSessionIds,
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,

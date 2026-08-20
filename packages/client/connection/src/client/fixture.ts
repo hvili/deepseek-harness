@@ -1583,6 +1583,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
+  const favoriteSessionIds: SessionId[] = []
 
   // In-memory browse tree behind the fixture's `browse` picker capability —
   // deterministic content mirroring the design mock so assembled Web tests
@@ -2661,6 +2662,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
+        favoriteSessionIds: [...favoriteSessionIds],
       }),
       create: (request) => {
         const { path } = request.payload
@@ -2794,10 +2796,29 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
       },
+      favoriteSession: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const { sessionId } = request.payload
+        if (!favoriteSessionIds.includes(sessionId)) {
+          favoriteSessionIds.push(sessionId)
+          emitHost({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] })
+        }
+        return ok(request, { favoriteSessionIds: [...favoriteSessionIds] })
+      },
+      unfavoriteSession: (request) => {
+        const { sessionId } = request.payload
+        if (favoriteSessionIds.includes(sessionId)) {
+          favoriteSessionIds.splice(0, favoriteSessionIds.length, ...favoriteSessionIds.filter(id => id !== sessionId))
+          emitHost({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] })
+        }
+        return ok(request, { favoriteSessionIds: [...favoriteSessionIds] })
+      },
       removeArchivedSession: (request) => {
         const { sessionId } = request.payload
         const wasArchived = archivedSessionIds.includes(sessionId)
         archivedSessionIds.splice(0, archivedSessionIds.length, ...archivedSessionIds.filter(id => id !== sessionId))
+        favoriteSessionIds.splice(0, favoriteSessionIds.length, ...favoriteSessionIds.filter(id => id !== sessionId))
         sessions.splice(0, sessions.length, ...sessions.filter(session => session.sessionId !== sessionId))
         emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
         if (wasArchived) emitHost({ type: 'host/session-removed', sessionId })
@@ -3222,6 +3243,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
       case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
+      case 'workspace.favoriteSession': return this.api.workspace.favoriteSession(request)
+      case 'workspace.unfavoriteSession': return this.api.workspace.unfavoriteSession(request)
       case 'workspace.removeArchivedSession': return this.api.workspace.removeArchivedSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)

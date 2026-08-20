@@ -183,9 +183,13 @@ export class FakeApiClient implements IApiClient {
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
-  // The archive-set field defaults at the binding below so list stubs keep
-  // the pre-archive `{ items }` shape; a stub carrying the field wins.
-  onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{ items: never[]; archivedSessionIds?: never[] }>> =
+  // State-set fields default at the binding below so legacy list stubs keep
+  // the pre-state `{ items }` shape; a stub carrying either field wins.
+  onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{
+    items: never[]
+    archivedSessionIds?: never[]
+    favoriteSessionIds?: never[]
+  }>> =
     () => Promise.resolve(ok({ items: [] }))
   onWorkspaceCreate: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>> =
     () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws'), created: true }))
@@ -206,13 +210,23 @@ export class FakeApiClient implements IApiClient {
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
   onWorkspaceUnarchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
     () => Promise.resolve(ok({ archivedSessionIds: [] }))
+  onWorkspaceFavoriteSession: (payload: unknown) => Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>> =
+    payload => Promise.resolve(ok({ favoriteSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+  onWorkspaceUnfavoriteSession: (payload: unknown) => Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>> =
+    () => Promise.resolve(ok({ favoriteSessionIds: [] }))
   onWorkspaceRemoveArchivedSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[]; removed: boolean }>> =
     () => Promise.resolve(ok({ archivedSessionIds: [], removed: true }))
 
   readonly workspace: IApiClient['workspace'] = {
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
       response.result.ok
-        ? { ...response, result: { ok: true as const, value: { archivedSessionIds: [] as never[], ...response.result.value } } }
+        ? {
+          ...response,
+          result: {
+            ok: true as const,
+            value: { archivedSessionIds: [] as never[], favoriteSessionIds: [] as never[], ...response.result.value },
+          },
+        }
         : response
     )) as ReturnType<IApiClient['workspace']['list']>),
     create: (payload: unknown) => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
@@ -226,6 +240,10 @@ export class FakeApiClient implements IApiClient {
       this.record('workspace.archiveSession', payload, this.onWorkspaceArchiveSession(payload)),
     unarchiveSession: (payload: unknown) =>
       this.record('workspace.unarchiveSession', payload, this.onWorkspaceUnarchiveSession(payload)),
+    favoriteSession: (payload: unknown) =>
+      this.record('workspace.favoriteSession', payload, this.onWorkspaceFavoriteSession(payload)),
+    unfavoriteSession: (payload: unknown) =>
+      this.record('workspace.unfavoriteSession', payload, this.onWorkspaceUnfavoriteSession(payload)),
     removeArchivedSession: (payload: unknown) =>
       this.record('workspace.removeArchivedSession', payload, this.onWorkspaceRemoveArchivedSession(payload)),
   }
