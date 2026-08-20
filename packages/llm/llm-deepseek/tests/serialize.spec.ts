@@ -160,6 +160,18 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
+  it('serializes a durable file preview as text for a text-only provider', () => {
+    const wire = serializeMessages([createUserMessage({
+      content: [{
+        type: 'file',
+        attachment: { kind: 'file', attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'application/pdf', bytes: 4, name: 'brief.pdf' },
+        preview: '[File: brief.pdf]\nThe proposal has two sections.',
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })])
+    expect(wire).toEqual([{ role: 'user', content: '[File: brief.pdf]\nThe proposal has two sections.' }])
+  })
+
   it('rejects image blocks instead of silently flattening them away', () => {
     expect(() => serializeMessages([createUserMessage({
       content: [{

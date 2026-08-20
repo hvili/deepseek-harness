@@ -266,6 +266,12 @@ describe('sessions domain schemas', () => {
       sessionId: 's1', mode: 'queue', content: [],
     }).clientTimeZone).toBeUndefined()
     expect(() => sessionPromptRequestSchema.parse({ sessionId: 's1', mode: 'inject', content: [] })).toThrow()
+    expect(sessionPromptRequestSchema.parse({
+      sessionId: 's1', mode: 'queue', content: [{ type: 'file', mediaType: 'application/pdf', data: 'AQ==' }],
+    }).content[0]).toMatchObject({ type: 'file', mediaType: 'application/pdf' })
+    expect(() => sessionPromptRequestSchema.parse({
+      sessionId: 's1', mode: 'queue', content: [{ type: 'file', mediaType: '', data: 'AQ==' }],
+    })).toThrow()
     expect(sessionPromptValueSchema.parse({ accepted: true }).accepted).toBe(true)
     // The command slot appears only when the prompt dispatched a slash command.
     const dispatched = sessionPromptValueSchema.parse({ accepted: true, command: { kind: 'success', text: 'Goal set' } })
@@ -359,7 +365,9 @@ describe('workspace domain schemas', () => {
     expect(workspaceViewSchema.parse(view).sessionIds).toEqual(['s1'])
     expect(() => workspaceViewSchema.parse({ ...view, sessionIds: 's1' })).toThrow()
     expect(workspaceListRequestSchema.parse({})).toEqual({})
-    expect(workspaceListValueSchema.parse({ items: [view], archivedSessionIds: ['s1'], favoriteSessionIds: [] }).items).toHaveLength(1)
+    expect(workspaceListValueSchema.parse({
+      items: [view], archivedSessionIds: ['s1'], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {},
+    }).items).toHaveLength(1)
     expect(() => workspaceListValueSchema.parse({ items: [view] })).toThrow()
   })
 

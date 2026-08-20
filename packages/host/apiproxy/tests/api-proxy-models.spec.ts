@@ -243,6 +243,44 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('promotes a generic browser file into one durable, model-visible file block', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const saveFile = vi.fn(async (input: { data: Uint8Array; mediaType: string; name?: string }) => ({
+      kind: 'file' as const,
+      attachmentId: 'file-1',
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      ...input.name === undefined ? {} : { name: input.name },
+    }))
+    ctx.provide('attachments', { saveFile } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'file' as const, mediaType: 'application/pdf', data: 'AQI=', name: 'brief.pdf' },
+        { type: 'text' as const, text: 'summarize this' },
+      ],
+    }))
+
+    expect(result.result.ok).toBe(true)
+    expect(saveFile).toHaveBeenCalledWith({ data: Uint8Array.of(1, 2), mediaType: 'application/pdf', name: 'brief.pdf' })
+    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toEqual([
+      {
+        type: 'file',
+        attachment: { kind: 'file', attachmentId: 'file-1', mediaType: 'application/pdf', bytes: 2, name: 'brief.pdf' },
+      },
+      { type: 'text', text: 'summarize this' },
+    ])
+    await ctx.fiber.dispose()
+  })
+
   it('refuses a text-only selection while durable or pending image content remains visible', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)

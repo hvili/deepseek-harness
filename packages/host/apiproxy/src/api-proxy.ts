@@ -202,11 +202,14 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   if (content.every(part => part.type === 'text')) {
     return content.map(part => ({ type: 'text', text: part.text }))
   }
-  const prepared = content.map(part => part.type === 'text'
+  type PreparedPart = Extract<PromptContentPart, { type: 'text' }>
+    | { part: Exclude<PromptContentPart, { type: 'text' }>; data: Uint8Array }
+  const prepared: PreparedPart[] = content.map(part => part.type === 'text'
     ? part
     : { part, data: decodeBase64(part.data) })
-  const images = prepared.filter((part): part is Extract<typeof part, { data: Uint8Array }> => 'data' in part)
-  const refs = await ctx.attachments.saveImages(images.map(image => ({
+  const images = prepared.filter((item): item is { part: Extract<PromptContentPart, { type: 'image' }>; data: Uint8Array } =>
+    'part' in item && item.part.type === 'image')
+  const refs = images.length === 0 ? [] : await ctx.attachments.saveImages(images.map(image => ({
     data: image.data,
     mediaType: image.part.mediaType,
     ...image.part.name === undefined ? {} : { name: image.part.name },
@@ -214,8 +217,17 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   const blocks: ContentBlock[] = []
   let imageIndex = 0
   for (const item of prepared) {
-    if (!('data' in item)) {
+    if (!('part' in item)) {
       blocks.push({ type: 'text', text: item.text })
+      continue
+    }
+    if (item.part.type === 'file') {
+      const attachment = await ctx.attachments.saveFile({
+        data: item.data,
+        mediaType: item.part.mediaType,
+        ...item.part.name === undefined ? {} : { name: item.part.name },
+      })
+      blocks.push({ type: 'file', attachment })
       continue
     }
     const attachment = refs[imageIndex++]
