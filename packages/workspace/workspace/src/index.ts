@@ -300,7 +300,6 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-        favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
       })
     })
   }
