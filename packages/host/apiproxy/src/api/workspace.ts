@@ -43,7 +43,11 @@ export interface WorkspaceApi {
    * `host/archived-sessions-changed`). Archived sessions stay in their
    * workspace's `sessionIds` account; grouping surfaces hide them.
    */
-  list(request: RpcRequest<{}>): Promise<RpcResponse<{ items: WorkspaceView[]; archivedSessionIds: SessionId[] }>>
+  list(request: RpcRequest<{}>): Promise<RpcResponse<{
+    items: WorkspaceView[]
+    archivedSessionIds: SessionId[]
+    favoriteSessionIds: SessionId[]
+  }>>
 
   /**
    * Creates (or idempotently resolves) a workspace over an EXISTING directory
@@ -110,6 +114,12 @@ export interface WorkspaceApi {
   /** Restore an archived session without changing its durable log. */
   unarchiveSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  favoriteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>>
+
+  unfavoriteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>>
 
   /** Permanently remove an archived cold session's log and registry references. */
   removeArchivedSession(request: RpcRequest<{ sessionId: SessionId }>):

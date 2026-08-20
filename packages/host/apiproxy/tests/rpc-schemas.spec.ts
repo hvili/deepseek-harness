@@ -359,7 +359,7 @@ describe('workspace domain schemas', () => {
     expect(workspaceViewSchema.parse(view).sessionIds).toEqual(['s1'])
     expect(() => workspaceViewSchema.parse({ ...view, sessionIds: 's1' })).toThrow()
     expect(workspaceListRequestSchema.parse({})).toEqual({})
-    expect(workspaceListValueSchema.parse({ items: [view], archivedSessionIds: ['s1'] }).items).toHaveLength(1)
+    expect(workspaceListValueSchema.parse({ items: [view], archivedSessionIds: ['s1'], favoriteSessionIds: [] }).items).toHaveLength(1)
     expect(() => workspaceListValueSchema.parse({ items: [view] })).toThrow()
   })
 

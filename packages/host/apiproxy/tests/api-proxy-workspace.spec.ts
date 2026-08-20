@@ -568,4 +568,21 @@ describe('Host Workspace increments', () => {
     })
     abort.abort()
   })
+
+  it('favorites a session through the durable global set and streams membership changes', async () => {
+    const { api, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'favorite-home') }))).workspace
+    const sessionId = SessionId('session-to-favorite')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const abort = new AbortController()
+    const stream = api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const changed = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.favoriteSession(request({ sessionId }))).favoriteSessionIds).toEqual([sessionId])
+    expect(await changed).toMatchObject({
+      payload: { type: 'host/favorite-sessions-changed', favoriteSessionIds: [sessionId] },
+    })
+    expect(expectOk(await api.workspace.list(request({}))).favoriteSessionIds).toEqual([sessionId])
+    expect(expectOk(await api.workspace.unfavoriteSession(request({ sessionId }))).favoriteSessionIds).toEqual([])
+    abort.abort()
+  })
 })

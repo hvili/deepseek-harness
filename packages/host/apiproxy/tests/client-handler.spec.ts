@@ -81,7 +81,7 @@ function scriptedApi(overrides: {
       ...overrides.host,
     },
     workspace: {
-      list: r => ok(r, { items: [], archivedSessionIds: [] }),
+      list: r => ok(r, { items: [], archivedSessionIds: [], favoriteSessionIds: [] }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       delete: r => ok(r, { deleted: true as const }),
@@ -89,6 +89,8 @@ function scriptedApi(overrides: {
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
       unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
+      favoriteSession: r => ok(r, { favoriteSessionIds: [r.payload.sessionId] }),
+      unfavoriteSession: r => ok(r, { favoriteSessionIds: [] }),
       removeArchivedSession: r => ok(r, { archivedSessionIds: [], removed: true }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
