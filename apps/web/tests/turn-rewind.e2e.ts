@@ -171,10 +171,6 @@ describe('web e2e: turn rewind restore and fork', () => {
     await writeFile(join(projectDir, 'notes.txt'), MODIFIED)
 
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
-    tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -182,20 +178,55 @@ describe('web e2e: turn rewind restore and fork', () => {
     await scaffold?.close()
   })
 
-  it('previews the drift, restores files, preserves the original, and forks a child', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-rewind'))
-    const groupRow = page.locator('[role="treeitem"]').first()
+  /** Open the seeded session in a fresh page and wait until both user messages render. */
+  async function openSeededSession(target: Page): Promise<void> {
+    await target.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await target.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const groupRow = target.locator('[role="treeitem"]').first()
     await groupRow.waitFor({ timeout: 15_000 })
     if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    const sessionRow = target.locator('[role="treeitem"]').nth(1)
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
-    await expect.poll(() => page.locator('[data-chat-flow-kind="user"]').count(), {
+    await expect.poll(() => target.locator('[data-chat-flow-kind="user"]').count(), {
       timeout: 15_000,
-    }).toBeGreaterThan(0)
+    }).toBe(2)
+  }
 
-    const rewindButton = page.getByRole('button', { name: '恢复到发送这条消息之前' })
-    await rewindButton.waitFor({ timeout: 15_000 })
+  it('shows localized edit and rewind actions on every user message in Chinese', async () => {
+    const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'zh-CN' })
+    const zhTripwire = watchConsole(zhPage)
+    try {
+      await openSeededSession(zhPage)
+      expect(await zhPage.getByRole('button', { name: '编辑这条消息' }).count()).toBe(2)
+      expect(await zhPage.getByRole('button', { name: '恢复到发送这条消息之前' }).count()).toBe(2)
+      expect(zhTripwire.pageErrors).toEqual([])
+    } finally {
+      await zhPage.close()
+    }
+  })
+
+  it('previews the drift, restores files, preserves the original, and forks a child', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-turn-rewind'))
+    page = await newEnglishPage(browser)
+    tripwire = watchConsole(page)
+    await openSeededSession(page)
+
+    // Every direct user message owns both an Edit and a Rewind action.
+    expect(await page.getByRole('button', { name: 'Edit this message' }).count()).toBe(2)
+    const rewindButtons = page.getByRole('button', { name: 'Return to before sending this message' })
+    expect(await rewindButtons.count()).toBe(2)
+
+    // The earlier message's action must request that message's own seq, not the latest seq.
+    const earlierGet = page.waitForRequest(request =>
+      request.url().includes('/turn-rewind') && request.url().includes('messageSeq=1'))
+    await rewindButtons.first().click()
+    const earlierRequest = await earlierGet
+    expect(new URL(earlierRequest.url()).searchParams.get('messageSeq')).toBe('1')
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    // Open the latest message's full rewind dialog and restore files + continue.
+    const rewindButton = rewindButtons.last()
     await rewindButton.click()
     const dialog = page.locator('.dcl-rewind-dialog')
     await dialog.waitFor({ timeout: 15_000 })
@@ -206,8 +237,13 @@ describe('web e2e: turn rewind restore and fork', () => {
     // Default mode is "restore files and continue", the full vertical path.
     const restoreResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/turn-rewind' && response.request().method() === 'POST')
-    await dialog.getByRole('button', { name: '恢复并从这里继续' }).click()
+    await dialog.getByRole('button', { name: 'Restore files and continue here' }).click()
     const restorePayload = await (await restoreResponse).json() as { sessionId?: string }
+
+    // The browser actually opens the child and pre-fills the composer with the prompt.
+    await expect.poll(async () => page.locator('textarea').first().inputValue(), {
+      timeout: 15_000,
+    }).toBe(PROMPT)
 
     await expect.poll(async () => readFile(join(projectDir, 'notes.txt'), 'utf8'), {
       timeout: 15_000,
