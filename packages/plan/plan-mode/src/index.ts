@@ -37,7 +37,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
-import type { PlanProjection } from './types.ts'
+import type { ApprovedPlan, PlanProjection } from './types.ts'
 // The `plan` projection-key declaration lives in src/types.ts (its one home);
 // this re-export projects the type face onto the package root AND keeps the
 // module edge in the emitted index.d.ts, so aggregate programs consuming the
@@ -52,6 +52,13 @@ declare module '@deepseek-ai/dsh-session/types' {
      * inactive through {@link foldPlanMode}.
      */
     'plan/mode': { active: boolean }
+    /**
+     * A plan was reviewed and approved through `exit_plan_mode` — log-only,
+     * non-surface, last-wins. It marks the exact approved plan so resume,
+     * fork, and review surfaces can reconstruct the approval without parsing
+     * tool results.
+     */
+    'plan/approved': { heading: string; plan: string }
   }
 }
 
@@ -139,6 +146,30 @@ export function foldPlanMode(events: readonly SessionEvent[], end = events.lengt
 }
 
 /**
+ * The latest approved plan in the log, or `undefined` before any approval.
+ * The last `plan/approved` wins; a prefix with none has no approval.
+ *
+ * @param events The session log or any prefix of it.
+ * @param end Fold `events[0, end)`; defaults to the whole log.
+ * @returns The latest approved plan.
+ */
+export function foldApprovedPlan(
+  events: readonly SessionEvent[],
+  end = events.length,
+): ApprovedPlan | undefined {
+  let approved: ApprovedPlan | undefined
+  let index = 0
+  for (const event of events) {
+    if (index >= end) break
+    index++
+    if (event.type === 'plan/approved') {
+      approved = { heading: event.data.heading, plan: event.data.plan, seq: event.seq }
+    }
+  }
+  return approved
+}
+
+/**
  * Projection unit state: the logged mode, the latest successful `/plan`
  * selection not yet resolved by a `plan/mode` commit, and an execution whose
  * paired `command/done` has not settled. Plain JSON (persisted-cache
@@ -150,12 +181,19 @@ interface PlanUnitState {
   wanted: boolean | null
   /** The latest plan command awaiting its paired settlement. */
   running: { commandId: CommandId; wanted: boolean } | null
+  /** The latest approved plan, or null before the first approval. */
+  approved: ApprovedPlan | null
 }
 
 /** Wire payload schema of the `plan` projection. */
 const planProjectionSchema: ZodType<PlanProjection> = zod.object({
   active: zod.boolean(),
   pending: zod.boolean(),
+  approved: zod.object({
+    heading: zod.string(),
+    plan: zod.string(),
+    seq: zod.number().int(),
+  }).optional(),
 })
 
 /** Whether the log holds an opened turn without its closing `turn/end`. */
@@ -248,7 +286,7 @@ export class PlanModeController extends Service {
       projectionCtx.sessionProjections.register<'plan', PlanUnitState>({
         key: 'plan',
         schema: planProjectionSchema,
-        init: () => ({ active: false, wanted: null, running: null }),
+        init: () => ({ active: false, wanted: null, running: null, approved: null }),
         apply: (state, event) => {
           if (event.type === 'command/run' && event.data.name === 'plan') {
             if (event.data.args === undefined) return state
@@ -264,13 +302,23 @@ export class PlanModeController extends Service {
           if (event.type === 'plan/mode') {
             return { ...state, active: event.data.active, wanted: null }
           }
+          if (event.type === 'plan/approved') {
+            return {
+              ...state,
+              approved: { heading: event.data.heading, plan: event.data.plan, seq: event.seq },
+            }
+          }
           return state
         },
         view: (state) => {
           const wanted = state.running?.wanted ?? state.wanted
-          return { active: state.active, pending: wanted !== null && wanted !== state.active }
+          return {
+            active: state.active,
+            pending: wanted !== null && wanted !== state.active,
+            ...(state.approved === null ? {} : { approved: state.approved }),
+          }
         },
-        stateVersion: 2,
+        stateVersion: 3,
       })
     })
 
@@ -393,6 +441,13 @@ export class PlanModeController extends Service {
             ? 'The user chose to keep planning; revise the plan and present it again.'
             : `The user chose to keep planning; their feedback: ${feedback}`)
         }
+        // Persist the exact approved plan before leaving plan mode. A durable
+        // append failure must fail the approval rather than leave a review
+        // surface unable to reconstruct which plan was approved.
+        agent.session.append('plan/approved', {
+          heading: firstHeading(args.plan) ?? 'Plan',
+          plan: args.plan,
+        })
         // Keep plan guidance for the rest of this assistant tool batch. The
         // silent selection is appended at the next accepted in-turn pre-step,
         // before its request assembly.
