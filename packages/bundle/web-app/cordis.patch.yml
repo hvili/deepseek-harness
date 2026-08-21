@@ -293,6 +293,13 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
+# Turn Rewind: enable the Change Ledger restore points and per-message rewind
+# actions for the browser surface. State lives outside managed workspaces;
+# headless/base profiles keep the base row's disabled default.
+- id: turn-rewind
+  name: '@deepseek-ai/dsh-turn-rewind'
+  disabled: false
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
