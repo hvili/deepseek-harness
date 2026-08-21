@@ -32,6 +32,11 @@ const EMPTY_TURN_IDS: ReadonlySet<number> = new Set()
 const EMPTY_RECORD_IDS: ReadonlySet<string> = new Set()
 const SEARCH_INDEX_THROTTLE_MS = 3_000
 
+/** Closed-union exhaustiveness fence for assistant response blocks. */
+function assertNever(value: never): never {
+  throw new Error(`unhandled assistant block: ${String(value)}`)
+}
+
 function lastCellIndex(turns: readonly TrajectoryTurnModel[]): number {
   let last = 0
   for (const turn of turns) {
@@ -46,7 +51,8 @@ function timelineBlock(block: AssistantBlock): AssistantBlock {
   switch (block.kind) {
     case 'text': return { kind: 'text', text: '' }
     case 'reasoning': return { kind: 'reasoning', text: '' }
-    case 'image': return block
+    case 'image':
+    case 'file': return block
     case 'tool-call': return {
       kind: 'tool-call',
       callId: block.callId,
@@ -54,6 +60,7 @@ function timelineBlock(block: AssistantBlock): AssistantBlock {
       argsRaw: '',
     }
     case 'other': return { kind: 'other', block: null }
+    default: return assertNever(block)
   }
 }
 

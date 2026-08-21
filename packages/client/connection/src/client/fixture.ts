@@ -3188,6 +3188,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'goals/resume': return Promise.resolve(goalRemotes.resume(sessionId, args.ref as FxGoalRef))
         case 'goals/complete': return Promise.resolve(goalRemotes.complete(sessionId, args.ref as FxGoalRef))
         case 'goals/clear': return Promise.resolve(goalRemotes.clear(sessionId, args.ref as FxGoalRef))
+        // The fixture has no dynamic packages, but the shipped Client runner
+        // always synchronizes its inspector directory and reads this inventory.
+        // Keep these read-only endpoints present so fixture mode models the
+        // assembled host contract rather than producing transport failures.
+        case 'dynamicCordisRunner/inventory': return Promise.resolve({ ok: true, value: [] })
+        case 'dynamicCordisRunner/syncInspectManifest': return Promise.resolve({ ok: true, value: null })
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }
