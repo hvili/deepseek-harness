@@ -124,6 +124,36 @@ describe('plan projection unit', () => {
     expect(bench.values().plan).toEqual({ active: false, pending: true })
   })
 
+  it('folds the latest approved plan into the projection', async () => {
+    const bench = await harness(true)
+    bench.session.append('plan/approved', {
+      heading: 'First plan',
+      plan: '# First plan\n\nDo the first thing.',
+    })
+    const first = bench.session.events.findLast(event => event.type === 'plan/approved')
+    expect(bench.values().plan).toEqual({
+      active: false,
+      pending: false,
+      approved: {
+        heading: 'First plan',
+        plan: '# First plan\n\nDo the first thing.',
+        seq: first?.seq,
+      },
+    })
+    bench.session.append('plan/approved', {
+      heading: 'Second plan',
+      plan: '# Second plan\n\nDo the second thing.',
+    })
+    const second = bench.session.events.findLast(event => event.type === 'plan/approved')
+    expect(bench.values().plan).toMatchObject({
+      approved: {
+        heading: 'Second plan',
+        plan: '# Second plan\n\nDo the second thing.',
+        seq: second?.seq,
+      },
+    })
+  })
+
   it('has no plan key when plan-mode is not composed', async () => {
     const bench = await harness(false)
     expect('plan' in bench.values()).toBe(false)
