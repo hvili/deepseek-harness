@@ -98,6 +98,7 @@ type StubMode =
   | 'incremental-fallback'
   | 'empty-page-after-latest'
   | 'paged-scrollback'
+  | 'newest-page-lags'
   | 'with-echo'
   | 'exit-after-send'
   | 'prompt-collision'
@@ -244,6 +245,13 @@ class StubTerminalSession implements TerminalBackendSession {
     }
     if (this.mode === 'empty-page-after-latest' && (request.offset ?? 0) > 0) {
       return { text: '', totalLines: 2, lineBegin: 1, lineEnd: 1, truncated: false }
+    }
+    if (this.mode === 'newest-page-lags' && (request.offset ?? 0) === 0) {
+      // The newest-page read lags the just-written marker lines: offset 0
+      // reports only the prompt while the full scrollback already holds the
+      // finished command.
+      const lines = this.scrollback.split('\n')
+      return { text: lines[lines.length - 1] ?? '', totalLines: lines.length, lineBegin: 0, lineEnd: 1, truncated: false }
     }
     const lines = this.scrollback.split('\n')
     if (this.mode === 'paged-scrollback') {
@@ -459,6 +467,16 @@ describe('tool-pwsh-persistent', () => {
     stub.sessions[0]!.scrollback = ''
 
     expect(text(await call(ctx, owner, 'torn status'))).toBe('hello from stub\n[exit code: 7]')
+  })
+
+  it('cuts a completed end marker out of the prompt-fallback tail', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'newest-page-lags'
+    stub.sessions[0]!.scrollback = ''
+
+    const result = text(await call(ctx, owner, 'lagging page'))
+    expect(result).toBe('hello from stub')
   })
 
   it('reports a shell exit when the backend has no code or signal', async () => {

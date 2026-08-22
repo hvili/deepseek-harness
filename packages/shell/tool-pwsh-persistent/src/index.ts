@@ -145,8 +145,24 @@ function partialOutput(
 ): CapturedOutput {
   const startMarker = snapshot.text.lastIndexOf(marker.start)
   if (startMarker >= 0) {
+    const tail = snapshot.text.slice(startMarker + marker.start.length)
+    // A completed end marker (with status digits) inside the tail means the
+    // command finished after the completion check's newest-page read missed
+    // the retained marker lines; cut there so the internal marker never
+    // reaches the model, and carry the status it reported.
+    const endAt = tail.lastIndexOf(marker.end)
+    if (endAt >= 0) {
+      const status = /^(\d+)\r?\n/.exec(tail.slice(endAt + marker.end.length))?.[1]
+      if (status !== undefined) {
+        return {
+          text: tail.slice(0, endAt).replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
+          incomplete: false,
+          exitCode: Number(status),
+        }
+      }
+    }
     return {
-      text: stripPrompt(snapshot.text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
+      text: stripPrompt(tail.replace(/^\r?\n/, '')),
       incomplete: false,
     }
   }
