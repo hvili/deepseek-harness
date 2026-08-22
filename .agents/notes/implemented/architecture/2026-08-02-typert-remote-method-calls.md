@@ -34,7 +34,7 @@ The Remote consumer projection contains `.d.ts`, `.d.ts.map`, and `.js` files. T
 | API Gateway's Host face | `ctx.typertGateway` | Associates Host definitions with live Services, decodes parameters, resolves receivers, invokes methods, and encodes results |
 | Connection | `ctx.connection` | Exclusively owns the HTTP Server/future WebSocket, the shared `/api` route, RPC envelope, rpcId, serialization, trust, error transport, Typert interception, and legacy API Proxy fallback |
 | API Gateway's Client face | `ctx.remote`, `ctx.remote.<namespace>` | Mounts Remote contributions, materializes each namespace as a traced `remote.<namespace>` child Service, and delegates canonical calls to `ctx.connection.rpc` |
-| API Remotes | No new service | Owns Host Agent/Session lookup policy and serves as the only Client business facade, selecting and mounting `/remote` contributions while exposing the selected API declarations |
+| API Remotes | Client `ctx.apiRemotesReady` | Owns Host Agent/Session lookup policy and serves as the only Client business facade, selecting and mounting `/remote` contributions while exposing the selected API declarations. It provides `apiRemotesReady` only after every selected contribution has mounted. |
 | Agent/Session owning packages | Existing domain services | Provide both static interface merges and runtime lookup/Context providers |
 | Business packages such as Goal | Existing business Services | Declare only bindings, Remote methods, and canonical DTOs, and export the generated `/remote` subpath |
 
@@ -160,7 +160,7 @@ ctx.typert.lookups   wire ID 到 Host 对象的 provider 与组合策略
 ctx.typert.contexts  Host Context resolver 与 Client Context binder
 ```
 
-Every registration returns a disposer owned by the caller's Cordis fiber. Client contribution mounting registers the descriptor set and concrete methods as one owned operation. The Host Gateway caches only the set of SRC-owned endpoint names and discards it whenever the Cordis Service set changes; it retains no descriptor, Service, or provider. Invocation resolves all live objects from current state, so removing a strict definition, Service, or provider makes the corresponding call unavailable without leaving a stale live object.
+Every registration returns a disposer owned by the caller's Cordis fiber. Client contribution mounting registers the descriptor set and concrete methods as one owned operation. The API Remotes Client assembly provides `apiRemotesReady` only after its selected contributions have all mounted; a Client plugin that calls a selected method while activating injects this marker as well as its namespace. The Host Gateway caches only the set of SRC-owned endpoint names and discards it whenever the Cordis Service set changes; it retains no descriptor, Service, or provider. Invocation resolves all live objects from current state, so removing a strict definition, Service, or provider makes the corresponding call unavailable without leaving a stale live object.
 
 The lookup registry retains the stable wire declaration after its live resolver unloads. SRC parsing continues to classify the parameter as a lookup, while invocation fails with `lookup-unavailable`; it never reclassifies the incoming ID as an ordinary JSON business object. Re-registering the same key with different parameter, wire, or canonical type symbols fails for the lifetime of that Typert Service.
 

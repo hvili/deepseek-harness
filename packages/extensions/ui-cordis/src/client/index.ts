@@ -33,7 +33,7 @@ export type { CordisKey } from './locales.ts'
 
 /** Required services for the two Tool cards, panel, Remote lifecycle, and Slash source. */
 export const inject = [
-  'slots', 'locale', 'inputTriggers', 'remote', 'remote.dynamicCordisRunner', 'dynamicCordisRunner',
+  'slots', 'locale', 'inputTriggers', 'remote', 'apiRemotesReady', 'remote.dynamicCordisRunner', 'dynamicCordisRunner',
 ]
 
 /** Mount every Cordis browser surface over the shared Host inventory. */
