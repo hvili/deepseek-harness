@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
+import { launchWebScaffold, liveShellToolName, type WebScaffold } from './scaffold.ts'
 
 const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
   './snapshots/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
@@ -35,7 +35,10 @@ const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
  */
 const EXPECTED_TOOLS = [
   'ask_user_question',
-  'bash',
+  // The shell row follows the platform: the standard preset disables bash on
+  // win32 and mounts pwsh instead, so the roster asserts whichever this host
+  // ships (sorted below — pwsh lands between list_agents and ralph).
+  liveShellToolName,
   'create_goal',
   'edit',
   'exit_plan_mode',
@@ -57,7 +60,7 @@ const EXPECTED_TOOLS = [
   'web_search',
   'workflow',
   'write',
-]
+].sort()
 
 /**
  * `glob` and `grep` come from `dsh-tool-fs-search`, which spawns the PACKAGED
@@ -194,23 +197,30 @@ it('lets a preset producer reach the background-job registry', async () => {
   })
   try {
     const signal = new AbortController().signal
-    // `tool-bash` is a preset row and `tasks` is a host registry; the producer
-    // resolves it with `ctx.get`, so a registry hidden behind a preset realm
-    // fails here — with every task control still listed in the catalog above.
+    // The platform's shell tool is a preset row and `tasks` is a host
+    // registry; the producer resolves it with `ctx.get`, so a registry hidden
+    // behind a preset realm fails here — with every task control still listed
+    // in the catalog above.
     const started = await ctx.tools.execute({
       signal,
       callId: CallId('shipped-bash-background'),
-      name: 'bash',
+      name: liveShellToolName,
       arguments: {
-        command: 'printf SHIPPED_BACKGROUND_OK',
+        // printf is POSIX-only; Write-Output is the PowerShell spelling of the
+        // same probe text.
+        command: liveShellToolName === 'bash'
+          ? 'printf SHIPPED_BACKGROUND_OK'
+          : 'Write-Output SHIPPED_BACKGROUND_OK',
         description: 'shipped background probe',
         run_in_background: true,
       },
       agent: handle.agent,
     })
+    // The registry issues `<kind>-N` ids and the kind is the live shell's own name.
+    const jobId = `${liveShellToolName}-1`
     expect({ isError: started.isError, content: started.content }).toEqual({
       isError: false,
-      content: [{ type: 'text', text: 'started background job bash-1' }],
+      content: [{ type: 'text', text: `started background job ${jobId}` }],
     })
 
     // The controller reads what the producer started: same registry, one
@@ -224,7 +234,7 @@ it('lets a preset producer reach the background-job registry', async () => {
     })
     expect(listed.isError).toBe(false)
     expect(listed.content).toEqual([
-      { type: 'text', text: expect.stringContaining('bash-1 [bash]') as unknown as string },
+      { type: 'text', text: expect.stringContaining(`${jobId} [${liveShellToolName}]`) as unknown as string },
     ])
 
     // The full round trip: the output a host-plane producer wrote is collected
@@ -233,7 +243,7 @@ it('lets a preset producer reach the background-job registry', async () => {
       signal,
       callId: CallId('shipped-task-output'),
       name: 'job_output',
-      arguments: { job_id: 'bash-1', wait: true },
+      arguments: { job_id: jobId, wait: true },
       agent: handle.agent,
     })
     expect(collected.isError).toBe(false)
