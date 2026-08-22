@@ -12,6 +12,8 @@
 - text: Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop. {{clock}}
 - button "Copy":
   - img
+- button "Edit this message"
+- button "Return to before sending this message"
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img
@@ -20,6 +22,11 @@
   - img
   - img
   - text: Think The user wants me to ask them a checkpoint question first, then continue with whatever they interject. Let me do exactly that.
+- text: Running
+- button "Ask question waiting":
+  - img
+  - img
+  - text: Ask question waiting
 - status: Deep diving...
 - text: "Interjection: include the word BANANA in your final reply."
 - button "Copy":
@@ -34,4 +41,6 @@
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
+- button "0% of context used"
 - button "Stop generating"
+- text: Cache hit 0% Input 10 tok · Output 10 tok

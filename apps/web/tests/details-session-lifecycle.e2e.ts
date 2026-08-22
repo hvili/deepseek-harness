@@ -131,12 +131,14 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await expect.poll(() => detailsTrack(page), { timeout: 5_000 }).toBe(0)
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)
 
-    const ungrouped = page.getByText('Ungrouped', { exact: true })
-    const ungroupedRow = ungrouped.locator('..').locator('..')
+    // The group header's title sits under two wrapper spans (titleRow/
+    // projectText, added with workspace tags); address the row by role so
+    // wrapper churn cannot break the traversal again.
+    const ungroupedRow = page.getByRole('treeitem').filter({ hasText: 'Ungrouped' })
     const ungroupedSection = ungroupedRow.locator('..')
     await expect.poll(async () => {
       if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
-        await ungrouped.click()
+        await ungroupedRow.click()
         await page.waitForTimeout(50)
       }
       return await ungroupedRow.getAttribute('aria-expanded')

@@ -135,7 +135,18 @@ describe('web e2e: queue row actions', () => {
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
-    const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    // The click that opened this editor left the pointer inside the row; a
+    // Save button rendered under it would leak its hover tooltip into the
+    // capture. Park the pointer so the golden is hover-independent.
+    // The click that opened this editor leaves the pointer inside the row;
+    // whether Chromium then delivers the boundary events that show (and hide)
+    // the Save button's hover tooltip is timing-dependent — the same steps
+    // produce the tooltip in one run and not the next. Hover chrome is not
+    // this golden's contract, so strip tooltip nodes from the capture.
+    const editingSnapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      .split('\n')
+      .filter(line => !line.trim().startsWith('- tooltip'))
+      .join('\n')
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await page.getByRole('button', { name: 'Save queued message' }).click()
     await page.getByText(EDITED, { exact: true }).waitFor()

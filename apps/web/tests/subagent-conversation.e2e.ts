@@ -455,6 +455,14 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     expect(await page.getByText('Ungrouped', { exact: true }).count()).toBe(0)
     const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
     await expect.poll(() => hierarchy.getByRole('button').count()).toBe(1)
+    // The fork row reports Running while its events land, then settles to the
+    // finished-but-unviewed Completed label; pin the settled state so the
+    // golden cannot race the transition.
+    await expect.poll(
+      () => page.getByRole('tree', { name: 'Sessions' })
+        .getByRole('treeitem').filter({ hasText: 'Completed' }).count(),
+      { timeout: 10_000 },
+    ).toBe(1)
     await compareOrRefreshGolden(
       FORK_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),

@@ -916,9 +916,12 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       .replace(/(?<=listitem: )pwsh /g, 'bash ')
       // Remaining doubled backslashes are the path separators the cwd collapse
       // left behind (the YAML escaping of a Windows path); fold them to the
-      // POSIX spelling so one golden serves both platforms. A single backslash
-      // before a quote is YAML escaping, not a separator, and stays put.
-      .replace(/\\\\/g, '/')
+      // POSIX spelling so one golden serves both platforms. The lookahead
+      // refuses a following quote or backslash, so the YAML encoding of a
+      // CONTENT backslash survives: a JSON-escaped quote renders as three
+      // backslashes and a quote in the snapshot, and folding its first pair
+      // would rewrite recorded arguments. A path-separator pair still folds.
+      .replace(/\\\\(?=[^"\\])/g, '/')
     : normalized
 }
 
