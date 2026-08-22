@@ -1,5 +1,5 @@
 // Web e2e scenario: fresh round trip. A real chromium types a prompt into the
-// real composer; the wire, apiproxy, agent loop, and the REAL bash tool (echo
+// real composer; the wire, apiproxy, agent loop, and the REAL shell tool (echo
 // in the temp workspace) all run; the model adapter is dsh-llm-replay (keyless)
 // or the live adapter (record). Drive steps run in every mode and wait only
 // on generic completion (whenTurnSettled — never model-content selectors, so
@@ -18,7 +18,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, liveShellToolName, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
 
@@ -92,22 +92,24 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await compareOrRefreshGolden(SYSTEM_PROMPT_EXPECTED, prefix, MODE)
   })
 
-  it('exposes the assembled Web URL to the real bash tool', async () => {
+  it('exposes the assembled Web URL to the real shell tool', async () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
     const agent = scaffold.ctx.agents.get(settledSessionId)
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
     const result = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(5_000),
       callId: CallId('web-url-probe'),
-      name: 'bash',
+      name: liveShellToolName,
       arguments: {
-        command: 'printf \'%s\\n\' "$DSH_WEB_URL"',
+        command: process.platform === 'win32'
+          ? 'Write-Output $env:DSH_WEB_URL'
+          : 'printf \'%s\\n\' "$DSH_WEB_URL"',
         description: 'Print current Web runtime',
       },
       agent,
     })
     expect(result.isError).toBe(false)
-    expect(result.content.filter(block => block.type === 'text').map(block => block.text).join(''))
+    expect(result.content.filter(block => block.type === 'text').map(block => block.text).join('').replace(/\r\n/g, '\n'))
       .toBe(`${scaffold.baseUrl}\n`)
   })
 
@@ -119,15 +121,15 @@ describe('web e2e: fresh round trip through the real assembly', () => {
       // legal — the chunk-event assertions below carry incrementality.
     })
     await expect.poll(() => page.getByText('DONE', { exact: true }).count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-    // World state, not self-report: the real bash executor returned the exact
+    // World state, not self-report: the real shell executor returned the exact
     // command output, and the turn closed cleanly.
-    const bashCall = sessionEvents.find(event => event.type === 'tool/call' && event.data.name === 'bash')
-    if (bashCall?.type !== 'tool/call') throw new Error('the replayed turn did not call the bash tool')
-    const bashResult = sessionEvents.find(event =>
-      event.type === 'tool/result' && event.data.message.source.callId === bashCall.data.callId)
-    if (bashResult?.type !== 'tool/result') throw new Error('the bash tool call produced no durable result')
-    expect(bashResult.data.message.content[0].isError).toBe(false)
-    expect(bashResult.data.message.content[0].content.filter(block => block.type === 'text').map(block => block.text).join(''))
+    const shellCall = sessionEvents.find(event => event.type === 'tool/call' && event.data.name === liveShellToolName)
+    if (shellCall?.type !== 'tool/call') throw new Error('the replayed turn did not call the shell tool')
+    const shellResult = sessionEvents.find(event =>
+      event.type === 'tool/result' && event.data.message.source.callId === shellCall.data.callId)
+    if (shellResult?.type !== 'tool/result') throw new Error('the shell tool call produced no durable result')
+    expect(shellResult.data.message.content[0].isError).toBe(false)
+    expect(shellResult.data.message.content[0].content.filter(block => block.type === 'text').map(block => block.text).join('').replace(/\r\n/g, '\n'))
       .toBe('WEB_E2E_OK\n')
     const turnEnds = sessionEvents.filter(e => e.type === 'turn/end')
     expect(turnEnds.length).toBe(1)

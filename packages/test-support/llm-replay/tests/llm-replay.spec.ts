@@ -577,6 +577,73 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
     })
   })
 
+  describe('toolNames mapping', () => {
+    /** One recorded shell call: name rides the first delta and the block-end. */
+    function shellCall(name: string, command: string): StreamChunk[] {
+      const argumentsJson = JSON.stringify({ command })
+      return [
+        { type: 'block-start', index: 0, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), name, argumentsDelta: argumentsJson.slice(0, 4) },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), argumentsDelta: argumentsJson.slice(4) },
+        { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('c1'), name, arguments: argumentsJson } },
+        { type: 'finish', reason: { kind: 'tool-calls' } },
+      ]
+    }
+
+    it('renames the tool on the named delta and the block-end while streaming recorded args unchanged', async () => {
+      writeLog(shellCall('bash', 'echo hi > notes.txt'))
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const namedDelta = streamed.find(chunk => chunk.type === 'tool-call-delta' && chunk.name !== undefined)
+      expect(namedDelta).toMatchObject({ name: 'pwsh', argumentsDelta: '{"co' })
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { type: 'tool-call', name: 'pwsh', arguments: '{"command":"echo hi > notes.txt"}' } })
+      // The continuation delta (no name) passes through untouched.
+      expect(streamed.filter(chunk => chunk.type === 'tool-call-delta')).toHaveLength(2)
+    })
+
+    it('applies the map to override sidecar entries too', async () => {
+      writeLog(TEXT_CHUNKS)
+      const overrideFile = join(dir, 'replay.override.json')
+      writeFileSync(overrideFile, JSON.stringify([{ kind: 'chunks', chunks: shellCall('bash', 'echo hi') }]), 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, overrideFile, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'pwsh' } })
+    })
+
+    it('leaves unmapped tool names untouched', async () => {
+      writeLog(shellCall('read', '{"file_path":"notes.txt"}'))
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'read' } })
+    })
+
+    it('applies the map to child scripts as well', async () => {
+      const parentFile = writeSession('session.jsonl', { id: 'rec-parent', createdAt: 100 }, [TEXT_CHUNKS])
+      const childFile = writeSession('session.1.jsonl', { id: 'rec-child', createdAt: 200 }, [shellCall('bash', 'echo hi')])
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file: parentFile, childFiles: [childFile], toolNames: { bash: 'pwsh' } })
+      // The anonymous first call binds the parent script; a distinct live
+      // session id binds the child, whose streamed shell call is renamed.
+      await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const childStreamed = await drain(ctx.llm.stream({
+        provider: 'm', model: 'm', messages: [],
+        sessionId: 'live-child' as NonNullable<GenerateOptions['sessionId']>,
+      }))
+      const end = childStreamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'pwsh' } })
+    })
+  })
+
   it('registers a replay-only provider catalog when configured', async () => {
     writeLog(TEXT_CHUNKS)
     const ctx = new Context()

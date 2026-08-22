@@ -96,6 +96,15 @@ export function webSnapshotMode(): WebSnapshotMode {
   throw new Error(`DSH_SNAPSHOT must be replay, record, or refresh; got ${JSON.stringify(value)}`)
 }
 
+/**
+ * The shell tool the live composition mounts on this platform: the Windows
+ * standard preset ships pwsh, every other platform ships bash. Tests that
+ * dispatch or assert the live shell tool import this instead of hardcoding
+ * either name; the replay tool-name map derives from it so bash-recorded
+ * fixtures dispatch under the platform's real tool.
+ */
+export const liveShellToolName: 'bash' | 'pwsh' = process.platform === 'win32' ? 'pwsh' : 'bash'
+
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
@@ -601,6 +610,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         ...(options.replayOverride === undefined ? {} : { overrideFile: options.replayOverride }),
         ...(options.replayChildFixtures === undefined ? {} : { childFiles: options.replayChildFixtures }),
         ...(options.paceMs === undefined ? {} : { paceMs: options.paceMs }),
+        // Fixtures record the shell tool of the recording platform (bash); the
+        // Windows standard preset mounts pwsh instead, so replayed shell calls
+        // must dispatch under the live tool's name. One mapping here keeps every
+        // cross-platform scenario off per-test shims; POSIX keeps replaying
+        // bash untouched.
+        ...(liveShellToolName === 'bash' ? {} : { toolNames: { bash: liveShellToolName } }),
       })
     } else if (mode !== 'record' && options.deepSeekMissingCredential !== true) {
       // No fixture and no shipped adapter would leave the tree with ZERO
@@ -844,7 +859,7 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
   // The session heading renders the workspace's basename, not the full
   // path, so both spellings must collapse to the token.
   const base = workspaceCwd.split('/').pop()!
-  return snapshot
+  const normalized = snapshot
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
@@ -869,6 +884,18 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     .replace(/\d{1,2}月\d{1,2}日 \d{2}:\d{2}/g, '{{clock}}')
     .replace(/(?<!\d)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s*[AP]M)?(?!\d)/gi, '{{clock}}')
     .replace(/(?<!\d)\d{2}:\d{2}(?!\d)/g, '{{clock}}')
+  // Windows replays bash fixtures through pwsh (installLlmReplay's toolNames),
+  // so shell rows carry the Pwsh title where the POSIX recording rendered Bash.
+  // The title is incidental to every golden that shows it (they assert
+  // placement, states, and actions), so collapse the twin's spelling to the
+  // fixture's and keep one committed golden per scenario. Position-anchored:
+  // the title opens an accessible-name quote or a text line, optionally behind
+  // the Failed prefix; POSIX passes through untouched.
+  return process.platform === 'win32'
+    ? normalized
+      .replace(/(?<=")(Failed )?Pwsh /g, '$1Bash ')
+      .replace(/(?<=text: ?"?)(Failed )?Pwsh /g, '$1Bash ')
+    : normalized
 }
 
 /**

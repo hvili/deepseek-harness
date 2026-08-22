@@ -118,6 +118,15 @@ export interface ReplayConfig {
    * aborting mid-wait cancels the stream like any other abort.
    */
   paceMs?: number
+  /**
+   * Optional recorded→live tool-name map applied to every replayed entry
+   * (derived and sidecar, parent and child): a fixture recorded against one
+   * platform's shell tool (`bash`) replays against another's (`pwsh`)
+   * without editing the committed log — the live loop dispatches by the mapped
+   * name while the recorded arguments stream unchanged. Names absent from the
+   * map pass through untouched.
+   */
+  toolNames?: Readonly<Record<string, string>>
 }
 
 /**
@@ -381,6 +390,34 @@ export function resolveScriptedEntry(entry: ReplayEntry, messages: GenerateOptio
   const leaves: string[] = []
   collectStrings(messages, leaves)
   return substituteValue(entry, leaves.join('\n')) as ReplayEntry
+}
+
+/**
+ * Rename tool-call names in one chunk list per a recorded→live map. Names ride
+ * `tool-call-delta` chunks (the optional `name` on the first delta) and
+ * `block-end` tool-call blocks; every other chunk passes through by identity.
+ * @param chunks - the recorded chunk list.
+ * @param toolNames - recorded tool name → the live tool name to dispatch.
+ * @returns the renamed chunk list.
+ */
+function renameToolCallNames(chunks: StreamChunk[], toolNames: Readonly<Record<string, string>>): StreamChunk[] {
+  return chunks.map((chunk) => {
+    if (chunk.type === 'tool-call-delta' && chunk.name !== undefined) {
+      const mapped = toolNames[chunk.name]
+      if (mapped !== undefined) return { ...chunk, name: mapped }
+    }
+    if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
+      const mapped = toolNames[chunk.block.name]
+      if (mapped !== undefined) return { ...chunk, block: { ...chunk.block, name: mapped } }
+    }
+    return chunk
+  })
+}
+
+/** Apply {@link ReplayConfig.toolNames} to one entry; a `hang` entry carries no tool calls. */
+function renameEntryTools(entry: ReplayEntry, toolNames: Readonly<Record<string, string>>): ReplayEntry {
+  if (entry.kind === 'hang') return entry
+  return { ...entry, chunks: renameToolCallNames(entry.chunks, toolNames) }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -699,7 +736,17 @@ export function installLlmReplay(ctx: Context, config: ReplayConfig): ReplayHand
   if (!Number.isInteger(paceMs) || paceMs < 0) {
     throw new Error(`llm-replay: paceMs must be a non-negative integer, got ${String(config.paceMs)}`)
   }
-  const scripts = loadSessionScripts(config)
+  const loaded = loadSessionScripts(config)
+  const toolNames = config.toolNames
+  // Recorded tool names belong to the recording platform; the live composition
+  // dispatches by its own (the standard preset mounts pwsh, not bash, on
+  // Windows), so renamed scripts must bind before the first model call.
+  const scripts = toolNames === undefined
+    ? loaded
+    : loaded.map(script => ({
+      ...script,
+      entries: script.entries.map(entry => renameEntryTools(entry, toolNames)),
+    }))
   // Live-session → its bound script + cursor. A new live session id claims the
   // next not-yet-bound script (scripts are in bind order); `nextScript` is the
   // index of the next unclaimed one.
