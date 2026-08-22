@@ -28,11 +28,16 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
 
 const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./snapshots/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
+// On Windows a cold, source-launched profile can need roughly two minutes to
+// load the full plugin tree before it publishes the ready URL. Keep this below
+// Vitest's 180-second file default while allowing the real readiness signal to
+// distinguish a slow boot from a failed one.
+const WEB_BOOT_TIMEOUT_MS = 150_000
 
 function waitForReadyLine(child: ChildProcess): Promise<string> {
   return new Promise((resolveReady, reject) => {
     let out = ''
-    const timer = setTimeout(() => { reject(new Error(`dsh web not ready in 90s; output:\n${out}`)) }, 90_000)
+    const timer = setTimeout(() => { reject(new Error(`dsh web not ready in ${String(WEB_BOOT_TIMEOUT_MS / 1000)}s; output:\n${out}`)) }, WEB_BOOT_TIMEOUT_MS)
     const onData = (chunk: Buffer): void => {
       out += chunk.toString()
       const match = /dsh web: (http:\/\/[^\s]+)/.exec(out)
@@ -385,7 +390,7 @@ describe('dsh web keyless CLI smoke', () => {
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 180_000)
 
   it('DSH_TOOLS_MODE=code collapses the provider wire tools to run_code with the SDK prompt section', async () => {
     requireDist()

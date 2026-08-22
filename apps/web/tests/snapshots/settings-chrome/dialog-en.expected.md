@@ -13,6 +13,9 @@
     - button "Agent presets":
       - img
       - text: Agent presets
+    - button "Archived conversations":
+      - img
+      - text: Archived conversations
   - button "Open configuration file"
   - button "Close":
     - img

@@ -164,18 +164,20 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
 }
 
 /**
- * The sample as a plain registrant plugin. Slot injection follows the chat
- * toolview declaration across independent activation and reload lifetimes.
+ * The shell sample as a plain registrant plugin. Slot injection follows the
+ * chat toolview declaration across independent activation and reload lifetimes.
  */
 export const bashToolviewSample = {
   name: 'bash-toolview-sample',
   inject: ['slots'],
   /**
-   * Register the bash row into the Tool-owned keyed view slot.
+   * Register both platform shell rows into the Tool-owned keyed view slot.
    * @param ctx - registrant context (disposal rides ctx.effect inside slots.register).
    */
   apply(ctx: Context): void {
-    ctx.slots.inject('tool.call.toolview', () =>
-      ctx.slots.register({ name: 'tool.call.toolview', key: 'bash', locale: NS }, BashRow))
+    ctx.slots.inject('tool.call.toolview', function* () {
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'bash', locale: NS }, BashRow)
+      yield ctx.slots.register({ name: 'tool.call.toolview', key: 'pwsh', locale: NS }, BashRow)
+    })
   },
 }
