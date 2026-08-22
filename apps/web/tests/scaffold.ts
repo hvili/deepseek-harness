@@ -883,6 +883,16 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
+    // A settled background job's outcome detail is platform-shaped: POSIX
+    // kills carry the terminating signal, Windows force-kills settle without
+    // one (the pwsh tool documents the difference). Fold both spellings — and
+    // the YAML quoting the POSIX colon induces — so one golden asserts the
+    // settled detail renders without asserting either platform's kill
+    // semantics; the vocabulary itself is unit-covered (tool-pwsh
+    // processOutcome suite).
+    .replace(/signal: SIGTERM\b/g, '{{outcome}}')
+    .replace(/\bkilled before exit\b/g, '{{outcome}}')
+    .replace(/- listitem: "([^"]*\{\{outcome\}\}[^"]*)"/g, '- listitem: $1')
     // Session summaries and Message IconActions clocks cross calendar
     // boundaries; collapse every shape so goldens stay stable across them.
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '{{timestamp}}')
@@ -901,6 +911,9 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     ? normalized
       .replace(/(?<=")(Failed )?Pwsh /g, '$1Bash ')
       .replace(/(?<=text: ?"?)(Failed )?Pwsh /g, '$1Bash ')
+      // The background-job row renders the registry kind lowercase as the
+      // first listitem token; fold it the same way the title folds.
+      .replace(/(?<=listitem: )pwsh /g, 'bash ')
       // Remaining doubled backslashes are the path separators the cwd collapse
       // left behind (the YAML escaping of a Windows path); fold them to the
       // POSIX spelling so one golden serves both platforms. A single backslash
