@@ -642,6 +642,39 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
       const end = childStreamed.find(chunk => chunk.type === 'block-end')
       expect(end).toMatchObject({ block: { name: 'pwsh' } })
     })
+
+    it('rewrites tools.<name> bindings in a run_code program and leaves other arguments untouched', async () => {
+      // One recorded stream with two calls: a run_code program addressing the
+      // recorded shell through the SDK binding, and a shell call whose command
+      // string legitimately contains the literal `tools.bash`.
+      const program = 'const out = await tools.bash({ command: "echo hi" });\nreturn out'
+      const runCodeArguments = JSON.stringify({ code: program, description: 'run shell' })
+      const shellArguments = JSON.stringify({ command: 'echo tools.bash', description: 'echo' })
+      writeLog([
+        { type: 'block-start', index: 0, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), name: 'run_code', argumentsDelta: runCodeArguments.slice(0, 4) },
+        { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('c1'), name: 'run_code', arguments: runCodeArguments } },
+        { type: 'block-start', index: 1, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 1, id: CallId('c2'), name: 'bash', argumentsDelta: shellArguments.slice(0, 4) },
+        { type: 'block-end', index: 1, block: { type: 'tool-call', id: CallId('c2'), name: 'bash', arguments: shellArguments } },
+        { type: 'finish', reason: { kind: 'tool-calls' } },
+      ])
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const ends = streamed.filter((chunk): chunk is Extract<StreamChunk, { type: 'block-end' }> => chunk.type === 'block-end')
+      const programEnd = ends.find(end => end.block.type === 'tool-call' && end.block.name === 'run_code')
+      if (programEnd?.block.type !== 'tool-call') throw new Error('the run_code block-end was not streamed')
+      const expectedProgram = 'const out = await tools.pwsh({ command: "echo hi" });\nreturn out'
+      expect(programEnd.block.arguments).toBe(JSON.stringify({ code: expectedProgram, description: 'run shell' }))
+      expect(programEnd.block.arguments).not.toContain('tools.bash')
+      const shellEnd = ends.find(end => end.block.type === 'tool-call' && end.block.name === 'pwsh')
+      if (shellEnd?.block.type !== 'tool-call') throw new Error('the renamed shell block-end was not streamed')
+      // A non-program call's arguments are command data, not SDK source: the
+      // literal token belongs to the recorded scenario and streams unchanged.
+      expect(shellEnd.block.arguments).toBe(shellArguments)
+    })
   })
 
   it('registers a replay-only provider catalog when configured', async () => {

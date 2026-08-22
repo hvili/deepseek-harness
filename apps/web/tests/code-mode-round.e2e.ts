@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, liveShellToolName, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
@@ -94,10 +94,13 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
       expect(Array.isArray(data.content)).toBe(true)
       expect(typeof data.isError).toBe('boolean')
     }
-    const bash = dispatches.find(dispatch => (dispatch.data as { name: string }).name === 'bash')
-    expect(bash).toBeDefined()
-    const bashContent = (bash!.data as { content: { type: string; text?: string }[] }).content
-    expect(bashContent.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('CODE_ROUND_OK')
+    // The shell sub-dispatch runs under the platform's live shell tool: the
+    // scaffold renames the fixture's dispatch name and rewrites the program's
+    // tools.bash binding the same way.
+    const shell = dispatches.find(dispatch => (dispatch.data as { name: string }).name === liveShellToolName)
+    expect(shell).toBeDefined()
+    const shellContent = (shell!.data as { content: { type: string; text?: string }[] }).content
+    expect(shellContent.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('CODE_ROUND_OK')
   })
 
   it.skipIf(MODE === 'record')('renders the code parent row with always-visible nested sub-rows', async () => {
@@ -118,7 +121,7 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
     expect(await nest.locator('[data-state="error"]').count()).toBeGreaterThanOrEqual(1)
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('a bash sub-row click leaves the default details panel closed', async () => {
+  it.skipIf(MODE === 'record')('a shell sub-row click leaves the default details panel closed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-code-mode-details'))
     const nest = page.locator('[data-subcalls]').first()
     const frame = page.locator('[style*="grid-template-columns"]').first()

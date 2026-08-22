@@ -858,8 +858,14 @@ async function persistSeedSession(
 function normalizeAria(snapshot: string, workspaceCwd: string): string {
   // The session heading renders the workspace's basename, not the full
   // path, so both spellings must collapse to the token.
-  const base = workspaceCwd.split('/').pop()!
+  const base = workspaceCwd.split(/[\\/]/).pop()!
   const normalized = snapshot
+    // A Windows cwd renders as native backslashed paths, which the aria
+    // snapshot's YAML quoting doubles; collapse BOTH spellings before the
+    // basename pass so a full path folds into {{cwd}} instead of having its
+    // basename eaten first. A POSIX cwd carries no backslash, making the two
+    // splits identical there.
+    .split(workspaceCwd.split('\\').join('\\\\')).join('{{cwd}}')
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
@@ -895,6 +901,11 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     ? normalized
       .replace(/(?<=")(Failed )?Pwsh /g, '$1Bash ')
       .replace(/(?<=text: ?"?)(Failed )?Pwsh /g, '$1Bash ')
+      // Remaining doubled backslashes are the path separators the cwd collapse
+      // left behind (the YAML escaping of a Windows path); fold them to the
+      // POSIX spelling so one golden serves both platforms. A single backslash
+      // before a quote is YAML escaping, not a separator, and stays put.
+      .replace(/\\\\/g, '/')
     : normalized
 }
 

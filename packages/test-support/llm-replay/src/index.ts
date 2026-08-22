@@ -124,7 +124,10 @@ export interface ReplayConfig {
    * platform's shell tool (`bash`) replays against another's (`pwsh`)
    * without editing the committed log — the live loop dispatches by the mapped
    * name while the recorded arguments stream unchanged. Names absent from the
-   * map pass through untouched.
+   * map pass through untouched. A `run_code` call's program source addresses
+   * subtools through the `tools.` binding, so its `tools.<recorded>` references
+   * are rewritten to the mapped names on the authoritative block-end; streamed
+   * deltas keep the recorded spelling.
    */
   toolNames?: Readonly<Record<string, string>>
 }
@@ -393,9 +396,41 @@ export function resolveScriptedEntry(entry: ReplayEntry, messages: GenerateOptio
 }
 
 /**
+ * The Code Mode transport's model-facing tool name — the one tool whose
+ * arguments are program source (`RUN_CODE_NAME` in dsh-tools, kept local so
+ * test-support does not depend on the tools package for one wire-stable name).
+ */
+const RUN_CODE_TOOL_NAME = 'run_code'
+
+/**
+ * Rewrite `tools.<recorded>` member accesses inside a Code Mode program per the
+ * same recorded→live map: programs address subtools through the `tools.` SDK
+ * binding, so a bash-recorded program must call the live platform's shell the
+ * way its dispatch name was renamed. The token refuses a following word
+ * character, so `tools.bashx` never matches `tools.bash`.
+ * @param argumentsJson - the recorded `run_code` arguments JSON.
+ * @param toolNames - recorded tool name → the live tool name to dispatch.
+ * @returns the arguments JSON with program tool bindings renamed.
+ */
+function renameProgramToolBindings(argumentsJson: string, toolNames: Readonly<Record<string, string>>): string {
+  let rewritten = argumentsJson
+  for (const [recorded, live] of Object.entries(toolNames)) {
+    const escaped = recorded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    rewritten = rewritten.replace(new RegExp(`tools\\.${escaped}(?!\\w)`, 'g'), `tools.${live}`)
+  }
+  return rewritten
+}
+
+/**
  * Rename tool-call names in one chunk list per a recorded→live map. Names ride
  * `tool-call-delta` chunks (the optional `name` on the first delta) and
  * `block-end` tool-call blocks; every other chunk passes through by identity.
+ * A `run_code` block's arguments are program source, so the map also rewrites
+ * the program's `tools.<recorded>` bindings — on the block-end only, the
+ * authoritative chunk the assembler freezes the executed call from; streamed
+ * deltas keep the recorded spelling (presentation-only). Other tools'
+ * arguments stream unchanged: a command string legitimately containing the
+ * literal `tools.bash` belongs to the recorded scenario.
  * @param chunks - the recorded chunk list.
  * @param toolNames - recorded tool name → the live tool name to dispatch.
  * @returns the renamed chunk list.
@@ -408,7 +443,11 @@ function renameToolCallNames(chunks: StreamChunk[], toolNames: Readonly<Record<s
     }
     if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
       const mapped = toolNames[chunk.block.name]
-      if (mapped !== undefined) return { ...chunk, block: { ...chunk.block, name: mapped } }
+      const argumentsJson = chunk.block.name === RUN_CODE_TOOL_NAME
+        ? renameProgramToolBindings(chunk.block.arguments, toolNames)
+        : chunk.block.arguments
+      if (mapped === undefined && argumentsJson === chunk.block.arguments) return chunk
+      return { ...chunk, block: { ...chunk.block, name: mapped ?? chunk.block.name, arguments: argumentsJson } }
     }
     return chunk
   })
