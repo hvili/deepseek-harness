@@ -78,9 +78,10 @@ describe.skipIf(MODE === 'record' || !HAS_PWSH)('web e2e: pwsh calls use the bas
     await expect.poll(() => result.count(), { timeout: 15_000 }).toBe(1)
     await result.click()
     await page.getByRole('tab', { name: 'Chat', exact: true }).waitFor({ timeout: 15_000 })
-    // The tool row is expand-gated: the settled row uses the bash layout and carries the
-    // shell-family variant, and the terminal card lives in the expanded body.
-    const row = page.locator('[data-tool="pwsh"]').first()
+    // The tool row is expand-gated: the keyed bash-sample row renders the
+    // shell family (pwsh registered beside bash), and the terminal card lives
+    // in the expanded body.
+    const row = page.locator('[data-sample="bash"]').first()
     await row.waitFor({ timeout: 15_000 })
     if (await row.getAttribute('aria-expanded') !== 'true') await row.click()
     const card = page.locator('[data-terminal]').first()

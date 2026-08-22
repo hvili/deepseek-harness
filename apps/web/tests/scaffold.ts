@@ -779,13 +779,54 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
     : realized.split(JSON.stringify(fixtureCwd).slice(1, -1)).join(encodedWorkspaceCwd)
 }
 
+/**
+ * Rewrite a seeded log's recorded `bash` tool calls to the live shell tool on
+ * win32 — the seed-time twin of installLlmReplay's toolNames mapping. Seeded
+ * rows present through the live registry (the api-proxy recomputes render
+ * intents by tool name), so a POSIX-recorded seed on a pwsh host would render
+ * generic rows with no terminal card; replayed sessions already carry the live
+ * name because the replay mapping renames at dispatch. POSIX hosts keep the
+ * fixture verbatim.
+ * @param events - parsed seed events.
+ * @returns events whose shell tool calls carry the live platform name.
+ */
+function foldSeededShellTool(events: readonly SessionEvent[]): readonly SessionEvent[] {
+  if (liveShellToolName === 'bash') return events
+  return events.map((event) => {
+    if (event.type === 'tool/call' && event.data.name === 'bash') {
+      return { ...event, data: { ...event.data, name: liveShellToolName } }
+    }
+    if (event.type === 'assistant/message') {
+      // Durable-file boundary: hand-authored seeds may carry the flat shape
+      // with the content blocks at the top level, so fold them wherever they
+      // live and keep the seed's own envelope.
+      const data = event.data as { message?: { content: unknown }; content?: unknown }
+      const blocks = data.message?.content ?? data.content
+      if (Array.isArray(blocks)) {
+        const content = blocks.map(block => (
+          typeof block === 'object' && block !== null
+            && (block as { type?: unknown }).type === 'tool-call'
+            && (block as { name?: unknown }).name === 'bash'
+            ? { ...block, name: liveShellToolName }
+            : block
+        ))
+        // The flat arm re-serializes a shape the typed union does not carry.
+        return data.message !== undefined
+          ? { ...event, data: { ...event.data, message: { ...event.data.message, content } } }
+          : { ...event, data: { ...event.data, content } } as SessionEvent<'assistant/message'>
+      }
+    }
+    return event
+  })
+}
+
 export async function seedSession(
   scaffold: WebScaffold,
   fixtureText: string,
   id: string,
   agentPreset?: string,
 ): Promise<SessionId> {
-  const events = parseSessionLog(realizeSeedFixture(scaffold, fixtureText, id))
+  const events = foldSeededShellTool(parseSessionLog(realizeSeedFixture(scaffold, fixtureText, id)))
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
   // An open final turn would be mutated by resume's crash repair on first
@@ -914,6 +955,11 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       // The background-job row renders the registry kind lowercase as the
       // first listitem token; fold it the same way the title folds.
       .replace(/(?<=listitem: )pwsh /g, 'bash ')
+      // The trajectory ledger labels a shell row with the durable tool name
+      // (row "TOOL, pwsh {...}") and repeats it in the args cell; fold both
+      // so the seeded/replayed ledger matches the POSIX recording.
+      .replace(/(?<=row "TOOL, )pwsh (?=\{)/g, 'bash ')
+      .replace(/(?<=cell ")pwsh(?=\{)/g, 'bash')
       // Remaining doubled backslashes are the path separators the cwd collapse
       // left behind (the YAML escaping of a Windows path); fold them to the
       // POSIX spelling so one golden serves both platforms. The lookahead

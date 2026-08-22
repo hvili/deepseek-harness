@@ -73,11 +73,11 @@ export function apply(ctx: ClientContext): void {
     ctx.settingsScope.bind({ namespace: VISION_PROXY_NS }),
     async (provider, model, options) => {
       const response = await api.llm.testModel({
-          provider,
-          model,
-          ...options?.probeVision === undefined ? {} : { probeVision: options.probeVision },
-          ...options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
-        })
+        provider,
+        model,
+        ...options?.probeVision === undefined ? {} : { probeVision: options.probeVision },
+        ...options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+      })
       if (!response.result.ok) {
         return { ok: false, error: response.result.error.message }
       }
@@ -174,10 +174,13 @@ export function apply(ctx: ClientContext): void {
     inject: () => configurable.inject(),
     children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
   }, ConfigurablePluginsTab))
+  // Distinct from agent-presets' 20: an equal order falls back to
+  // registration order, which follows plugin activation timing and is not
+  // stable across runs. Archived conversations sit after the presets row.
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'archived-sessions',
-    order: 20,
+    order: 25,
     label: () => t('archivedTab'),
     locale: NS,
     inject: archivedSessionsInjected,
