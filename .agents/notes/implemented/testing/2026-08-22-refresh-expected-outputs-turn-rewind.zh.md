@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[English](2026-08-22-refresh-goldens-turn-rewind.md) | 中文
+[English](2026-08-22-refresh-expected-outputs-turn-rewind.md) | 中文
 
 ## 问题
 

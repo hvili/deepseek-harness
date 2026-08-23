@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-upgrade-coordinator",
   "description": "Transactional session-store upgrade orchestration: preflight, auto-backup before migration, and atomic rollback on failure, built on the session-backup primitives",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

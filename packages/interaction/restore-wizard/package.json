@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-restore-wizard",
   "description": "Host-layer restore wizard: previews a session-snapshot restore under the read-only sandbox seam, then asks the real user-approval seam before transactionally restoring via the restore-coordinator",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },
