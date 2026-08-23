@@ -91,7 +91,7 @@ describe('ui-settings-plugins apply', () => {
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
 
     const archived = slots.entries('settings.section').find(entry => entry.options.id === 'archived-sessions')!
-    expect(archived.options).toMatchObject({ order: 20 })
+    expect(archived.options).toMatchObject({ order: 25 })
     expect(resolveSlotLabel(archived.options.label)).toBe('已归档对话')
     expect(slots.entries('settings.plugins.tab').map(entry => entry.options.id)).toEqual(['configurable'])
   })
