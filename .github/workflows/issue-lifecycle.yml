@@ -74,4 +74,5 @@ jobs:
       - name: Skip lifecycle actions (no app credentials)
         if: ${{ steps.check-creds.outputs.has_creds == 'false' }}
         shell: bash
-        run: echo "Skipping issue lifecycle management: GitHub App credentials not configured. This is expected on forks without org secrets."
+        run: |
+          echo "Skipping issue lifecycle management: GitHub App credentials not configured. This is expected on forks without org secrets."

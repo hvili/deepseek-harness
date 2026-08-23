@@ -36,6 +36,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          # plugins/dsh-turn-rewind is a workspace member (bundle/base
+          # depends on it); pack needs it present at install time.
+          submodules: true
 
       - uses: pnpm/action-setup@v4
         with:
