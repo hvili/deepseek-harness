@@ -1,23 +1,21 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-vision-proxy`.
- * @module @deepseek-ai/dsh-vision-proxy/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-restore-wizard`.
+ * @module @deepseek-ai/dsh-restore-wizard/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-vision-proxy'
+const PACKAGE_NAME = '@deepseek-ai/dsh-restore-wizard'
 
 /** Cordis companion plugin name. */
-export const name = 'vision-proxy-invariant'
+export const name = 'restore-wizard-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this plugin has no independent durable registry; its
- * only state transition is the agent/pre-step waterfall, asserted in the
- * composition tests.
+ * No runtime invariant: the wizard is a UI surface over the restore coordinator; state transitions are asserted by the composition tests.
  */
 const install: InvariantInstaller = () => {}
 

@@ -1,23 +1,21 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-vision-proxy`.
- * @module @deepseek-ai/dsh-vision-proxy/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-upgrade-coordinator`.
+ * @module @deepseek-ai/dsh-upgrade-coordinator/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-vision-proxy'
+const PACKAGE_NAME = '@deepseek-ai/dsh-upgrade-coordinator'
 
 /** Cordis companion plugin name. */
-export const name = 'vision-proxy-invariant'
+export const name = 'upgrade-coordinator-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this plugin has no independent durable registry; its
- * only state transition is the agent/pre-step waterfall, asserted in the
- * composition tests.
+ * No runtime invariant: upgrade flows are exercised end-to-end by the upgrade test lane.
  */
 const install: InvariantInstaller = () => {}
 

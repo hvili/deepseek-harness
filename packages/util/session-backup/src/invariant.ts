@@ -1,23 +1,21 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-vision-proxy`.
- * @module @deepseek-ai/dsh-vision-proxy/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-session-backup`.
+ * @module @deepseek-ai/dsh-session-backup/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-vision-proxy'
+const PACKAGE_NAME = '@deepseek-ai/dsh-session-backup'
 
 /** Cordis companion plugin name. */
-export const name = 'vision-proxy-invariant'
+export const name = 'session-backup-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this plugin has no independent durable registry; its
- * only state transition is the agent/pre-step waterfall, asserted in the
- * composition tests.
+ * No runtime invariant: backup/verify/restore integrity is covered by the primitive test suites.
  */
 const install: InvariantInstaller = () => {}
 
