@@ -261,7 +261,8 @@ jobs:
             gate_concurrency: '1'
     steps:
       - uses: actions/checkout@v6
-        with:/n          submodules: true
+        with:
+          submodules: true
 
       - uses: pnpm/action-setup@v4
         with:
@@ -286,7 +287,8 @@ jobs:
     name: python 3.10 / keyless SDK
     steps:
       - uses: actions/checkout@v6
-        with:/n          submodules: true
+        with:
+          submodules: true
 
       - uses: actions/setup-python@v6.3.0
         with:
