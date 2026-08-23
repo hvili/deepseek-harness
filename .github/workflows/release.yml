@@ -115,7 +115,7 @@ jobs:
       # instead of 404ing on the registry, so its tarball joins dist/npm after
       # the stage-manifest idempotency pass (which only covers family members).
       - name: Pack the turn-rewind plugin for verification
-        run: pnpm --dir plugins/dsh-turn-rewind pack --ignore-scripts --pack-destination dist/npm
+        run: pnpm --dir plugins/dsh-turn-rewind pack --pack-destination dist/npm
 
       - name: Verify packed install
         run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
