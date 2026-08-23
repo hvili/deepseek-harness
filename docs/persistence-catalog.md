@@ -532,7 +532,7 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 'plan/approved': { heading: string; plan: string }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:61`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:60`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="planmode--log-only"></a>
 
@@ -547,7 +547,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:61`](../packages/plan/plan-mode/s
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:54`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 

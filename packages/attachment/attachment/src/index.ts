@@ -6,13 +6,15 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   FileAttachmentRef,
+  ImageRequestPolicy,
+  RequestImageAttachment,
   SaveImageAttachment,
   SaveFileAttachment,
   StoredImageAttachment,
   StoredFileAttachment,
 } from './types.ts'
 
-export { AttachmentId } from './brand.ts'
+export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages } from './admission.ts'
@@ -21,9 +23,11 @@ export type {
   EncodedImageAttachment,
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageRequestPolicy,
   ImageMediaType,
   FileAttachmentRef,
   SaveFileAttachment,
+  RequestImageAttachment,
   SaveImageAttachment,
   StoredFileAttachment,
   StoredImageAttachment,
@@ -60,7 +64,7 @@ export abstract class AttachmentStore extends Service {
    * @param inputs - encoded images in their owning message order.
    * @returns durable references in the exact input order.
    */
-  async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
+  protected validateImageBatch(inputs: readonly SaveImageAttachment[]): void {
     const { maxImagesPerMessage, maxMessageImageBytes, mediaTypes } = this.imageLimits
     if (inputs.length > maxImagesPerMessage) {
       throw new AttachmentError('Image batch exceeds the configured image-count limit.', 'TOO_MANY_IMAGES')
@@ -74,6 +78,15 @@ export abstract class AttachmentStore extends Service {
         throw new AttachmentError(`Image type ${input.mediaType} is not accepted by this deployment.`, 'UNSUPPORTED_IMAGE_TYPE')
       }
     }
+  }
+
+  /**
+   * Validate and durably commit one ordered image batch.
+   * @param inputs - encoded images in owning-message order.
+   * @returns durable normalized attachment references in the same order after every member succeeds.
+   */
+  async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
+    this.validateImageBatch(inputs)
     for (const input of inputs) await this.validateImage(input)
 
     const refs: ImageAttachmentRef[] = []
@@ -83,8 +96,11 @@ export abstract class AttachmentStore extends Service {
 
   /**
    * Validate and durably commit one image before its owning session event is appended.
+   * The returned reference describes the persisted normalized image. When
+   * normalization reduces the raster, its `originalDimensions` records the
+   * orientation-applied input dimensions.
    * @param input - encoded bytes, declared media type, and optional display name.
-   * @returns a durable content-addressed reference.
+   * @returns the durable content-addressed normalized image reference.
    */
   abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
@@ -92,7 +108,7 @@ export abstract class AttachmentStore extends Service {
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.
    * @param signal - optional cancellation for backend read and verification work.
-   * @returns the verified bytes and canonical reference.
+   * @returns the verified bytes and normalized attachment reference.
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
@@ -109,6 +125,28 @@ export abstract class AttachmentStore extends Service {
   async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
     throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
   }
+
+  /**
+   * Generate or read one deterministic model-request version from the stored normalized image.
+   * @param ref - durable provider-independent normalized attachment reference.
+   * @param policy - exact route pixel and encoded-byte budget.
+   * @param signal - optional cancellation.
+   * @returns request bytes and the cache/upload identity covering every transform input.
+   */
+  readImageRequest(
+    ref: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    signal?.throwIfAborted()
+    void ref
+    void policy
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot derive model-request images.',
+      'ATTACHMENT_PROJECTION_UNSUPPORTED',
+    ))
+  }
+
 }
 
 export default AttachmentStore

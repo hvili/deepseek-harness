@@ -27,6 +27,7 @@ export type AttachmentErrorCode =
   | 'INVALID_MEDIA_TYPE'
   | 'FILE_TOO_LARGE'
   | 'UNSUPPORTED_FILE_ATTACHMENT'
+  | 'ATTACHMENT_PROJECTION_UNSUPPORTED'
 
 /** Runtime membership for structurally compatible errors crossing package boundaries. */
 const IMAGE_ADMISSION_ERROR_CODE_SET: ReadonlySet<string> = new Set(IMAGE_ADMISSION_ERROR_CODES)
