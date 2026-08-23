@@ -13,6 +13,7 @@ import { parseArgs } from 'node:util'
 import { releaseFamily, tarballName, type ReleaseFamily, type ReleaseMember } from './families.ts'
 import { makeReleaseManifest, writeReleaseManifest } from './manifest.ts'
 import { isEntry, run } from './process.ts'
+import { pnpmInvocation } from '../pnpm-invocation.ts'
 import { PUBLISH_ORDER_FILE, tarballFiles } from './tarball.ts'
 
 /** Where pack output lands when `--out` is omitted. */
@@ -26,7 +27,10 @@ const DEFAULT_OUTPUT = 'dist/npm'
  * @returns The tarball filename.
  */
 function packMember(family: ReleaseFamily, member: ReleaseMember, destination: string): string {
-  run('pnpm', ['--dir', member.directory, 'pack', '--pack-destination', destination])
+  const invocation = pnpmInvocation([
+    '--dir', member.directory, 'pack', '--pack-destination', destination,
+  ])
+  run(invocation.command, invocation.args)
 
   const filename = tarballName(member)
   const tarball = join(destination, filename)
