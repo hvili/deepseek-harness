@@ -68,6 +68,17 @@ jobs:
       - name: Build
         run: pnpm run build:official
 
+      - name: Verify build record exists
+        shell: bash
+        run: |
+          if [ ! -f ".dsh-build/client-build-environment.json" ]; then
+            echo "::error::Build step completed but client build record was not created."
+            echo "::error::This usually means the build scripts exited without writing the record."
+            echo "::error::Check the 'Build' step logs above for TypeScript/Vite errors."
+            exit 1
+          fi
+          echo "Build record verified."
+
       - name: Pack release tarballs
         run: pnpm run release:pack --family dsh --out dist/npm
 
