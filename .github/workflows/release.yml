@@ -108,6 +108,15 @@ jobs:
           pnpm --dir native/landlock-run run build:ts
           pnpm --dir native/landlock-run/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
 
+      # The turn-rewind plugin is a private, in-repo workspace member (the
+      # plugins/dsh-turn-rewind submodule) with its own version sequence, so
+      # it is not a dsh family member — but dsh-base and the web-app bundle
+      # depend on it. The packed-install check below must resolve it locally
+      # instead of 404ing on the registry, so its tarball joins dist/npm after
+      # the stage-manifest idempotency pass (which only covers family members).
+      - name: Pack the turn-rewind plugin for verification
+        run: pnpm --dir plugins/dsh-turn-rewind pack --ignore-scripts --pack-destination dist/npm
+
       - name: Verify packed install
         run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
 
