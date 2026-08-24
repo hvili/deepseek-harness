@@ -257,6 +257,28 @@ type SessionTreeProps = Pick<
   orderBy: SessionOrderBy
 }
 
+type CommonSessionNodeProps = Pick<
+  Parameters<typeof SessionNodeItem>[0],
+  'node' | 'now' | 'onOpen' | 'onRename' | 'onFork' | 'onArchive' | 'onTags' | 'tags' | 'favorite' | 'onFavorite' | 't'
+>
+
+/** Assemble the behavior shared by grouped and flat session rows. */
+function commonSessionNodeProps(
+  node: SessionNode,
+  now: number,
+  tags: readonly string[],
+  favorite: boolean,
+  open: SessionTreeProps['open'],
+  onRename: SessionTreeProps['onSessionRename'],
+  onFork: SessionTreeProps['forkSession'],
+  onArchive: SessionTreeProps['onSessionArchive'],
+  onTags: SessionTreeProps['onSessionTags'],
+  onFavorite: SessionTreeProps['onSessionFavorite'],
+  t: SessionTreeProps['t'],
+): CommonSessionNodeProps {
+  return { node, now, tags, favorite, onOpen: open, onRename, onFork, onArchive, onTags, onFavorite, t }
+}
+
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, favoriteSessionIds,
@@ -528,19 +550,12 @@ function SessionTree({
                 return (
                   <SessionNodeItem
                     key={node.id}
-                    node={node}
+                    {...commonSessionNodeProps(
+                      node, now, sessionTagsById[node.id] ?? [], favorites.has(node.id),
+                      open, onSessionRename, forkSession, onSessionArchive, onSessionTags, onSessionFavorite, t,
+                    )}
                     currentId={current}
-                    now={now}
-                    onOpen={open}
-                    onRename={onSessionRename}
-                    onFork={forkSession}
-                    onArchive={onSessionArchive}
-                    onTags={onSessionTags}
-                    tags={sessionTagsById[node.id] ?? []}
-                    favorite={favorites.has(node.id)}
-                    onFavorite={onSessionFavorite}
                     drag={dragProps}
-                    t={t}
                   />
                 )
               })}
@@ -654,17 +669,11 @@ function FlatList({
           return (
             <SessionNodeItem
               key={node.id}
-              node={node}
+              {...commonSessionNodeProps(
+                node, now, sessionTagsById[node.id] ?? [], favorites.has(node.id),
+                open, onSessionRename, forkSession, onSessionArchive, onSessionTags, onSessionFavorite, t,
+              )}
               currentId={list.current}
-              now={now}
-              onOpen={open}
-              onRename={onSessionRename}
-              onFork={forkSession}
-              onArchive={onSessionArchive}
-              onTags={onSessionTags}
-              tags={sessionTagsById[node.id] ?? []}
-              favorite={favorites.has(node.id)}
-              onFavorite={onSessionFavorite}
               flat
               drag={{
                 start: () => {
@@ -685,7 +694,6 @@ function FlatList({
                   dropCommitted.current = false
                 },
               }}
-              t={t}
             />
           )
         })}

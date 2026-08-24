@@ -456,13 +456,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
-        signature: 'async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>',
+        signature: 'saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>',
         description: 'Persist a generic material attachment. Backends that predate structured file intake fail explicitly instead of silently treating it as an image.',
         parameters: [{ name: '_input', description: 'the file attachment material (unsupported by this store).' }],
         returns: 'never resolves; the store rejects with a file-unsupported error.',
       },
       {
-        signature: 'async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>',
+        signature: 'readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>',
         description: 'Read a generic material attachment, preserving cancellation semantics.',
         parameters: [{ name: '_ref', description: 'the file attachment reference (unsupported by this store).' }, { name: '_signal', description: 'optional cancellation signal (unused by this store).' }],
         returns: 'never resolves; the store rejects with a file-unsupported error.',

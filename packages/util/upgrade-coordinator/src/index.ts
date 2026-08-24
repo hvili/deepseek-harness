@@ -164,12 +164,13 @@ async function rollbackStore(backup: BackupSnapshot, storeRoot: string): Promise
 /** Recursively collect every real file under `dir`, sorted by absolute path. */
 async function listRegularFiles(dir: string): Promise<string[]> {
   const files: string[] = []
-  const stack = [dir]
-  while (stack.length > 0) {
-    const current = stack.pop()!
+  const directories = [dir]
+  for (let index = 0; index < directories.length; index += 1) {
+    const current = directories[index]
+    if (current === undefined) continue
     for (const entry of await readdir(current, { withFileTypes: true })) {
       const path = join(current, entry.name)
-      if (entry.isDirectory()) stack.push(path)
+      if (entry.isDirectory()) directories.push(path)
       else if (entry.isFile()) files.push(path)
     }
   }

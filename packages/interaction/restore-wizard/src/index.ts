@@ -161,7 +161,7 @@ export async function restoreWithApproval(
     ...(options.harnessVersion !== undefined ? { harnessVersion: options.harnessVersion } : {}),
     ...(options.pruneOrphans !== undefined ? { pruneOrphans: options.pruneOrphans } : {}),
     // The user already approved this exact impact above; do not ask again.
-    approve: async () => true,
+    approve: () => Promise.resolve(true),
   })
 }
 
@@ -195,7 +195,9 @@ export class RestoreWizardService extends Service {
     this.seam = {
       confine: (argv, policy) => ctx.sandbox.confine(argv, policy),
       spawn: async (argv) => {
-        const result = await promisify(execFile)(argv[0]!, argv.slice(1))
+        const executable = argv[0]
+        if (executable === undefined) throw new Error('restore preview command is empty')
+        const result = await promisify(execFile)(executable, argv.slice(1))
         return Buffer.isBuffer(result.stdout) ? result.stdout.toString('utf8') : result.stdout
       },
     }

@@ -15,6 +15,7 @@ afterEach(() => {
 
 function fixture(options: {
   exportPath?: string
+  extraExports?: Record<string, unknown>
   indexSource?: string
   files?: Record<string, string>
 } = {}): string {
@@ -30,7 +31,10 @@ function fixture(options: {
     engines: { node: '>=22.19' },
     sideEffects: false,
     files: ['lib'],
-    exports: { '.': { default: options.exportPath ?? './lib/index.js' } },
+    exports: {
+      '.': { default: options.exportPath ?? './lib/index.js' },
+      ...options.extraExports,
+    },
   }, null, 2)}\n`)
   writeFileSync(join(packageDir, 'README.md'), '# Probe\n')
   writeFileSync(join(packageDir, 'lib/index.js'), options.indexSource ?? 'export const probe = true\n')
@@ -71,6 +75,37 @@ describe('publint package runner', () => {
     const result = run(fixture({ exportPath: './lib/missing.js' }))
     expect(result.status).toBe(1)
     expect(result.stdout).toContain('missing.js')
+  })
+
+  it('accepts the closed-package source glob without publishing source files', () => {
+    const result = run(fixture({ extraExports: { './src/*': './src/*' } }))
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).not.toContain('EXPORTS_GLOB_NO_MATCHED_FILES')
+  })
+
+  it('does not hide a missing non-source export glob', () => {
+    const result = run(fixture({ extraExports: { './generated/*': './generated/*' } }))
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('generated/*')
+  })
+
+  it('accepts the intentional client loader factory format only at its exact export', () => {
+    const result = run(fixture({
+      extraExports: { './client': { default: './lib/client.js' } },
+      files: { 'lib/client.js': 'module.exports = function load() {}\n' },
+    }))
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).not.toContain('client.js is written in CommonJS')
+  })
+
+  it('continues reporting the same invalid format at another export path', () => {
+    const result = run(fixture({
+      extraExports: { './worker': { default: './lib/client.js' } },
+      files: { 'lib/client.js': 'module.exports = function load() {}\n' },
+    }))
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('pkg.exports["./worker"].default')
+    expect(result.stdout).toContain('written in CJS')
   })
 
   it('accepts published relative JavaScript and CSS targets', () => {

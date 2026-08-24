@@ -48,7 +48,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
-  LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
+  ContentBlock, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
 import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
@@ -816,7 +816,7 @@ function foldSeededShellTool(events: readonly SessionEvent[]): readonly SessionE
       // Durable-file boundary: hand-authored seeds may carry the flat shape
       // with the content blocks at the top level, so fold them wherever they
       // live and keep the seed's own envelope.
-      const data = event.data as { message?: { content: unknown }; content?: unknown }
+      const data = event.data as { message?: { content: ContentBlock[] }; content?: ContentBlock[] }
       const blocks = data.message?.content ?? data.content
       if (Array.isArray(blocks)) {
         const content = blocks.map(block => (

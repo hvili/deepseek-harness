@@ -207,7 +207,7 @@ export function apply(ctx: Context): void {
   })
   const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions, {
     getSnapshot: () => connection.hostDescription.getSnapshot()?.cwd,
-    subscribe: connection.hostDescription.subscribe,
+    subscribe: listener => connection.hostDescription.subscribe(listener),
   })
   ctx.effect(
     () => workspaces.startInitialSelection(),

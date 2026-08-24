@@ -216,7 +216,7 @@ export class TestWorkspaces implements IWorkspaces {
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'unarchiveSession', args: [sessionId] })
     const stub = this.stubs.get('unarchiveSession')
-    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
     await this.update((draft) => {
       draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
     })
@@ -226,7 +226,7 @@ export class TestWorkspaces implements IWorkspaces {
   async favoriteSession(sessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'favoriteSession', args: [sessionId] })
     const stub = this.stubs.get('favoriteSession')
-    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
     await this.update((draft) => {
       if (!(draft.favoriteSessionIds ?? []).includes(sessionId)) {
         draft.favoriteSessionIds = [...(draft.favoriteSessionIds ?? []), sessionId]
@@ -238,7 +238,7 @@ export class TestWorkspaces implements IWorkspaces {
   async unfavoriteSession(sessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'unfavoriteSession', args: [sessionId] })
     const stub = this.stubs.get('unfavoriteSession')
-    if (stub !== undefined) return await (stub(sessionId) as Promise<void>)
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
     await this.update((draft) => {
       draft.favoriteSessionIds = (draft.favoriteSessionIds ?? []).filter(id => id !== sessionId)
     })
@@ -247,14 +247,14 @@ export class TestWorkspaces implements IWorkspaces {
   async setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void> {
     this.calls.push({ method: 'setWorkspaceTags', args: [workspaceId, tags] })
     const stub = this.stubs.get('setWorkspaceTags')
-    if (stub !== undefined) return await (stub(workspaceId, tags) as Promise<void>)
+    if (stub !== undefined) {  await (stub(workspaceId, tags) as Promise<void>); return }
     await this.update((draft) => { draft.workspaceTagsById = { ...(draft.workspaceTagsById ?? {}), [workspaceId]: tags } })
   }
 
   async setSessionTags(sessionId: SessionId, tags: string[]): Promise<void> {
     this.calls.push({ method: 'setSessionTags', args: [sessionId, tags] })
     const stub = this.stubs.get('setSessionTags')
-    if (stub !== undefined) return await (stub(sessionId, tags) as Promise<void>)
+    if (stub !== undefined) {  await (stub(sessionId, tags) as Promise<void>); return }
     await this.update((draft) => { draft.sessionTagsById = { ...(draft.sessionTagsById ?? {}), [sessionId]: tags } })
   }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { SelectField, ToggleField, ValueField } from './fields.tsx'
+import { NumericValueField, SelectField, ToggleField, ValueField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
 import { VISION_PROXY_ERROR_MODES, type VisionProxyCardFace } from './vision-proxy-card-controller.ts'
 import type {} from './slot-contract.ts'
@@ -66,13 +66,13 @@ export function VisionProxyCard(props: VisionProxyCardProps) {
     setTestStatus({ kind: 'testing' })
     try {
       const parsedTimeout = Number(state.timeoutMs.text)
-        const timeoutMs = Number.isSafeInteger(parsedTimeout) && parsedTimeout > 0
-          ? parsedTimeout
-          : undefined
-        const result = await props.testModel(provider, model, {
-          probeVision: true,
-          ...timeoutMs === undefined ? {} : { timeoutMs },
-        })
+      const timeoutMs = Number.isSafeInteger(parsedTimeout) && parsedTimeout > 0
+        ? parsedTimeout
+        : undefined
+      const result = await props.testModel(provider, model, {
+        probeVision: true,
+        ...timeoutMs === undefined ? {} : { timeoutMs },
+      })
       if (!result.ok) {
         setTestStatus({ kind: 'error', detail: result.error ?? t('visionProxyTestFailed') })
         return
@@ -135,14 +135,13 @@ export function VisionProxyCard(props: VisionProxyCardProps) {
         onEdit={(text) => { props.edit('visionModel', text) }}
         onReset={() => { props.resetField('visionModel') }}
       />
-      <ValueField
+      <NumericValueField
         id="plugin-config-vision-proxy-max-tokens"
         label={t('visionProxyMaxTokens')}
         hint={t('visionProxyMaxTokensHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
-        numeric
         disabled={disabled}
         {...state.maxTokens}
         onEdit={(text) => { props.edit('maxTokens', text) }}
@@ -162,14 +161,13 @@ export function VisionProxyCard(props: VisionProxyCardProps) {
         onEdit={(text) => { props.edit('errorMode', text) }}
         onReset={() => { props.resetField('errorMode') }}
       />
-      <ValueField
+      <NumericValueField
         id="plugin-config-vision-proxy-timeout-ms"
         label={t('visionProxyTimeoutMs')}
         hint={t('visionProxyTimeoutMsHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
-        numeric
         disabled={disabled}
         {...state.timeoutMs}
         onEdit={(text) => { props.edit('timeoutMs', text) }}

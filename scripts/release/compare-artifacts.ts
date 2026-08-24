@@ -132,7 +132,9 @@ function main(): void {
     throw new Error('usage: compare-artifacts.ts --from <packed directory> --from <packed directory> [--from ...]')
   }
 
-  const referenceDir = resolve(hosts[0]!)
+  const firstHost = hosts[0]
+  if (firstHost === undefined) throw new Error('compare-artifacts requires a reference host')
+  const referenceDir = resolve(firstHost)
   const reference = extractFingerprint(referenceDir)
   console.log(`release compare-artifacts: reference ${referenceDir}\n${describeFingerprint(reference)}`)
 

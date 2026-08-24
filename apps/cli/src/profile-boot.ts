@@ -64,7 +64,10 @@ export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.me
  */
 function readInstallVersion(): string {
   try {
-    return JSON.parse(readFileSync(INSTALL_ANCHOR, 'utf8')).version as string
+    const manifest: unknown = JSON.parse(readFileSync(INSTALL_ANCHOR, 'utf8'))
+    if (typeof manifest === 'object' && manifest !== null && 'version' in manifest
+      && typeof manifest.version === 'string') return manifest.version
+    return '0.0.0'
   } catch {
     return '0.0.0'
   }

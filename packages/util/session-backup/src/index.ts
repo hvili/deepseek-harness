@@ -144,10 +144,10 @@ export function createBackupId(now: number = Date.now()): string {
  * @returns a stable, newline-terminated JSON document.
  */
 export function canonicalBackupManifest(manifest: BackupManifest): string {
-  return JSON.stringify(manifest, (_key, value) => {
+  return JSON.stringify(manifest, (_key: string, value: unknown): unknown => {
     if (Array.isArray(value) || value === null || typeof value !== 'object') return value
     const record: Record<string, unknown> = {}
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    for (const key of Object.keys(value).sort()) {
       record[key] = (value as Record<string, unknown>)[key]
     }
     return record
@@ -167,7 +167,8 @@ async function listRegularFiles(dir: string): Promise<string[]> {
   const files: string[] = []
   const stack = [dir]
   while (stack.length > 0) {
-    const current = stack.pop()!
+    const current = stack.pop()
+    if (current === undefined) break
     const entries = await readdir(current, { withFileTypes: true })
     for (const entry of entries) {
       const path = join(current, entry.name)
@@ -322,7 +323,7 @@ export async function listBackups(backupRoot: string): Promise<BackupSummary[]> 
  */
 export async function verifyBackup(backupDir: string): Promise<BackupVerification> {
   const manifestPath = join(backupDir, 'manifest.json')
-  let manifest; try { manifest = await readBackupManifest(backupDir) } catch (error) {
+  let manifest; try { manifest = await readBackupManifest(backupDir) } catch {
     return { valid: false, mismatches: [{ relPath: 'manifest.json', reason: 'missing' as const }] }
   }
   const recordedAnchor = await readFile(join(backupDir, 'MANIFEST.sha256'), 'utf8')

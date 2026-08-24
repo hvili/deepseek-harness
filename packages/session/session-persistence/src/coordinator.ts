@@ -107,11 +107,13 @@ export async function assertStoredFormatNotNewer(
   const snapshots = await persistence.listSnapshots()
   const newer = snapshots.filter(snapshot => snapshot.header.version > SESSION_FORMAT_VERSION)
   if (newer.length === 0) return
+  const firstNewer = newer[0]
+  if (firstNewer === undefined) return
   const label = newer.length === 1
     ? '1 persisted session requires'
     : `${newer.length} persisted sessions require`
   throw new Error(
-    `${label} log format v${newer[0]!.header.version}, but ${readerLabel} reads only v${SESSION_FORMAT_VERSION}: these logs were written by a newer harness — upgrade the harness before continuing`,
+    `${label} log format v${firstNewer.header.version}, but ${readerLabel} reads only v${SESSION_FORMAT_VERSION}: these logs were written by a newer harness — upgrade the harness before continuing`,
   )
 }
 

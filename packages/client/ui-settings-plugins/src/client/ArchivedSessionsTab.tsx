@@ -6,8 +6,8 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import css from './ArchivedSessionsTab.module.css'
 
 export interface ArchivedSessionsTabInjected {
-  restore(sessionId: SessionId): Promise<void>
-  remove(sessionId: SessionId): Promise<boolean>
+  readonly restore: (sessionId: SessionId) => Promise<void>
+  readonly remove: (sessionId: SessionId) => Promise<boolean>
 }
 
 export type ArchivedSessionsTabProps =
@@ -44,7 +44,7 @@ export function ArchivedSessionsTab({ t, useSessions, useWorkspaces, restore, re
   const filteredIds = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
     if (query === '') return archivedIds
-    return archivedIds.filter(sessionId => {
+    return archivedIds.filter((sessionId) => {
       const title = sessions[sessionId]?.displayTitle ?? sessionId
       return title.toLocaleLowerCase().includes(query) || sessionId.toLocaleLowerCase().includes(query)
     })
@@ -165,42 +165,42 @@ export function ArchivedSessionsTab({ t, useSessions, useWorkspaces, restore, re
             </div>
           )}
           {filteredIds.length === 0 ? <p className={css.empty}>{t('archivedEmpty')}</p> : (
-          <ul className={css.list}>
-            {filteredIds.map((sessionId) => {
-              const session = sessions[sessionId]
-              const active = session?.running === true
-              return (
-                <li className={css.row} key={sessionId}>
-                  <input
-                    aria-label={t('selectSession', { title: session?.displayTitle ?? sessionId })}
-                    type="checkbox"
-                    checked={selected.has(sessionId)}
-                    disabled={busy || active}
-                    onChange={() => { toggle(sessionId) }}
-                  />
-                  <div className={css.text}>
-                    <strong>{session?.displayTitle ?? sessionId}</strong>
-                    <span>{sessionId}</span>
-                    {active ? <small>{t('deleteSessionHint')}</small> : null}
-                    {failed.has(sessionId) ? <small className={css.error}>{failed.get(sessionId)}</small> : null}
-                  </div>
-                  <div className={css.actions}>
-                    <button type="button" disabled={busy} onClick={() => { void restore(sessionId) }}>
-                      {t('restoreSession')}
-                    </button>
-                    <button
-                      type="button"
-                      className={css.danger}
+            <ul className={css.list}>
+              {filteredIds.map((sessionId) => {
+                const session = sessions[sessionId]
+                const active = session?.running === true
+                return (
+                  <li className={css.row} key={sessionId}>
+                    <input
+                      aria-label={t('selectSession', { title: session?.displayTitle ?? sessionId })}
+                      type="checkbox"
+                      checked={selected.has(sessionId)}
                       disabled={busy || active}
-                      onClick={() => { void deleteSessions([sessionId]) }}
-                    >
-                      {t('deleteSession')}
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+                      onChange={() => { toggle(sessionId) }}
+                    />
+                    <div className={css.text}>
+                      <strong>{session?.displayTitle ?? sessionId}</strong>
+                      <span>{sessionId}</span>
+                      {active ? <small>{t('deleteSessionHint')}</small> : null}
+                      {failed.has(sessionId) ? <small className={css.error}>{failed.get(sessionId)}</small> : null}
+                    </div>
+                    <div className={css.actions}>
+                      <button type="button" disabled={busy} onClick={() => { void restore(sessionId) }}>
+                        {t('restoreSession')}
+                      </button>
+                      <button
+                        type="button"
+                        className={css.danger}
+                        disabled={busy || active}
+                        onClick={() => { void deleteSessions([sessionId]) }}
+                      >
+                        {t('deleteSession')}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </>
       )}

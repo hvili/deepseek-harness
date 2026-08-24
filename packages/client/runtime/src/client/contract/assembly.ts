@@ -154,6 +154,6 @@ export function createAssemblyService(ctx: Context): AssemblyService {
   ctx.on('slots/changed', refresh)
   return {
     getSnapshot: () => store.getSnapshot(),
-    subscribe: (listener) => store.subscribe(listener),
+    subscribe: listener => store.subscribe(listener),
   }
 }

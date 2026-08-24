@@ -131,7 +131,7 @@ function readCommit(cwd: string): string {
 function packedArtifacts(directory: string): ReleaseArtifact[] {
   const filenames = readPublishOrder(directory)
   return filenames
-    .map(filename => {
+    .map((filename) => {
       const tarball = join(directory, filename)
       const { name, version } = packedIdentity(tarball)
       return { name, version, integrity: integrityOf(tarball) }
@@ -152,7 +152,7 @@ function declaredDependencies(member: ReleaseMember): readonly string[] {
 
 /** Collect the SBOM and the within-family plugin edges for a family's members. */
 function billOfMaterials(members: readonly ReleaseMember[]):
-  { sbom: ReleaseComponent[]; pluginGraph: PluginGraphEdge[] } {
+{ sbom: ReleaseComponent[]; pluginGraph: PluginGraphEdge[] } {
   const byName = new Map(members.map(member => [member.name, true]))
   const sbom: ReleaseComponent[] = []
   const pluginGraph: PluginGraphEdge[] = []
@@ -194,10 +194,11 @@ export function buildHashOf(manifest: Omit<ReleaseStageManifest, 'buildHash' | '
 /** Assemble a full stage manifest for a packed family directory. */
 export function makeReleaseManifest(family: ReleaseFamily, members: readonly ReleaseMember[], directory: string): ReleaseStageManifest {
   const versions = [...new Set(members.map(member => member.version))]
+  const onlyVersion = versions[0]
   const { sbom, pluginGraph } = billOfMaterials(members)
   const base = {
     family: family.id,
-    version: versions.length === 1 ? versions[0]! : versions.join('+'),
+    version: versions.length === 1 && onlyVersion !== undefined ? onlyVersion : versions.join('+'),
     commit: readCommit(process.cwd()),
     artifacts: packedArtifacts(directory),
     pluginGraph,
@@ -214,7 +215,12 @@ export function makeReleaseManifest(family: ReleaseFamily, members: readonly Rel
  * @param members - the family's current members.
  * @param directory - the packed directory.
  */
-export function verifyReleaseManifest(manifest: ReleaseStageManifest, family: ReleaseFamily, members: readonly ReleaseMember[], directory: string): void {
+export function verifyReleaseManifest(
+  manifest: ReleaseStageManifest,
+  family: ReleaseFamily,
+  members: readonly ReleaseMember[],
+  directory: string,
+): void {
   const recomputed = makeReleaseManifest(family, members, directory)
   const problems: string[] = []
   if (recomputed.family !== manifest.family) problems.push(`family ${recomputed.family} != recorded ${manifest.family}`)

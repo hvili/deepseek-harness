@@ -1,7 +1,7 @@
 /** The shell plugin's card: the limits every command the agent runs is bound by. */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { ValueField } from './fields.tsx'
+import { NumericValueField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
 import type { BashCardFace } from './bash-card-controller.ts'
 import type {} from './slot-contract.ts'
@@ -30,32 +30,24 @@ export function BashCard(props: BashCardProps) {
       onSave={props.save}
       onDiscard={props.discard}
     >
-      <ValueField
-        id="plugin-config-bash-timeout"
-        label={t('bashTimeoutMs')}
-        hint={t('bashTimeoutMsHint')}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        numeric
-        disabled={disabled}
-        {...state.timeoutMs}
-        onEdit={(text) => { props.edit('timeoutMs', text) }}
-        onReset={() => { props.resetField('timeoutMs') }}
-      />
-      <ValueField
-        id="plugin-config-bash-output"
-        label={t('bashMaxOutputBytes')}
-        hint={t('bashMaxOutputBytesHint')}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        numeric
-        disabled={disabled}
-        {...state.maxOutputBytes}
-        onEdit={(text) => { props.edit('maxOutputBytes', text) }}
-        onReset={() => { props.resetField('maxOutputBytes') }}
-      />
+      {([
+        { field: 'timeoutMs', id: 'plugin-config-bash-timeout', label: 'bashTimeoutMs', hint: 'bashTimeoutMsHint' },
+        { field: 'maxOutputBytes', id: 'plugin-config-bash-output', label: 'bashMaxOutputBytes', hint: 'bashMaxOutputBytesHint' },
+      ] as const).map(item => (
+        <NumericValueField
+          key={item.field}
+          id={item.id}
+          label={t(item.label)}
+          hint={t(item.hint)}
+          overriddenLabel={t('overridden')}
+          resetLabel={t('reset')}
+          invalidLabel={t('invalidNumber')}
+          disabled={disabled}
+          {...state[item.field]}
+          onEdit={(text) => { props.edit(item.field, text) }}
+          onReset={() => { props.resetField(item.field) }}
+        />
+      ))}
     </PluginCard>
   )
 }

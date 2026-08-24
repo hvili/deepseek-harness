@@ -119,8 +119,11 @@ export abstract class AttachmentStore extends Service {
    * @param _input - the file attachment material (unsupported by this store).
    * @returns never resolves; the store rejects with a file-unsupported error.
    */
-  async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef> {
-    throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
+  saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef> {
+    return Promise.reject(new AttachmentError(
+      'This attachment store cannot save generic file attachments.',
+      'UNSUPPORTED_FILE_ATTACHMENT',
+    ))
   }
 
   /**
@@ -129,8 +132,11 @@ export abstract class AttachmentStore extends Service {
    * @param _signal - optional cancellation signal (unused by this store).
    * @returns never resolves; the store rejects with a file-unsupported error.
    */
-  async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
-    throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
+  readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
+    return Promise.reject(new AttachmentError(
+      'This attachment store cannot read generic file attachments.',
+      'UNSUPPORTED_FILE_ATTACHMENT',
+    ))
   }
 
   /**

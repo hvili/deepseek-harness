@@ -80,8 +80,13 @@
       ]
     },
     "plugins/dsh-turn-rewind": {
-      "entry": ["src/client/index.tsx", "src/rewind-host.ts", "tests/**/*.test.mjs"],
-      "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"]
+      "entry": [
+        "src/client/index.tsx",
+        "tests/**/*.test.mjs"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
     },
     "packages/host/directory-picker-auto": {
       "ignoreDependencies": [

@@ -110,10 +110,7 @@ export class WorkspaceManager {
           this.installViews(items)
           if (!this.archivedSupersedesRefresh) this.installArchived(result.value.archivedSessionIds)
           if (!this.favoritesSupersedeRefresh) this.installFavorites(result.value.favoriteSessionIds)
-          if (!this.tagsSupersedeRefresh
-            && result.value.workspaceTagsById !== undefined && result.value.sessionTagsById !== undefined) {
-            this.installTags(result.value)
-          }
+          if (!this.tagsSupersedeRefresh) this.installTags(result.value)
           this.state = 'idle'
           this.phase = 'ready'
         } else {

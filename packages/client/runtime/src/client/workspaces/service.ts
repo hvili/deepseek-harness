@@ -420,9 +420,9 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.list.set({
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
-      favoriteSessionIds: workspace.favoriteSessionIds ?? [],
-      workspaceTagsById: workspace.workspaceTagsById ?? {},
-      sessionTagsById: workspace.sessionTagsById ?? {},
+      favoriteSessionIds: workspace.favoriteSessionIds,
+      workspaceTagsById: workspace.workspaceTagsById,
+      sessionTagsById: workspace.sessionTagsById,
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,

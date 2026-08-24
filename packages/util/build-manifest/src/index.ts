@@ -29,5 +29,6 @@ export const DSH_BUILD_MANIFEST_KEY = 'buildManifest'
  * @returns the build manifest, or `undefined` when the composition mounted without one.
  */
 export function buildManifestOf(ctx: Context): BuildManifest | undefined {
-  return ctx.get(DSH_BUILD_MANIFEST_KEY)
+  const manifest: unknown = ctx.get(DSH_BUILD_MANIFEST_KEY)
+  return manifest as BuildManifest | undefined
 }

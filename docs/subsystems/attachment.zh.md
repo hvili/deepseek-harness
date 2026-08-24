@@ -182,7 +182,7 @@ abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<Store
  * @param _input - the file attachment material (unsupported by this store).
  * @returns never resolves; the store rejects with a file-unsupported error.
  */
-async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>
+saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>
 
 /**
  * Read a generic material attachment, preserving cancellation semantics.
@@ -190,7 +190,7 @@ async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>
  * @param _signal - optional cancellation signal (unused by this store).
  * @returns never resolves; the store rejects with a file-unsupported error.
  */
-async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>
+readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>
 
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.

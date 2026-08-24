@@ -36,6 +36,28 @@ export interface FieldProps {
   onReset: () => void
 }
 
+/** Shared label, override badge, and reset action for editable value fields. */
+function FieldHead(props: Pick<
+  FieldProps,
+  'id' | 'label' | 'overridden' | 'overriddenLabel' | 'resetLabel' | 'disabled' | 'onReset'
+>) {
+  return (
+    <div className={css.head}>
+      <label className={css.label} htmlFor={props.id}>{props.label}</label>
+      {props.overridden
+        ? (
+          <span className={css.badges}>
+            <span className={css.badge}>{props.overriddenLabel}</span>
+            <button type="button" className={css.reset} disabled={props.disabled} onClick={props.onReset}>
+              {props.resetLabel}
+            </button>
+          </span>
+        )
+        : null}
+    </div>
+  )
+}
+
 /**
  * A staged value field. `numeric` only hints the keypad: which drafts a field
  * accepts is decided by its spec, so the control never silently rewrites what
@@ -51,24 +73,7 @@ export function ValueField(props: FieldProps & {
 }) {
   return (
     <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
+      <FieldHead {...props} />
       <input
         id={props.id}
         className={props.invalid ? css.inputInvalid : css.input}
@@ -85,6 +90,11 @@ export function ValueField(props: FieldProps & {
       </p>
     </div>
   )
+}
+
+/** Value field with the numeric keypad hint enabled. */
+export function NumericValueField(props: FieldProps & { placeholder?: string }) {
+  return <ValueField {...props} numeric />
 }
 
 /**
@@ -126,24 +136,7 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
 export function ToggleField(props: FieldProps) {
   return (
     <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
+      <FieldHead {...props} />
       <label>
         <input
           id={props.id}
@@ -169,24 +162,7 @@ export function SelectField(props: FieldProps & {
 }) {
   return (
     <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
+      <FieldHead {...props} />
       <select
         id={props.id}
         className={props.invalid ? css.inputInvalid : css.input}

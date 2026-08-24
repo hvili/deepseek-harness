@@ -97,7 +97,8 @@ async function listRegularFiles(dir: string): Promise<string[]> {
   const files: string[] = []
   const stack = [dir]
   while (stack.length > 0) {
-    const current = stack.pop()!
+    const current = stack.pop()
+    if (current === undefined) break
     for (const entry of await readdir(current, { withFileTypes: true })) {
       const path = join(current, entry.name)
       if (entry.isDirectory()) stack.push(path)
