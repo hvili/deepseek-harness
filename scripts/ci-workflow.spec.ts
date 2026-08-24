@@ -80,12 +80,14 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
+    expect(windowsNative['runs-on']).toContain('DSH_CI_RUNNER_FALLBACK_WINDOWS')
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
     })
+    expect(JSON.stringify(windowsNative.env)).toContain("DSH_CI_RUNNER_FALLBACK_WINDOWS != '' && '2'")
     const nativeSteps = windowsNative.steps as unknown[]
     const nativeCommandSteps = nativeSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -113,11 +115,31 @@ describe('CI workflow', () => {
       expect(typeof job['runs-on']).toBe('string')
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
+      expect(job['runs-on']).toContain('DSH_CI_RUNNER_FALLBACK_LINUX')
       expect(job['runs-on']).toContain('vm-backup')
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
+
+    expect(node24.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '3' || '8' }}",
+    })
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '4' }}",
+      DSH_GATE_CONCURRENCY: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '3' }}",
+    })
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '3' || '8' }}",
+      DSH_OXLINT_THREADS: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '8' }}",
+      DSH_PUBLINT_CONCURRENCY: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '8' }}",
+      DSH_WEB_SNAPSHOT_WORKERS: "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '2' || '6' }}",
+    })
+    expect(node24Consumers.env).toHaveProperty(
+      'DSH_SNAPSHOT_MAX_CONCURRENCY',
+      "${{ vars.DSH_CI_RUNNER_FALLBACK_LINUX != '' && '6' || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}",
+    )
   })
 
   it('exempts push from cancellation in ci-master, so one master merge does not cancel the running drill', () => {
@@ -445,12 +467,16 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+    const gated = "${{ steps.check-creds.outputs.has_creds == 'true' && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}"
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
+    const noCredentialsStep = steps.find(s => s.name === 'Skip lifecycle actions (no app credentials)')
     expect(tokenStep).toMatchObject({ if: gated })
     expect(handleStep).toMatchObject({ if: gated })
+    expect(noCredentialsStep).toMatchObject({
+      if: "${{ steps.check-creds.outputs.has_creds == 'false' }}",
+    })
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
