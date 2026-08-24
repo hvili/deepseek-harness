@@ -116,35 +116,26 @@ async function startupSession(
     // pwsh cannot install its prompt from the environment. First let the
     // native shell reach its own input wait: writing bootstrap text before
     // that boundary lets startup line editing echo or duplicate the command.
-    // Then install the marker prompt and pin UTF-8 through an ordinary send.
-    // The banner-to-marker gap can outlast the silence bound, so follow-up
-    // observation sends wait until the controlled prompt is visible (in the
-    // viewport or retained scrollback), bounded by each send deadline.
+    // Then install the marker prompt and pin UTF-8 through a marker-gated send.
+    // The banner-to-marker gap can outlast the ordinary silence bound, so this
+    // bootstrap send may settle only after the controlled marker is observed.
     await session.initialize(signal)
     const motd = session.motd
-    let viewport = ''
-    let bootstrapSubmitted = false
-    for (;;) {
-      const submitBootstrap = !bootstrapSubmitted
-      const operation = session.startSend({
-        text: submitBootstrap ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: submitBootstrap,
-        ...signal !== undefined ? { signal } : {},
-      })
-      bootstrapSubmitted = true
-      const result = await operation.done
-      if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
-      if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
-      viewport = result.viewport
-      const scrollback = session.read({ offset: 0, count: 20 }).text
-      // An exact foreground stdin-wait means pwsh finished evaluating the
-      // bootstrap and returned to its input loop. Linux pwsh can redraw its
-      // prompt without leaving the printable marker text in our line-oriented
-      // viewport, so that kernel-level signal is authoritative even when the
-      // text fallback is absent. Silence alone remains insufficient.
-      if (result.waitReason === 'stdin_read'
-        || viewport.includes(CONTROLLED_PROMPT)
-        || scrollback.includes(CONTROLLED_PROMPT)) break
+    const operation = session.startSend({
+      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      submit: true,
+      // The kernel can publish stdin-wait before PSReadLine finishes redrawing
+      // the prompt. Require our private OSC marker so delayed bootstrap echo is
+      // never attributed to the first user command. Linux pwsh may omit the
+      // printable prompt tail, so LocalPtySession accepts the marker itself.
+      requirePromptMarker: true,
+      ...signal !== undefined ? { signal } : {},
+    })
+    const result = await operation.done
+    if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
+    if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
+    if (result.waitReason !== 'stdin_read') {
+      throw new Error('PTY shell bootstrap settled before the controlled prompt marker')
     }
     // Prompt installation is transport setup, not user-visible MOTD.
     session.motd = motd

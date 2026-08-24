@@ -238,6 +238,35 @@ describe('LocalPtySession readiness and output', () => {
     expect((await operation.done).waitReason).toBe('stdin_read')
   })
 
+  it('holds an internal bootstrap send for the controlled marker, even without its printable tail', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+
+    inspector.waiting = true
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      requirePromptMarker: true,
+    })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    terminal.emitData('bootstrap echo')
+    // Neither an exact stdin wait nor the ordinary silence fallback may let
+    // delayed line-editor output escape into the first user command.
+    await vi.advanceTimersByTimeAsync(60)
+    expect(settled).toBe(false)
+
+    terminal.emitData('\x1b]133;D;0\x07')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await operation.done).toMatchObject({
+      waitReason: 'stdin_read',
+      viewport: 'bootstrap echo',
+    })
+  })
+
   it('tracks a pre-write wait exit before exact probing begins', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

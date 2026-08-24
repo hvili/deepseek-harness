@@ -347,11 +347,11 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
-    let sent: TerminalSendRequest | undefined
+    let sent: (TerminalSendRequest & { requirePromptMarker?: boolean }) | undefined
     const session = {
       motd: 'PowerShell banner',
       initialize: async () => {},
-      startSend: (request: TerminalSendRequest) => {
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean }) => {
         sent = request
         return {
           done: Promise.resolve({
@@ -363,6 +363,7 @@ describe('BashTerminalBackend startup rollback', () => {
         }
       },
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -371,7 +372,11 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
-    expect(sent).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
+    expect(sent).toMatchObject({
+      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      submit: true,
+      requirePromptMarker: true,
+    })
     expect(session.motd).toBe('PowerShell banner')
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
@@ -380,20 +385,19 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
   })
 
-  it('keeps waiting for the marker prompt when the first send settles on silence', async () => {
+  it('rejects a pwsh bootstrap that settles before its controlled prompt marker', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
+    const sends: (TerminalSendRequest & { requirePromptMarker?: boolean })[] = []
     const session = {
       motd: 'PowerShell banner',
       initialize: async () => {},
-      startSend: (request: TerminalSendRequest) => {
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean }) => {
         sends.push(request)
-        const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : '',
+            viewport: '',
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -402,6 +406,7 @@ describe('BashTerminalBackend startup rollback', () => {
         }
       },
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -409,11 +414,14 @@ describe('BashTerminalBackend startup rollback', () => {
       async () => terminalHandle(),
       () => session,
     )
-    await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(2)
-    expect(sends[0]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
-    expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('PowerShell banner')
+    await expect(backend.spawn(spec(agent(ctx))))
+      .rejects.toThrow('PTY shell bootstrap settled before the controlled prompt marker')
+    expect(sends).toHaveLength(1)
+    expect(sends[0]).toMatchObject({
+      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      submit: true,
+      requirePromptMarker: true,
+    })
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
@@ -443,14 +451,14 @@ describe('BashTerminalBackend startup rollback', () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
+    const sends: (TerminalSendRequest & { requirePromptMarker?: boolean })[] = []
     let initializeSignal: AbortSignal | undefined
     const session = {
       motd: 'PowerShell banner',
       async initialize(signal?: AbortSignal) {
         initializeSignal = signal
       },
-      startSend: (request: TerminalSendRequest) => {
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean }) => {
         sends.push(request)
         return {
           done: Promise.resolve({
