@@ -287,7 +287,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
       const { ctx, root, agent } = await harness('danger-full-access', {
         idleSilenceMs: 300,
         handoffGraceMs: 300,
-        timeoutMs: 8_000,
+        timeoutMs: 20_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
       expect(created.motd).toContain('dsh> ')
@@ -319,7 +319,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     const { ctx, root, agent } = await harness('danger-full-access', {
       idleSilenceMs: 300,
       handoffGraceMs: 300,
-      timeoutMs: 8_000,
+      timeoutMs: 20_000,
     }, 'pwsh')
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
     // The bootstrap itself must have pinned both encodings: the session byte

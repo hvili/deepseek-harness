@@ -137,7 +137,14 @@ async function startupSession(
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      // An exact foreground stdin-wait means pwsh finished evaluating the
+      // bootstrap and returned to its input loop. Linux pwsh can redraw its
+      // prompt without leaving the printable marker text in our line-oriented
+      // viewport, so that kernel-level signal is authoritative even when the
+      // text fallback is absent. Silence alone remains insufficient.
+      if (result.waitReason === 'stdin_read'
+        || viewport.includes(CONTROLLED_PROMPT)
+        || scrollback.includes(CONTROLLED_PROMPT)) break
     }
     // Prompt installation is transport setup, not user-visible MOTD.
     session.motd = motd

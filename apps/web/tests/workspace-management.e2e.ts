@@ -655,7 +655,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       () => scaffold.ctx.workspaceRegistry.sessionTags(SessionId(SEED_ID)),
       { timeout: 10_000 },
     ).toEqual(['cross-project', 'durable'])
-    expect(await sessionRow.getByText('cross-project', { exact: true }).isVisible()).toBe(true)
+    await sessionRow.getByText('cross-project', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
 
     // A full reload must rebuild both projections from workspace.list, not
     // leave the row dependent on optimistic component-local state.
@@ -672,7 +672,11 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await page.getByRole('button', { name: 'Search sessions' }).click()
     await page.getByPlaceholder('Search sessions...').fill('cross-project')
     const results = page.getByRole('tree', { name: 'Search results' })
-    expect(await results.getByText(rowTitle, { exact: true }).isVisible()).toBe(true)
+    // The session title can equal its workspace title in an independently-run
+    // fixture, yielding two identical spans inside one semantic result row.
+    // Assert the result owner rather than relying on text strictness.
+    await results.getByRole('treeitem').filter({ hasText: rowTitle }).first()
+      .waitFor({ state: 'visible', timeout: 10_000 })
     // Search deliberately hides header actions while expanded. Restore the
     // neutral workspace-browser state for the independently runnable folder
     // adoption scenario that follows.
