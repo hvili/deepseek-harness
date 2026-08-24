@@ -4,6 +4,9 @@
     - button "General":
       - img
       - text: General
+    - button "Diagnostics":
+      - img
+      - text: Diagnostics
     - button "Models":
       - img
       - text: Models
