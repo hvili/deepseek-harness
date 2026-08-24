@@ -87,6 +87,7 @@ class LocalSendOperation implements TerminalSendOperation {
     readonly startedAt: number,
     private readonly onCancel: () => void,
     readonly requirePromptMarker: boolean,
+    readonly requireIdleSilence: boolean,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
     this.promise = Promise.withResolvers<TerminalSendResult>()
@@ -205,12 +206,18 @@ export class LocalPtySession implements TerminalBackendSession {
   /**
    * Capture startup output through the same readiness contract as later sends.
    * @param signal - optional cancellation while the shell reaches its first prompt.
+   * @param requireIdleSilence - ignore early kernel stdin waits and require the full idle window.
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
-  async initialize(signal?: AbortSignal): Promise<void> {
+  async initialize(signal?: AbortSignal, requireIdleSilence = false): Promise<void> {
     this.initializing = true
     try {
-      const operation = this.startSend({ text: '', submit: false, ...signal !== undefined ? { signal } : {} })
+      const operation = this.startSend({
+        text: '',
+        submit: false,
+        requireIdleSilence,
+        ...signal !== undefined ? { signal } : {},
+      })
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
@@ -223,7 +230,10 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
-  startSend(request: TerminalSendRequest & { requirePromptMarker?: boolean }): TerminalSendOperation {
+  startSend(request: TerminalSendRequest & {
+    requirePromptMarker?: boolean
+    requireIdleSilence?: boolean
+  }): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
     if (this.active !== undefined) {
@@ -241,6 +251,7 @@ export class LocalPtySession implements TerminalBackendSession {
       Date.now(),
       () => { this.interrupt(operation) },
       request.requirePromptMarker ?? false,
+      request.requireIdleSilence ?? false,
     )
     this.active = operation
     this.resetReadinessEvidence()
@@ -446,7 +457,15 @@ export class LocalPtySession implements TerminalBackendSession {
         this.shellPgid = foreground.processGroupId
       }
       const promptReady = this.promptSeen && (this.promptTextSeen || operation.requirePromptMarker)
-      if (promptReady && idleFor >= this.config.pollIntervalMs
+      // A marker-gated bootstrap emits its own marker at the end of evaluation,
+      // before pwsh may asynchronously redraw the controlled prompt. Keep that
+      // internal send open for the full silence window so the redraw cannot be
+      // attributed to the first user command. Ordinary prompt-driven sends
+      // retain their one-poll fast path.
+      const promptIdleMs = operation.requirePromptMarker
+        ? this.config.idleSilenceMs
+        : this.config.pollIntervalMs
+      if (promptReady && idleFor >= promptIdleMs
         && foreground?.processGroupId === this.shellPgid) {
         this.settleActive('stdin_read')
         return
@@ -455,7 +474,8 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      if (!operation.requirePromptMarker && elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
+      if (!operation.requirePromptMarker && !operation.requireIdleSilence
+        && elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
         return
       }

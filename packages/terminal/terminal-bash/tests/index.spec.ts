@@ -347,9 +347,12 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
     let sent: (TerminalSendRequest & { requirePromptMarker?: boolean }) | undefined
+    let initializedWithIdleSilence: boolean | undefined
     const session = {
       motd: 'PowerShell banner',
-      initialize: async () => {},
+      initialize: async (_signal?: AbortSignal, requireIdleSilence?: boolean) => {
+        initializedWithIdleSilence = requireIdleSilence
+      },
       startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean }) => {
         sent = request
         return {
@@ -376,6 +379,7 @@ describe('BashTerminalBackend startup rollback', () => {
       submit: true,
       requirePromptMarker: true,
     })
+    expect(initializedWithIdleSilence).toBe(true)
     expect(session.motd).toBe('PowerShell banner')
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',

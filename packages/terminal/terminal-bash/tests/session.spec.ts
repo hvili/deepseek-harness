@@ -242,7 +242,7 @@ describe('LocalPtySession readiness and output', () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
     const inspector = new FakeInspector()
-    const session = makeSession(terminal, inspector, config())
+    const session = makeSession(terminal, inspector, config({ timeoutMs: 200 }))
     await initialize(session, terminal)
 
     inspector.waiting = true
@@ -260,11 +260,36 @@ describe('LocalPtySession readiness and output', () => {
     expect(settled).toBe(false)
 
     terminal.emitData('\x1b]133;D;0\x07')
-    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(settled).toBe(false)
+    // A delayed prompt redraw still belongs to bootstrap and restarts its
+    // silence window rather than escaping into the first user send.
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(50)
     expect(await operation.done).toMatchObject({
       waitReason: 'stdin_read',
-      viewport: 'bootstrap echo',
+      viewport: 'bootstrap echodsh> ',
     })
+  })
+
+  it('holds pwsh native startup through an early stdin wait until the idle window', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+
+    const initializing = session.initialize(undefined, true)
+    terminal.emitData('PS /workspace> ')
+    inspector.waiting = true
+    await vi.advanceTimersByTimeAsync(30)
+    let settled = false
+    void initializing.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(20)
+    await initializing
+    expect(session.motd).toBe('PS /workspace> ')
   })
 
   it('tracks a pre-write wait exit before exact probing begins', async () => {

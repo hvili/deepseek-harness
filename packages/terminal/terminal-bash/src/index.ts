@@ -121,13 +121,13 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment. First let the
-    // native shell reach its own input wait: writing bootstrap text before
-    // that boundary lets startup line editing echo or duplicate the command.
-    // Then install the marker prompt and pin UTF-8 through a marker-gated send.
-    // The banner-to-marker gap can outlast the ordinary silence bound, so this
-    // bootstrap send may settle only after the controlled marker is observed.
-    await session.initialize(signal)
+    // pwsh cannot install its prompt from the environment. On Unix it can
+    // publish a kernel stdin wait before PSReadLine owns the terminal; a write
+    // at that false boundary loses its carriage return and remains pending
+    // until the first user command submits it. Require the native prompt's
+    // full silence window, then install the marker prompt and pin UTF-8 through
+    // a send that may settle only after its controlled marker is observed.
+    await session.initialize(signal, true)
     const motd = session.motd
     const operation = session.startSend({
       text: PWSH_BOOTSTRAP,
