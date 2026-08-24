@@ -307,6 +307,15 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect(await ctx.sessionPersistence.readRaw(m.id)).toBeUndefined()
   })
 
+  it('permanently removes a materialized session and reports absent records', async () => {
+    const m = meta('remove-materialized', '/work')
+    expect(await ctx.sessionPersistence.remove(m.id)).toBe(false)
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    expect(await ctx.sessionPersistence.remove(m.id)).toBe(true)
+    await expect(stat(sessionDir(root, '/work', m.id))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('readRaw rejects a corrupt header line instead of exporting it', async () => {
     const m = meta('raw-corrupt', '/work')
     await ctx.sessionPersistence.create(m)

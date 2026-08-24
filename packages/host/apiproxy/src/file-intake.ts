@@ -34,6 +34,8 @@ function officeText(data: Uint8Array, mediaType: string): string {
   try {
     entries = unzipSync(data)
   } catch (error: unknown) {
+    /* v8 ignore next -- fflate's synchronous unzip contract throws Error
+     * instances; String preserves a defensive foreign-throw diagnostic. */
     throw new Error(`malformed Office ZIP: ${error instanceof Error ? error.message : String(error)}`)
   }
   const names = mediaType.includes('wordprocessingml')

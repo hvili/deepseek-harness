@@ -38,14 +38,14 @@ function hooks(d: string, h: unknown): string {
 }
 
 type HarnessOpts = { pluginRoot?: string; projectDir?: string; stderrSummaryMaxChars?: number; sessionRoot?: string }
-async function harness(configPath: string, adapter: MockAdapter, opts: HarnessOpts = {}): Promise<Context> {
+async function harness(configPath: string | undefined, adapter: MockAdapter, opts: HarnessOpts = {}): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   if (opts.sessionRoot !== undefined) await ctx.plugin(JsonlSessionPersistence, { root: opts.sessionRoot })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(LocalSubprocessRuntime)
   await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000 })
-  await ctx.plugin(HooksClaude, { configPath, ...opts })
+  await ctx.plugin(HooksClaude, { ...configPath === undefined ? {} : { configPath }, ...opts })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
 }
@@ -68,6 +68,31 @@ export type CoverageGroup = 'config' | 'stop' | 'context' | 'edge-paths'
 /** Register independently schedulable slices of the hooks-claude-code coverage matrix. */
 export function defineCoverageCases(group: CoverageGroup): void {
   if (group === 'config') describe('hooks-claude-code coverage — config option arms + substitution + skip warning', () => {
+    it('skips absent discovered settings and fails closed on malformed explicit JSON', async () => {
+      const d = dir()
+      const originalCwd = process.cwd()
+      const originalHome = process.env['HOME']
+      const originalProfile = process.env['USERPROFILE']
+      process.chdir(d)
+      process.env['HOME'] = d
+      process.env['USERPROFILE'] = d
+      try {
+        const discovered = await harness(undefined, new MockAdapter([]))
+        await discovered.fiber.dispose()
+
+        const malformed = join(d, 'malformed.json')
+        writeFileSync(malformed, '{')
+        const explicit = await harness(malformed, new MockAdapter([]))
+        await explicit.fiber.dispose()
+      } finally {
+        process.chdir(originalCwd)
+        if (originalHome === undefined) Reflect.deleteProperty(process.env, 'HOME')
+        else process.env['HOME'] = originalHome
+        if (originalProfile === undefined) Reflect.deleteProperty(process.env, 'USERPROFILE')
+        else process.env['USERPROFILE'] = originalProfile
+      }
+    })
+
     it('uses the persistence locator for transcript_path and an empty string without one', async () => {
       async function capture(sessionRoot?: string): Promise<{ payload: { transcript_path: string }; expected: string | undefined }> {
         const d = dir()

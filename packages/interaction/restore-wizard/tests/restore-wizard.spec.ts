@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import { takeBackup } from '@deepseek-ai/dsh-session-backup'
 import { RestoreNotVerifiableError } from '@deepseek-ai/dsh-restore-coordinator'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -14,7 +15,7 @@ import {
   type PreviewSeam,
   type RestoreWizardRunOptions,
 } from '../src/index.ts'
-import { parsePreviewArgs, readPreview } from '../src/preview-reader.ts'
+import { main, parsePreviewArgs, readPreview } from '../src/preview-reader.ts'
 
 const tmpRoots: string[] = []
 
@@ -123,7 +124,11 @@ describe('restoreWithApproval (full loop)', () => {
         approvedImpact = impact
         return true
       },
-      options(backupDir, liveStore, await tmp()),
+      {
+        ...options(backupDir, liveStore, await tmp()),
+        harnessVersion: 'test-harness',
+        pruneOrphans: true,
+      },
     )
 
     expect(fake.confined.policy?.mode).toBe('read-only')
@@ -182,6 +187,19 @@ describe('restoreWithApproval (full loop)', () => {
     expect(asked).toBe(false)
     expect(fake.confined.policy?.mode).toBe('read-only')
   })
+
+  it('supplies a stable mismatch when a seam cannot provide one', async () => {
+    const seam: PreviewSeam = {
+      confine: argv => ({ argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }),
+      spawn: () => Promise.resolve(JSON.stringify({ verified: false, impact: null })),
+    }
+    await expect(restoreWithApproval(
+      seam,
+      cmd,
+      () => Promise.resolve(true),
+      options('/backup', '/restore', '/rollback'),
+    )).rejects.toThrow('snapshot not verifiable')
+  })
 })
 
 describe('RestoreWizardService (real ctx.approval + ctx.sandbox wiring)', () => {
@@ -236,10 +254,39 @@ describe('RestoreWizardService (real ctx.approval + ctx.sandbox wiring)', () => 
     await writeFileUnder(liveStore, 'a.jsonl', 'bad\n')
 
     const { service, approvals } = mountService(liveStore, backupDir, 'rejected')
-    const result = await service.restore(options(backupDir, liveStore, await tmp()))
+    const { reason: _reason, ...withoutReason } = options(backupDir, liveStore, await tmp())
+    const result = await service.restore({ ...withoutReason, signal: new AbortController().signal })
 
     expect(result.outcome).toBe('declined')
     expect(approvals).toHaveLength(1)
+  })
+
+  it('constructs the real process seam and exposes list/preview helpers', async () => {
+    const ctx = new Context()
+    Object.defineProperty(ctx, 'sandbox', {
+      value: { confine: (argv: readonly string[]): ConfinedArgv => ({
+        argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [],
+      }) },
+    })
+    const service = new RestoreWizardService(ctx, { previewCommand: cmd.previewCommand })
+    expect(service.seam.confine(['node'], { mode: 'read-only', workspaceRoot: '/tmp' }).argv)
+      .toEqual(['node'])
+    await expect(service.seam.spawn([
+      process.execPath,
+      '-e',
+      'process.stdout.write("preview-ok")',
+    ])).resolves.toBe('preview-ok')
+    await expect(service.seam.spawn([])).rejects.toThrow('restore preview command is empty')
+
+    const liveStore = await tmp()
+    const backupRoot = await tmp()
+    const { backupDir } = await seedStore(backupRoot)
+    const listed = await service.list(backupRoot)
+    expect(listed[0]?.backupDir).toBe(backupDir)
+
+    ;(service as unknown as { seam: PreviewSeam }).seam = fakeSandboxSeam().seam
+    await expect(service.preview(options(backupDir, liveStore, await tmp())))
+      .resolves.toMatchObject({ verified: true })
   })
 })
 
@@ -250,5 +297,38 @@ describe('previewArgv', () => {
     const parsed = parsePreviewArgs(argv.slice(2))
     expect(parsed).toMatchObject({ backupDir: '/b', restoreRoot: '/r', rollbackRoot: '/rollback' })
     expect(parsed.sessionFormatVersion).toBe(3)
+  })
+
+  it('rejects missing flags and values', () => {
+    expect(() => parsePreviewArgs([])).toThrow('missing required flag --backup-dir')
+    expect(() => parsePreviewArgs([
+      '--backup-dir', '--restore-root', '/r', '--rollback-root', '/rr', '--session-format-version', '3',
+    ])).toThrow('missing value for required flag --backup-dir')
+  })
+
+  it('propagates unexpected preview failures and writes the direct main result', async () => {
+    const backupRoot = await tmp()
+    const { backupDir } = await seedStore(backupRoot)
+    const restoreFile = join(await tmp(), 'not-a-directory')
+    await writeFile(restoreFile, 'file', 'utf8')
+    await expect(readPreview({
+      backupDir,
+      restoreRoot: restoreFile,
+      rollbackRoot: await tmp(),
+      sessionFormatVersion: 3,
+    })).rejects.toThrow()
+
+    const output: string[] = []
+    const originalWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = (chunk: string | Uint8Array) => {
+      output.push(String(chunk))
+      return true
+    }
+    try {
+      await main(previewArgv(cmd, options(backupDir, await tmp(), await tmp())).slice(2))
+    } finally {
+      process.stdout.write = originalWrite
+    }
+    expect(JSON.parse(output.join(''))).toMatchObject({ verified: true })
   })
 })

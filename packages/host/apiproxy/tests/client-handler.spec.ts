@@ -442,8 +442,18 @@ describe('workspace domain round trip', () => {
     if (created.result.ok) expect(created.result.value.created).toBe(true)
     const archivedResponse = await c.workspace.archiveSession({ sessionId: 's-arch' as never })
     expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
+    await expect(c.workspace.unarchiveSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { archivedSessionIds: [] } } })
+    await expect(c.workspace.favoriteSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { favoriteSessionIds: ['s-arch'] } } })
+    await expect(c.workspace.unfavoriteSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { favoriteSessionIds: [] } } })
+    await expect(c.workspace.setWorkspaceTags({ workspaceId: 'w1' as never, tags: ['active'] }))
+      .resolves.toMatchObject({ result: { ok: true, value: { workspaceTagsById: { w1: ['active'] } } } })
     const tags = await c.workspace.setSessionTags({ sessionId: 's-arch' as never, tags: ['review'] })
     expect(tags.result).toEqual({ ok: true, value: { workspaceTagsById: {}, sessionTagsById: { 's-arch': ['review'] } } })
+    await expect(c.workspace.removeArchivedSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { archivedSessionIds: [], removed: true } } })
   })
 
   it('rejects a pathless create payload at the handler schema', async () => {

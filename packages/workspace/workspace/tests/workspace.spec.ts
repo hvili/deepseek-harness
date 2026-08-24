@@ -896,6 +896,43 @@ describe('workspace mutation and status', () => {
 })
 
 describe('registry-global session archive', () => {
+  it('validates favorite/tag targets and treats absent removals as idempotent', async () => {
+    const firstDir = await makeDir('metadata-first')
+    const secondDir = await makeDir('metadata-second')
+    const result = await harness({ sessions: [
+      header('first', firstDir, 100),
+      header('second', secondDir, 200),
+    ] })
+    const [newer, older] = result.registry.list()
+    expect(newer).toBeDefined()
+    expect(older).toBeDefined()
+
+    await expect(result.registry.unfavoriteSession(SessionId('first'))).resolves.toBeUndefined()
+    await expect(result.registry.unarchiveSession(SessionId('first'))).resolves.toBeUndefined()
+    await expect(result.registry.favoriteSession(SessionId('ghost')))
+      .rejects.toThrow(/cannot archive session 'ghost'/)
+    await expect(result.registry.setWorkspaceTags(
+      WorkspaceId('00000000-0000-4000-8000-0000000000ff'),
+      ['missing'],
+    )).rejects.toThrow()
+    await expect(result.registry.setWorkspaceTags(newer!.id, ['x'.repeat(65)]))
+      .rejects.toThrow('at most 64 characters')
+
+    await result.registry.setWorkspaceTags(newer!.id, ['newer'])
+    await result.registry.setWorkspaceTags(older!.id, ['older'])
+    await result.registry.setWorkspaceTags(newer!.id, ['newer'])
+    await result.registry.setWorkspaceTags(newer!.id, [])
+    expect(result.registry.workspaceTags(newer!.id)).toEqual([])
+    expect(result.registry.workspaceTags(older!.id)).toEqual(['older'])
+
+    await result.registry.setSessionTags(SessionId('first'), ['one'])
+    await result.registry.setSessionTags(SessionId('second'), ['two'])
+    await result.registry.setSessionTags(SessionId('first'), ['one'])
+    await result.registry.setSessionTags(SessionId('first'), [])
+    expect(result.registry.sessionTags(SessionId('first'))).toEqual([])
+    expect(result.registry.sessionTags(SessionId('second'))).toEqual(['two'])
+  })
+
   it('persists favorites in order, skips repeats, and removes deleted sessions', async () => {
     const dir = await makeDir('favorite-home')
     const result = await harness({ sessions: [header('first', dir, 100), header('second', dir, 200)] })

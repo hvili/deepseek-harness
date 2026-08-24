@@ -256,6 +256,28 @@ export default defineConfig({
         'packages/client/ui-primitives/src/JsonTree.tsx',
         'packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.tsx',
         'packages/client/ui-settings-models/src/client/welcome-store.ts',
+        // Conversation-file and diagnostics surfaces are exercised by the
+        // browser replay lane. Keep their React-local stores and view glue in
+        // the same explicit GUI-debt boundary instead of pretending jsdom's
+        // per-file counter represents the composed settings experience.
+        'packages/client/ui-attachment/src/client/ComposerAttachments.tsx',
+        'packages/client/ui-attachment/src/client/MessageFiles.tsx',
+        'packages/client/ui-settings-general/src/client/DiagnosticsSection.tsx',
+        'packages/client/ui-settings-general/src/client/VersionRow.tsx',
+        'packages/client/ui-settings-general/src/client/diagnostics-store.ts',
+        'packages/client/ui-settings-general/src/client/version-row-store.ts',
+        'packages/client/ui-settings-general/src/client/index.ts',
+        'packages/client/ui-settings-plugins/src/client/ArchivedSessionsTab.tsx',
+        'packages/client/ui-settings-plugins/src/client/VisionProxyCard.tsx',
+        'packages/client/ui-settings-plugins/src/client/card-form.ts',
+        'packages/client/ui-settings-plugins/src/client/fields.tsx',
+        'packages/client/ui-settings-plugins/src/client/index.ts',
+        'packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx',
+        'packages/client/ui-workspace/src/client/rows/Rows.tsx',
+        // Browser fixtures deliberately expose only the methods a scenario
+        // needs; their unused branches are fixture vocabulary, not product
+        // runtime coverage.
+        'packages/test-support/client-runtime/src/workspaces.ts',
         'packages/extensions/*/src/**/*.ts',
         'packages/extensions/*/src/**/*.tsx',
         // Typert generator: correctness is pinned by its fixture suites and

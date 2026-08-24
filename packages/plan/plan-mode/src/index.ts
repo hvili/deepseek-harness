@@ -414,7 +414,8 @@ export class PlanModeController extends Service {
         if (!foldPlanMode(agent.session.events)) {
           throw new Error(`${EXIT_PLAN_MODE} is only available in plan mode`)
         }
-        if (!/^#\s+\S/.test(args.plan.trim())) {
+        const heading = firstHeading(args.plan)
+        if (heading === undefined) {
           throw new Error(`${EXIT_PLAN_MODE} requires a non-empty markdown plan starting with a # heading`)
         }
         const interaction = ctx.get('userQuestions')
@@ -467,7 +468,7 @@ export class PlanModeController extends Service {
         // append failure must fail the approval rather than leave a review
         // surface unable to reconstruct which plan was approved.
         agent.session.append('plan/approved', {
-          heading: firstHeading(args.plan) ?? 'Plan',
+          heading,
           plan: args.plan,
         })
         // Keep plan guidance for the rest of this assistant tool batch. The

@@ -276,6 +276,33 @@ describe('local attachment store', () => {
       .rejects.toMatchObject({ code: 'INVALID_MEDIA_TYPE' })
     await expect(readFileAttachmentFile(storageRoot, { ...ref, bytes: ref.bytes + 1 }))
       .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+
+    const unnamed = await saveFileAttachmentFile(storageRoot, {
+      data: Uint8Array.of(7), mediaType: 'application/octet-stream', name: ' \u0000 ',
+    })
+    expect(unnamed).not.toHaveProperty('name')
+
+    await expect(readFileAttachmentFile(storageRoot, {
+      ...ref, attachmentId: 'not-a-digest' as typeof ref.attachmentId,
+    })).rejects.toMatchObject({ code: 'INVALID_ATTACHMENT_REF' })
+    await expect(readFileAttachmentFile(storageRoot, {
+      ...ref, mediaType: 'application/\u0000pdf',
+    })).rejects.toMatchObject({ code: 'INVALID_ATTACHMENT_REF' })
+
+    const missing = {
+      ...ref,
+      attachmentId: `sha256:${'0'.repeat(64)}` as typeof ref.attachmentId,
+    }
+    await expect(readFileAttachmentFile(storageRoot, missing, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND' })
+
+    const unreadable = {
+      ...ref,
+      attachmentId: `sha256:${'f'.repeat(64)}` as typeof ref.attachmentId,
+    }
+    await mkdir(join(storageRoot, 'objects', 'ff', 'f'.repeat(64)), { recursive: true })
+    await expect(readFileAttachmentFile(storageRoot, unreadable))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_READ_FAILED' })
   })
 
   it('rejects prepared bytes that no longer match their content-addressed reference', async () => {

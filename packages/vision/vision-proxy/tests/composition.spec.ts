@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, {
+  CallId,
   createUserMessage,
   LlmAdapter,
   type GenerateOptions,
   type LlmResolvedModelInfo,
   type StreamChunk,
+  type UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -65,7 +67,31 @@ class PassThroughMainAdapter extends FixtureAdapter {
   }
 }
 
-async function harness(adapter: FixtureAdapter, overrides: Partial<Config> = {}): Promise<Context> {
+class ResponseAdapter extends FixtureAdapter {
+  constructor(
+    private readonly chunks: readonly StreamChunk[],
+    private readonly beforeStream?: (options: GenerateOptions) => void | Promise<void>,
+    private readonly modalities: readonly ('text' | 'image')[] = ['text', 'image'],
+  ) {
+    super()
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model, inputModalities: this.modalities })
+  }
+
+  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    await this.beforeStream?.(options)
+    yield* this.chunks
+  }
+}
+
+async function harness(
+  adapter: FixtureAdapter,
+  overrides: Partial<Config> = {},
+  includeEnabled = true,
+): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
@@ -75,7 +101,7 @@ async function harness(adapter: FixtureAdapter, overrides: Partial<Config> = {})
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter([DEFAULT_VISION_PROVIDER, 'text'], adapter)
   await ctx.plugin({ inject: ['llm'], apply }, {
-    enabled: true,
+    ...includeEnabled ? { enabled: true } : {},
     visionProvider: DEFAULT_VISION_PROVIDER,
     visionModel: DEFAULT_VISION_MODEL,
     ...overrides,
@@ -91,6 +117,41 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
         resolve()
       }
     })
+  })
+}
+
+let directId = 0
+async function intercept(
+  ctx: Context,
+  messages: UserMessage[],
+  signal: AbortSignal = new AbortController().signal,
+) {
+  const agent = ctx.agentLoop.create(SessionId(`vision-proxy-direct-${String(directId += 1)}`), {
+    provider: 'text', model: 'text',
+  })
+  return agentEvents(ctx, agent).waterfall(
+    'agent/pre-step',
+    { messages, turn: 1, step: 1, signal },
+    () => Promise.resolve({ kind: 'enter' as const, messages }),
+  )
+}
+
+function imageMessage(id: string, content: UserMessage['content'] = []): UserMessage {
+  return createUserMessage({
+    content: [
+      ...content,
+      {
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(id),
+          mediaType: 'image/png',
+          bytes: 1,
+          width: 1,
+          height: 1,
+        },
+      },
+    ],
+    source: { kind: 'user' },
   })
 }
 
@@ -246,6 +307,147 @@ describe('vision-proxy composition', () => {
     expect(adapter.requests[0]?.provider).toBe(DEFAULT_VISION_PROVIDER)
     expect(adapter.requests[1]?.provider).toBe('text')
     expect(adapter.requests[2]?.provider).toBe('text')
+    await ctx.root.fiber.dispose()
+  })
+
+  it('recurses through tool results, preserves text-only messages, and inserts one description', async () => {
+    const adapter = new FixtureAdapter()
+    const ctx = await harness(adapter)
+    const nested = createUserMessage({
+      content: [{
+        type: 'tool-result',
+        toolCallId: CallId('vision-nested'),
+        content: [
+          { type: 'text', text: 'nested context' },
+          ...imageMessage('nested-image').content,
+          ...imageMessage('second-image').content,
+        ],
+      }],
+      source: { kind: 'user' },
+    })
+    const textOnly = createUserMessage({ content: [{ type: 'text', text: 'plain' }], source: { kind: 'user' } })
+
+    const decision = await intercept(ctx, [textOnly, nested])
+    expect(decision.kind).toBe('enter')
+    if (decision.kind === 'enter') {
+      expect(decision.messages[0]).toBe(textOnly)
+      const rendered = JSON.stringify(decision.messages[1])
+      expect(rendered.match(/a screenshot containing a settings dialog/g)).toHaveLength(1)
+      expect(rendered).not.toContain('nested-image')
+    }
+    expect(JSON.stringify(adapter.requests[0])).toContain('nested context')
+    await ctx.root.fiber.dispose()
+  })
+
+  it('rejects invalid programmatic config and an explicitly text-only vision route', async () => {
+    const invalid: Partial<Config>[] = [
+      { maxTokens: 0 },
+      { timeoutMs: 999 },
+      { visionProvider: ' ' },
+    ]
+    for (const overrides of invalid) {
+      const ctx = await harness(new FixtureAdapter(), overrides)
+      await expect(intercept(ctx, [imageMessage(`invalid-${JSON.stringify(overrides)}`)]))
+        .rejects.toThrow('vision-proxy:')
+      await ctx.root.fiber.dispose()
+    }
+
+    const ctx = await harness(new FixtureAdapter(), {
+      visionProvider: 'text', visionModel: 'text', errorMode: 'pass',
+    })
+    await expect(intercept(ctx, [imageMessage('text-only-route')]))
+      .rejects.toThrow('does not accept images')
+    await ctx.root.fiber.dispose()
+  })
+
+  it('uses the disabled default and propagates failures in fail mode', async () => {
+    const disabled = await harness(new FixtureAdapter(), {}, false)
+    const original = imageMessage('disabled-default')
+    await expect(intercept(disabled, [original]))
+      .resolves.toMatchObject({ kind: 'enter', messages: [original] })
+    await disabled.root.fiber.dispose()
+
+    const failing = await harness(new ResponseAdapter([
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'hard failure', code: 'UNKNOWN' } } },
+    ]))
+    await expect(intercept(failing, [imageMessage('fail-mode')]))
+      .rejects.toThrow('vision-proxy: hard failure')
+    await failing.root.fiber.dispose()
+  })
+
+  it('handles every terminal description failure in pass-through mode', async () => {
+    const cases: readonly StreamChunk[][] = [
+      [{ type: 'text-delta', index: 0, text: 'unterminated' }],
+      [{ type: 'finish', reason: { kind: 'error', failure: { message: 'provider failed', code: 'FAILED' } } }],
+      [{ type: 'finish', reason: { kind: 'aborted', failure: { message: 'provider aborted', code: 'ABORTED' } } }],
+      [{ type: 'finish', reason: { kind: 'tool-calls' } }],
+      [{ type: 'finish', reason: { kind: 'stop' } }],
+    ]
+    const error = console.error
+    console.error = () => {}
+    try {
+      for (const chunks of cases) {
+        const ctx = await harness(new ResponseAdapter(chunks), { errorMode: 'pass' })
+        const original = imageMessage(`failure-${String(chunks[0]?.type)}`)
+        const decision = await intercept(ctx, [original])
+        expect(decision).toMatchObject({ kind: 'enter', messages: [original] })
+        await ctx.root.fiber.dispose()
+      }
+    } finally {
+      console.error = error
+    }
+  })
+
+  it('propagates parent aborts, handles the resolve race, and enforces the timeout', async () => {
+    const error = console.error
+    console.error = () => {}
+    try {
+      const duringStream = new AbortController()
+      const streamAdapter = new ResponseAdapter(textResponse('unused'), () => {
+        duringStream.abort(new Error('cancel during stream'))
+      })
+      const streamCtx = await harness(streamAdapter, { errorMode: 'pass' })
+      await expect(intercept(streamCtx, [imageMessage('abort-stream')], duringStream.signal))
+        .resolves.toMatchObject({ kind: 'enter' })
+      await streamCtx.root.fiber.dispose()
+
+      const duringResolve = new AbortController()
+      class ResolveRaceAdapter extends ResponseAdapter {
+        override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+          duringResolve.abort(new Error('cancel during resolve'))
+          return super.resolveModel(provider, model)
+        }
+      }
+      const raceCtx = await harness(new ResolveRaceAdapter(textResponse('unused')), { errorMode: 'pass' })
+      await expect(intercept(raceCtx, [imageMessage('abort-resolve')], duringResolve.signal))
+        .resolves.toMatchObject({ kind: 'enter' })
+      await raceCtx.root.fiber.dispose()
+
+      const timeoutAdapter = new ResponseAdapter([], options => new Promise<void>((_resolve, reject) => {
+        const signal = options.signal
+        if (signal === undefined) throw new Error('vision request did not carry its timeout signal')
+        signal.addEventListener('abort', () => {
+          reject(signal.reason instanceof Error ? signal.reason : new Error('vision request aborted'))
+        }, { once: true })
+      }))
+      const timeoutCtx = await harness(timeoutAdapter, { errorMode: 'pass', timeoutMs: 1000 })
+      await expect(intercept(timeoutCtx, [imageMessage('timeout')]))
+        .resolves.toMatchObject({ kind: 'enter' })
+      await timeoutCtx.root.fiber.dispose()
+    } finally {
+      console.error = error
+    }
+  })
+
+  it('evicts the oldest description after the bounded cache fills', async () => {
+    const adapter = new FixtureAdapter()
+    const ctx = await harness(adapter)
+    for (let index = 0; index < 129; index += 1) {
+      await intercept(ctx, [imageMessage(`cache-${String(index)}`)])
+    }
+    expect(adapter.requests).toHaveLength(129)
+    await intercept(ctx, [imageMessage('cache-0')])
+    expect(adapter.requests).toHaveLength(130)
     await ctx.root.fiber.dispose()
   })
 })

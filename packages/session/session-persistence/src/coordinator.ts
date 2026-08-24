@@ -108,6 +108,7 @@ export async function assertStoredFormatNotNewer(
   const newer = snapshots.filter(snapshot => snapshot.header.version > SESSION_FORMAT_VERSION)
   if (newer.length === 0) return
   const firstNewer = newer[0]
+  /* v8 ignore next -- newer.length > 0 guarantees index zero exists. */
   if (firstNewer === undefined) return
   const label = newer.length === 1
     ? '1 persisted session requires'

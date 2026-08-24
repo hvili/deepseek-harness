@@ -851,6 +851,7 @@ describe('exit_plan_mode', () => {
       plan: '# The plan\n\ndo things',
       seq: approved?.seq,
     })
+    expect(foldApprovedPlan(agent.session.events, 0)).toBeUndefined()
     await boundary(ctx, agent, 'step-start')
     expect(foldPlanMode(agent.session.events)).toBe(false)
     expect(asked).toHaveLength(1)

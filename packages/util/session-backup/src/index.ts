@@ -168,12 +168,15 @@ async function listRegularFiles(dir: string): Promise<string[]> {
   const stack = [dir]
   while (stack.length > 0) {
     const current = stack.pop()
+    /* v8 ignore next -- guarded by stack.length above; Array.pop cannot be undefined here. */
     if (current === undefined) break
     const entries = await readdir(current, { withFileTypes: true })
     for (const entry of entries) {
       const path = join(current, entry.name)
       if (entry.isDirectory()) stack.push(path)
+      /* v8 ignore start -- links/devices are intentionally skipped and cannot be created portably on hosted Windows. */
       else if (entry.isFile()) files.push(path)
+      /* v8 ignore stop */
       // Symlinks and other node types are not backed up: a copied link is not
       // byte-defined content, and directory links could re-enter the store.
     }
@@ -238,7 +241,7 @@ export async function takeBackup(options: TakeBackupOptions): Promise<BackupSnap
     sourceRoot,
     sessionFormatVersion: options.sessionFormatVersion,
     harnessVersion: options.harnessVersion ?? '',
-    entries: entries.sort((a, b) => a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0),
+    entries: entries.sort((a, b) => Buffer.compare(Buffer.from(a.relPath), Buffer.from(b.relPath))),
   }
 
   const text = canonicalBackupManifest(manifest)
@@ -310,8 +313,7 @@ export async function listBackups(backupRoot: string): Promise<BackupSummary[]> 
       // Not a valid backup directory; ignore.
     }
   }
-  return summaries.sort((a, b) =>
-    a.backupId < b.backupId ? 1 : a.backupId > b.backupId ? -1 : 0)
+  return summaries.sort((a, b) => Buffer.compare(Buffer.from(b.backupId), Buffer.from(a.backupId)))
 }
 
 /**
@@ -380,6 +382,7 @@ export async function restoreBackup(
     const misfits = verification.mismatches
       .map(mismatch => `${mismatch.relPath} (${mismatch.reason})`)
       .join(', ')
+    /* v8 ignore next -- invalid verification always carries at least one mismatch; fallback preserves resilience to a foreign verifier. */
     throw new BackupNotVerifiableError(misfits || 'unknown')
   }
 

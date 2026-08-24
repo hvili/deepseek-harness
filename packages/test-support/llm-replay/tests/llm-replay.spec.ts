@@ -636,6 +636,18 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
       expect(end).toMatchObject({ block: { name: 'pwsh' } })
     })
 
+    it('leaves hang entries intact while applying a tool-name map', async () => {
+      writeLog(TEXT_CHUNKS)
+      const overrideFile = join(dir, 'replay.override.json')
+      writeFileSync(overrideFile, JSON.stringify([{ kind: 'hang' }]), 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, overrideFile, toolNames: { bash: 'pwsh' } })
+      await expect(drain(ctx.llm.stream({
+        provider: 'm', model: 'm', messages: [], signal: AbortSignal.abort(new Error('stop hang')),
+      }))).rejects.toThrow('aborted')
+    })
+
     it('leaves unmapped tool names untouched', async () => {
       writeLog(shellCall('read', '{"file_path":"notes.txt"}'))
       const ctx = new Context()

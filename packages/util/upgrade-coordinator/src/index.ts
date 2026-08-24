@@ -167,11 +167,14 @@ async function listRegularFiles(dir: string): Promise<string[]> {
   const directories = [dir]
   for (let index = 0; index < directories.length; index += 1) {
     const current = directories[index]
+    /* v8 ignore next -- index is bounded by directories.length in the loop condition. */
     if (current === undefined) continue
     for (const entry of await readdir(current, { withFileTypes: true })) {
       const path = join(current, entry.name)
       if (entry.isDirectory()) directories.push(path)
+      /* v8 ignore start -- links/devices are ignored and cannot be created portably on hosted Windows. */
       else if (entry.isFile()) files.push(path)
+      /* v8 ignore stop */
     }
   }
   return files.sort()

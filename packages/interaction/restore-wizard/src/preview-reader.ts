@@ -98,12 +98,15 @@ function isMainRun(): boolean {
   return process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 }
 
+/* v8 ignore start -- executable-entry detection and stderr/exit wiring run in
+ * the built subprocess; main() below owns the testable contract. */
 if (isMainRun()) {
   void main(process.argv.slice(2)).catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
     process.exitCode = 1
   })
 }
+/* v8 ignore stop */
 
 /**
  * CLI entry invoked by the host wizard (usually sandbox-confined read-only).

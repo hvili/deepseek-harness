@@ -46,6 +46,11 @@ const STORE_FILES: readonly [relPath: string, content: string][] = [
 ]
 
 describe('createBackupId / canonicalBackupManifest', () => {
+  it('formats the overwrite-granted conflict diagnostic', () => {
+    expect(new BackupConflictError(['a.jsonl'], true).message)
+      .toContain('conflicts with existing content')
+  })
+
   it('mints sortable, unique ids from a timestamp prefix', () => {
     const older = createBackupId(1_000)
     const newer = createBackupId(9_000)
@@ -115,6 +120,7 @@ describe('listBackups / readBackupManifest', () => {
     const backupRoot = await tempDir('dshb-ls-root-')
     await makeStore(source, [['only.jsonl', 'x']])
     await mkdir(join(backupRoot, 'not-a-backup'))
+    await writeFile(join(backupRoot, 'not-a-directory'), 'ignore', 'utf8')
 
     await takeBackup({ sourceRoot: source, backupRoot, sessionFormatVersion: 1, backupId: '2000-old' })
     await takeBackup({ sourceRoot: source, backupRoot, sessionFormatVersion: 1, backupId: '3000-new' })
@@ -133,9 +139,33 @@ describe('listBackups / readBackupManifest', () => {
     const { backupDir, manifest } = await takeBackup({ sourceRoot: source, backupRoot, sessionFormatVersion: 3 })
     expect(await readBackupManifest(backupDir)).toEqual(manifest)
   })
+
+  it('rejects non-object manifest shapes', async () => {
+    const backupDir = await tempDir('dshb-malformed-')
+    for (const value of [null, []]) {
+      await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(value), 'utf8')
+      await expect(readBackupManifest(backupDir)).rejects.toThrow('malformed manifest.json')
+    }
+  })
 })
 
 describe('verifyBackup', () => {
+  it('rejects every unsafe manifest entry path form', async () => {
+    const source = await tempDir('dshb-path-src-')
+    const backupRoot = await tempDir('dshb-path-root-')
+    await makeStore(source, [['safe.jsonl', 'x']])
+    const { backupDir, manifest } = await takeBackup({ sourceRoot: source, backupRoot, sessionFormatVersion: 1 })
+    for (const relPath of ['', '/absolute', 'C:/absolute', '../escape']) {
+      const text = canonicalBackupManifest({
+        ...manifest,
+        entries: [{ ...manifest.entries[0]!, relPath }],
+      })
+      await writeFile(join(backupDir, 'manifest.json'), text, 'utf8')
+      await writeFile(join(backupDir, 'MANIFEST.sha256'), sha256Of(text), 'utf8')
+      await expect(verifyBackup(backupDir)).rejects.toThrow('unsafe backup entry path')
+    }
+  })
+
   it('accepts an intact backup', async () => {
     const source = await tempDir('dshb-v-src-')
     const backupRoot = await tempDir('dshb-v-root-')

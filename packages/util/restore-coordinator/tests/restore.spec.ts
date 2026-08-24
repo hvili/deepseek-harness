@@ -55,6 +55,10 @@ async function snapshotOf(backupRoot: string, files: ReadonlyArray<readonly [rel
 }
 
 describe('planRestore', () => {
+  it('keeps the unverifiable diagnostic stable when no detailed mismatch exists', () => {
+    expect(new RestoreNotVerifiableError([]).message).toContain('unknown')
+  })
+
   it('refuses a snapshot that fails integrity verification', async () => {
     const backupRoot = await tempDir('drc-plan-t-r-')
     const backupDir = await snapshotOf(backupRoot, [['log.jsonl', 'A']])
@@ -118,7 +122,7 @@ describe('runRestore', () => {
     await makeStore(store, [['sub/b.json', 'STALE'], ['orphan.json', 'discard']])
     const rollbackRoot = await tempDir('drc-ru-ok-x-')
 
-    const decision = await runRestore(opts(backupDir, store, rollbackRoot))
+    const decision = await runRestore(opts(backupDir, store, rollbackRoot, { harnessVersion: 'test-harness' }))
     expect(decision.outcome).toBe('restored')
     if (decision.outcome !== 'restored') return
     expect(decision.impact.toRestore).toEqual(['a.json', 'sub/b.json'])
@@ -153,18 +157,24 @@ describe('runRestore', () => {
 
   it('rolls the store back to the pre-restore snapshot when a restore fails mid-way', async () => {
     const backupRoot = await tempDir('drc-ru-fail-r-')
-    const backupDir = await snapshotOf(backupRoot, [['log.jsonl', 'snapshot-bytes']])
+    const backupDir = await snapshotOf(backupRoot, [
+      ['a-created-before-failure.json', 'partial'],
+      ['z-blocked.jsonl', 'snapshot-bytes'],
+    ])
     const store = await tempDir('drc-ru-fail-s-')
-    // A directory at the snapshot path blocks the file copy, forcing a mid-restore failure.
-    await mkdir(join(store, 'log.jsonl'))
+    await makeStore(store, [['keep.json', 'pre-restore']])
+    // A late-sorting directory blocks the second copy after the first file was
+    // created, exercising rollback pruning as well as rollback restoration.
+    await mkdir(join(store, 'z-blocked.jsonl'))
     const rollbackRoot = await tempDir('drc-ru-fail-x-')
 
     await expect(runRestore(opts(backupDir, store, rollbackRoot))).rejects.toBeInstanceOf(Error)
     // The pre-restore state (the blocking directory) is left intact; the restore did not clobber it.
     const summaries = await listBackups(rollbackRoot)
     expect(summaries).toHaveLength(1)
-    expect(await readOrUndefined(join(store, 'log.jsonl'))).toBeUndefined()
-    const st = await stat(join(store, 'log.jsonl'))
+    expect(await readOrUndefined(join(store, 'a-created-before-failure.json'))).toBeUndefined()
+    expect(await readOrUndefined(join(store, 'keep.json'))).toBe('pre-restore')
+    const st = await stat(join(store, 'z-blocked.jsonl'))
     expect(st.isDirectory()).toBe(true)
   })
 })

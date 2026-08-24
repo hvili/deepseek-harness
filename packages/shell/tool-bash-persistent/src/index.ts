@@ -124,6 +124,7 @@ function partialOutput(
     const endAt = tail.lastIndexOf(marker.end)
     if (endAt >= 0) {
       const status = /^(\d+)[ \t]*\r?\n/.exec(tail.slice(endAt + marker.end.length))?.[1]
+      /* v8 ignore next -- a torn marker stays incomplete until the polling loop observes its status digits. */
       if (status !== undefined) {
         return {
           text: trimTrailingNewline(tail.slice(0, endAt).replace(/^[ \t]*\r?\n/, '')),

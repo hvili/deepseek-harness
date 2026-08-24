@@ -271,6 +271,17 @@ describe('the inherited readRaw default', () => {
   })
 })
 
+describe('the inherited permanent-removal default', () => {
+  it('rejects backends that do not advertise materialized-record deletion', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    await expect(ctx.sessionPersistence.remove(SessionId('unsupported-remove')))
+      .rejects.toThrow('does not support permanent removal')
+    await ctx.fiber.dispose()
+  })
+})
+
 // Each fixture shares one map across mounts. No `corruptTail` is supplied because map writes are
 // atomic; the suite asserts that skip while JSONL and SQLite cover the repair branch.
 runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {

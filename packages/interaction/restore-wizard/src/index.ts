@@ -198,6 +198,8 @@ export class RestoreWizardService extends Service {
         const executable = argv[0]
         if (executable === undefined) throw new Error('restore preview command is empty')
         const result = await promisify(execFile)(executable, argv.slice(1))
+        /* v8 ignore next -- promisified execFile without an encoding override
+         * returns a string; Buffer remains for older Node typings/runtimes. */
         return Buffer.isBuffer(result.stdout) ? result.stdout.toString('utf8') : result.stdout
       },
     }
