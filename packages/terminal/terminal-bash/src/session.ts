@@ -490,9 +490,18 @@ export class LocalPtySession implements TerminalBackendSession {
       // child also inherits PROMPT_COMMAND. Silence therefore remains the bound
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
-      const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
+      const handoffGrace = this.promptSeen || operation.requireIdleSilence
+        ? this.config.handoffGraceMs
+        : 0
+      // The pwsh pre-bootstrap grace intentionally accepts a completely quiet
+      // native host: TERM=dumb PowerShell on POSIX may print no banner or
+      // prompt at all. The following marker-gated bootstrap is the actual
+      // readiness proof, so this operation only owns the startup quiet window.
+      const idleEvidence = operation.requireIdleSilence && process.platform !== 'win32'
+        ? true
+        : startupHasOutput
       if (!operation.requirePromptMarker
-        && startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+        && idleEvidence && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

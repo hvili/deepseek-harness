@@ -306,8 +306,27 @@ describe('LocalPtySession readiness and output', () => {
     expect(settled).toBe(false)
 
     await vi.advanceTimersByTimeAsync(20)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(10)
     await initializing
     expect(session.motd).toBe('PS /workspace> ')
+  })
+
+  it.skipIf(process.platform === 'win32')('releases a silent pwsh native startup only after the full idle window', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ handoffGraceMs: 30 }))
+
+    const initializing = session.initialize(undefined, true)
+    let settled = false
+    void initializing.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(70)
+    expect(settled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(10)
+    await initializing
+    expect(session.motd).toBe('')
   })
 
   it('tracks a pre-write wait exit before exact probing begins', async () => {
