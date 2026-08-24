@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -139,7 +139,13 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['pwsh'])
     await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested')
     const observed = text(await execute('observe', 'Write-Output "cwd=$PWD keep=$env:KEEP"'))
-    expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
+    // Windows' temp root can arrive through its 8.3 spelling while pwsh
+    // canonicalizes $PWD to the long path. realpath puts both platforms on
+    // the filesystem's canonical spelling before the exact state assertion.
+    const expectedCwd = await realpath(join(root, 'nested'))
+    const observedPath = process.platform === 'win32' ? observed.toLowerCase() : observed
+    const expectedState = `cwd=${expectedCwd} keep=loader`
+    expect(observedPath).toContain(process.platform === 'win32' ? expectedState.toLowerCase() : expectedState)
     expect(observed).not.toContain('DSH_PERSISTENT_PWSH')
 
     const multiline = text(await execute(

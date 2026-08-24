@@ -208,7 +208,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'diagnostics',
-    order: 10,
+    order: 5,
     label: () => t('diagnostics.nav'),
     locale: NS,
     store: diagnosticsStore,

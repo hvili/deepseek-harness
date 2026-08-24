@@ -101,7 +101,7 @@ describe('ui-settings-general apply', () => {
     }
     const entry = generalEntry(before.slots)!
     expect(entry.options).toMatchObject({ id: 'general', order: 0 })
-    expect(diagnosticsEntry(before.slots)?.options).toMatchObject({ id: 'diagnostics', order: 10 })
+    expect(diagnosticsEntry(before.slots)?.options).toMatchObject({ id: 'diagnostics', order: 5 })
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('通用设置')
     expect(before.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
