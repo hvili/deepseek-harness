@@ -34,13 +34,22 @@
 - text: "Interjection: include the word ORANGE in your final reply."
 - button "Copy":
   - img
-- textbox "Message the agent"
-- button "Commands":
-  - img
-- 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
-  - img
-- button "0% of context used"
-- button "Stop generating"
-- text: Cache hit 0% Input 10 tok · Output 10 tok
+- region "Ready to continue?":
+  - text: Checkpoint
+  - heading "Ready to continue?" [level=2]
+  - button "Collapse the question card" [expanded]:
+    - img
+  - button "Dismiss all questions":
+    - img
+  - radiogroup:
+    - radio "Yes": 1 Yes
+    - radio "No": 2 No
+    - textbox "Type your answer"
+  - button "Previous question" [disabled]:
+    - img
+  - text: 1 / 1
+  - button "Next question" [disabled]:
+    - img
+  - status
+  - button "Skip this question"
+  - button "Submit" [disabled]

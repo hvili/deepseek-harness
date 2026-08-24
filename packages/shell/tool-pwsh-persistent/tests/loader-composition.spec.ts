@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -168,6 +168,12 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
 
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')
-    expect(text(await execute('after-exit', 'Write-Output "$PWD"'))).toBe(root)
+    const restartedCwd = text(await execute('after-exit', 'Write-Output "$PWD"'))
+    if (process.platform === 'win32') {
+      const [actual, expected] = await Promise.all([stat(restartedCwd), stat(root)])
+      expect({ dev: actual.dev, ino: actual.ino }).toEqual({ dev: expected.dev, ino: expected.ino })
+    } else {
+      expect(restartedCwd).toBe(root)
+    }
   }, 60_000)
 })

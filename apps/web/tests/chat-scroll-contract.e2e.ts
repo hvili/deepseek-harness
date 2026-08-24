@@ -474,7 +474,10 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
-      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
+      // Keep the stream alive while a hosted runner scrolls and starts the
+      // held history request. With 120 deltas the stream can finish before the
+      // anchor is sampled, defeating the concurrency contract this case owns.
+      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 360))],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
       await openSeed(

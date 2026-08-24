@@ -1,6 +1,6 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -79,6 +79,12 @@ export function defineCoverageCases(group: CoverageGroup): void {
       try {
         const discovered = await harness(undefined, new MockAdapter([]))
         await discovered.fiber.dispose()
+
+        const discoveredDir = join(d, '.claude')
+        mkdirSync(discoveredDir)
+        writeFileSync(join(discoveredDir, 'settings.json'), '{')
+        const malformedDiscovered = await harness(undefined, new MockAdapter([]))
+        await malformedDiscovered.fiber.dispose()
 
         const malformed = join(d, 'malformed.json')
         writeFileSync(malformed, '{')

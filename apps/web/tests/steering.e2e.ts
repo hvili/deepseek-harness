@@ -362,13 +362,13 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // settle inside the gap between the think block and their render.
     await page.locator('[data-tool="ask_user_question"][data-state="running"]').first()
       .waitFor({ timeout: 10_000 })
+    const composer = page.locator('[data-question-key]')
+    await composer.waitFor({ timeout: 30_000 })
     const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
 
     // Answer the question; the step closes, the loop drains both steerings
     // into one next-step request, and the final reply obeys both markers.
-    const composer = page.locator('[data-question-key]')
-    await composer.waitFor({ timeout: 30_000 })
     await composer.getByRole('radio', { name: 'Yes' }).click()
     await composer.getByRole('radio', { name: 'Yes' }).press('Enter')
     await settled

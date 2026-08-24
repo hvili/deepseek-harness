@@ -82,7 +82,7 @@ describe('ui-settings apply', () => {
     // This package registers the General and Diagnostics sections itself;
     // every other section arrives from a feature registrant.
     const GENERAL = { id: 'general', order: 0, label: 'general.nav' }
-    const DIAGNOSTICS = { id: 'diagnostics', order: 10, label: 'diagnostics.nav' }
+    const DIAGNOSTICS = { id: 'diagnostics', order: 5, label: 'diagnostics.nav' }
     expect(sections.getSnapshot()).toEqual([GENERAL, DIAGNOSTICS])
     b.slots.register({ name: 'settings.section', id: 'z', order: 20, label: 'Z' } as never, () => null)
     // No order and no label: both projection defaults apply.

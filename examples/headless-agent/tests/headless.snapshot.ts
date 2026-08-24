@@ -117,8 +117,9 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
           return
         }
         response.end([
-          'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+          'data: {"choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":null}]}',
+          'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"},"index":0,"finish_reason":null}]}',
+          'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
           'data: [DONE]',
           '',
         ].join('\n\n'))
