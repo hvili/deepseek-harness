@@ -255,7 +255,11 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().favoriteSessionIds
   }
 
-  /** Add one existing session to the durable favorites set. */
+  /**
+   * Add one existing session to the durable favorites set.
+   * @param sessionId - the session to favorite.
+   * @returns resolves once the favorite is persisted.
+   */
   favoriteSession(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       if (this.requireState().favoriteSessionIds.includes(sessionId)) return
@@ -265,7 +269,11 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
-  /** Remove one session from the durable favorites set. */
+  /**
+   * Remove one session from the durable favorites set.
+   * @param sessionId - the session to unfavorite.
+   * @returns resolves once the favorite is persisted.
+   */
   unfavoriteSession(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       const state = this.requireState()
@@ -274,7 +282,11 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
-  /** Durable tags attached to one registered workspace. */
+  /**
+   * Durable tags attached to one registered workspace.
+   * @param workspaceId - the workspace to read tags for.
+   * @returns the workspace's tags.
+   */
   workspaceTags(workspaceId: WorkspaceId): readonly string[] {
     return this.requireState().workspaceTagsById[workspaceId] ?? []
   }
@@ -284,7 +296,11 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().workspaceTagsById
   }
 
-  /** Durable tags attached to one known session. */
+  /**
+   * Durable tags attached to one known session.
+   * @param sessionId - the session to read tags for.
+   * @returns the session's tags.
+   */
   sessionTags(sessionId: SessionId): readonly string[] {
     return this.requireState().sessionTagsById[sessionId] ?? []
   }
@@ -294,7 +310,12 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().sessionTagsById
   }
 
-  /** Replace one registered workspace's tag set with normalized user input. */
+  /**
+   * Replace one registered workspace's tag set with normalized user input.
+   * @param workspaceId - the workspace to retag.
+   * @param tags - the normalized tag list.
+   * @returns resolves once the tags are persisted.
+   */
   setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void> {
     return this.enqueueOperation(async () => {
       if (!this.entities.has(workspaceId)) throw new WorkspaceOrderInvalidError(workspaceId)
@@ -309,7 +330,12 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
-  /** Replace one known session's tag set with normalized user input. */
+  /**
+   * Replace one known session's tag set with normalized user input.
+   * @param sessionId - the session to retag.
+   * @param tags - the normalized tag list.
+   * @returns resolves once the tags are persisted.
+   */
   setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void> {
     return this.enqueueOperation(async () => {
       if (!(await this.sessionKnown(sessionId))) throw new WorkspaceUnknownSessionError(sessionId)

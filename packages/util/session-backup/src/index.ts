@@ -274,7 +274,11 @@ export async function readBackupManifest(backupDir: string): Promise<BackupManif
   return parsed
 }
 
-/** Immutable view of one stored backup, cheapest to read. */
+/**
+ * Immutable view of one stored backup, cheapest to read.
+ * @param backupDir - the directory holding the backup.
+ * @returns the backup summary.
+ */
 export async function readBackupSummary(backupDir: string): Promise<BackupSummary> {
   const manifest = await readBackupManifest(backupDir)
   return {

@@ -248,24 +248,45 @@ export class WorkspaceManager {
     return result
   }
 
+  /**
+   * Restore an archived session to the active set.
+   * @param sessionId - the archived session to unarchive.
+   * @returns the updated archived-session id set.
+   */
   async unarchiveSession(sessionId: SessionId): Promise<RpcResult<{ archivedSessionIds: SessionId[] }>> {
     const { result } = await this.api.workspace.unarchiveSession({ sessionId })
     if (result.ok) this.installArchived(result.value.archivedSessionIds)
     return result
   }
 
+  /**
+   * Add a session to the durable favorites set.
+   * @param sessionId - the session to favorite.
+   * @returns the updated favorite-session id set.
+   */
   async favoriteSession(sessionId: SessionId): Promise<RpcResult<{ favoriteSessionIds: SessionId[] }>> {
     const { result } = await this.api.workspace.favoriteSession({ sessionId })
     if (result.ok) this.installFavorites(result.value.favoriteSessionIds)
     return result
   }
 
+  /**
+   * Remove a session from the durable favorites set.
+   * @param sessionId - the session to unfavorite.
+   * @returns the updated favorite-session id set.
+   */
   async unfavoriteSession(sessionId: SessionId): Promise<RpcResult<{ favoriteSessionIds: SessionId[] }>> {
     const { result } = await this.api.workspace.unfavoriteSession({ sessionId })
     if (result.ok) this.installFavorites(result.value.favoriteSessionIds)
     return result
   }
 
+  /**
+   * Replace a workspace's tag set.
+   * @param workspaceId - the workspace to retag.
+   * @param tags - the normalized tag list.
+   * @returns the updated workspace and session tag snapshots.
+   */
   async setWorkspaceTags(
     workspaceId: WorkspaceId, tags: string[],
   ): Promise<RpcResult<{ workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> }>> {
@@ -274,6 +295,12 @@ export class WorkspaceManager {
     return result
   }
 
+  /**
+   * Replace a session's tag set.
+   * @param sessionId - the session to retag.
+   * @param tags - the normalized tag list.
+   * @returns the updated workspace and session tag snapshots.
+   */
   async setSessionTags(
     sessionId: SessionId, tags: string[],
   ): Promise<RpcResult<{ workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> }>> {
@@ -282,6 +309,11 @@ export class WorkspaceManager {
     return result
   }
 
+  /**
+   * Permanently remove an archived session.
+   * @param sessionId - the archived session to remove.
+   * @returns the updated archived-session id set and whether anything was removed.
+   */
   async removeArchivedSession(
     sessionId: SessionId,
   ): Promise<RpcResult<{ archivedSessionIds: SessionId[]; removed: boolean }>> {

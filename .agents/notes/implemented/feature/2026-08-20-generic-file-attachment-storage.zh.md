@@ -4,6 +4,10 @@ Status: implemented
 
 [English](2026-08-20-generic-file-attachment-storage.md) | 中文
 
+## 问题
+
+附件接缝没有通用文件契约，因此存储会静默接受无法持久化的文件，消费者也没有类型化的引用。
+
 ## 决策
 
 附件边界现在提供 `FileAttachmentRef`：包含 `kind: 'file'` 区分字段、用于路由的 MIME 元数据、字节数、净化后的展示名，以及与图片对象相同的不透明内容寻址 id。`AttachmentStore.saveFile` 与 `readFile` 提供明确的“不支持”默认实现，因此既有测试和第三方存储仍保持源码兼容，而不会意外接受文件。
@@ -19,3 +23,7 @@ PDF 与 Office 输入现在可以在任意解析开始前保留一个不可变�
 ## 验证
 
 `pnpm exec vitest run packages/attachment/attachment/tests packages/attachment/attachment-local/tests` 通过：32 个测试通过、1 个跳过。`pnpm exec tsc -b tsconfig.host.json --pretty false` 通过。
+
+## 备选方案
+
+已否决：用隐式文件标志重载图片引用（无类型且歧义）以及让每个存储自行发明文件持久化（完整性保证不一致）。

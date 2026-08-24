@@ -116,12 +116,19 @@ export abstract class AttachmentStore extends Service {
   /**
    * Persist a generic material attachment. Backends that predate structured
    * file intake fail explicitly instead of silently treating it as an image.
+   * @param _input - the file attachment material (unsupported by this store).
+   * @returns never resolves; the store rejects with a file-unsupported error.
    */
   async saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef> {
     throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
   }
 
-  /** Read a generic material attachment, preserving cancellation semantics. */
+  /**
+   * Read a generic material attachment, preserving cancellation semantics.
+   * @param _ref - the file attachment reference (unsupported by this store).
+   * @param _signal - optional cancellation signal (unused by this store).
+   * @returns never resolves; the store rejects with a file-unsupported error.
+   */
   async readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
     throw new AttachmentError('Generic file attachments are not supported by this attachment store.', 'UNSUPPORTED_FILE_ATTACHMENT')
   }

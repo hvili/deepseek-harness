@@ -4,11 +4,19 @@ Status: implemented
 
 English | [中文](2026-08-20-durable-file-prompt-admission.zh.md)
 
+## Problem
+
+A prompt could carry only text and image parts; generic files had no durable admission path, and browser blob URLs or raw bytes could not be admitted into the session log.
+
 ## Decision
 
 The browser-to-host `session.prompt` wire now accepts a generic `file` part alongside text and images. The host decodes its canonical base64 payload, stores it through `AttachmentStore.saveFile`, and records one `file` content block that contains only the resulting immutable reference. No browser blob URL, source path, or raw byte payload enters the session log.
 
 Text-only adapters project a file block to its bounded parser preview. Until parser intake supplies one, they emit a precise attachment fallback that names the sanitized display name and MIME type instead of silently dropping the user material.
+
+## Alternatives considered
+
+Rejected: admitting browser blob URLs into the session log (nondeterministic and non-durable) and storing raw byte payloads inline in prompt blocks (bloats the log and loses the immutable reference).
 
 ## Consequences
 

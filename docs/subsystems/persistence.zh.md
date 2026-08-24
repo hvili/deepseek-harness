@@ -296,6 +296,14 @@ abstract create(meta: SessionHeader): Promise<void>
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
 
 /**
+ * Permanently remove one materialized session's durable log and header.
+ * Callers must first ensure that no live Session owns this identity.
+ * @param _id - Stored session identity to remove.
+ * @returns whether a stored session was removed.
+ */
+remove(_id: SessionId): Promise<boolean>
+
+/**
  * Prepare the exact unpublished Session used by resume. Implementations may
  * reuse object graphs retained by an earlier {@link inspect} after confirming
  * their durable revision is still current; disposal releases an unpublished

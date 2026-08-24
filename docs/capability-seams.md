@@ -7,6 +7,9 @@ A service can be a core spine service, a swappable capability seam, or a bundle/
 
 ```mermaid
 flowchart LR
+  pkg_restore_wizard["restore-wizard"]
+  svc_restoreWizard["ctx.restoreWizard<br/>Session restore wizard"]
+  pkg_apiproxy["apiproxy"]
   pkg_attachment["attachment"]
   svc_attachments["ctx.attachments<br/>Durable binary attachment storage"]
   pkg_attachment_local["attachment-local"]
@@ -47,7 +50,6 @@ flowchart LR
   pkg_settings["settings"]
   svc_settings["ctx.settings<br/>User-settings seam"]
   pkg_settings_file["settings-file"]
-  pkg_apiproxy["apiproxy"]
   pkg_credentials["credentials"]
   svc_credentials["ctx.credentials<br/>Credential seam"]
   pkg_credentials_local["credentials-local"]
@@ -250,6 +252,7 @@ flowchart LR
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_pwsh_local --> svc_shell
+  pkg_restore_wizard --> svc_restoreWizard
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -342,6 +345,7 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_restoreWizard --> pkg_apiproxy
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -425,6 +429,7 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.restoreWizard` | `core` | [`restore-wizard`](../packages/interaction/restore-wizard) | [`restore-wizard`](../packages/interaction/restore-wizard) | `apiproxy` | - | Previews a restore under read-only sandbox confinement and, after operator approval, replays the transactional restore through the coordinator. |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements. |

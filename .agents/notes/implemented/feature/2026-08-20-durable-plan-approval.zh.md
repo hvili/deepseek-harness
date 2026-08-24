@@ -4,9 +4,17 @@
 
 [English](2026-08-20-durable-plan-approval.md) | 中文
 
+## 问题
+
+批准的方案没有留下持久记录，因此重新加载或分叉的会话无法恢复用户实际批准的是哪个方案。
+
 ## 决策
 
 `exit_plan_mode` 现在会在获得用户明确批准后、离开 plan mode 前，立即追加一个仅存在于日志中的 `plan/approved` 事件。事件保存计划的首个 Markdown 标题和完整已批准计划 Markdown。`foldApprovedPlan(events)` 返回最近一次已批准计划；`plan` 会话投影新增可选的 `approved` 值。
+
+## 备选方案
+
+已否决：从原始 plan-mode 记录中重建批准（对编辑脆弱）以及将完整方案文本持久化到单独的存储（脱离事件流）。
 
 ## 影响
 

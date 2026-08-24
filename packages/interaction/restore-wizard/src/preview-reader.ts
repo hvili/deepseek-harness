@@ -46,7 +46,11 @@ export interface RestorePlanPreview {
   readonly mismatch?: string
 }
 
-/** Parse the preview CLI argv into {@link PreviewArgs}. */
+/**
+ * Parse the preview CLI argv into {@link PreviewArgs}.
+ * @param argv - the CLI argument vector (flags with values).
+ * @returns the parsed preview arguments.
+ */
 export function parsePreviewArgs(argv: readonly string[]): PreviewArgs {
   const read = (flag: string): string => {
     const index = argv.indexOf(flag)
@@ -69,6 +73,8 @@ export function parsePreviewArgs(argv: readonly string[]): PreviewArgs {
  * Compute the read-only preview for the given args. A snapshot that fails
  * integrity verification is a legitimate preview OUTCOME (`verified: false`),
  * not an exception; an unexpected error (bad path, I/O) propagates.
+ * @param args - the parsed preview arguments.
+ * @returns the read-only restore plan preview (verified or refused).
  */
 export async function readPreview(args: PreviewArgs): Promise<RestorePlanPreview> {
   try {
@@ -99,7 +105,11 @@ if (isMainRun()) {
   })
 }
 
-/** CLI entry invoked by the host wizard (usually sandbox-confined read-only). */
+/**
+ * CLI entry invoked by the host wizard (usually sandbox-confined read-only).
+ * @param previewCliArgs - the raw CLI argument vector.
+ * @returns resolves after the preview JSON is written to stdout.
+ */
 export async function main(previewCliArgs: readonly string[]): Promise<void> {
   const args = parsePreviewArgs(previewCliArgs)
   const preview = await readPreview(args)

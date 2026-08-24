@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-durable-file-prompt-admission.md
-2026-08-20-durable-file-prompt-admission.md: 3e6b19d61a71990b624166f88c1d5d5921123a50
-2026-08-20-durable-file-prompt-admission.zh.md: 91bf862b0df48657741ab1d8939ae474ea7e02cc
+2026-08-20-durable-file-prompt-admission.md: e7342fcc9f012fc18963b7e649024809526c55c9
+2026-08-20-durable-file-prompt-admission.zh.md: b32a9928616a4eda392fdad7ae28fea5aed80f7a

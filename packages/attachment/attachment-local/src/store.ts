@@ -315,6 +315,9 @@ export async function readImageFile(
  * Persist immutable generic file bytes under the same private content-addressed
  * object tree as images. Parsing is intentionally separate: this boundary only
  * establishes durable identity, MIME routing metadata, and byte integrity.
+ * @param root - the attachment store's private root directory.
+ * @param input - the file attachment to persist (bytes, media type, optional name).
+ * @returns the durable file attachment reference.
  */
 export async function saveFileAttachmentFile(root: string, input: SaveFileAttachment): Promise<FileAttachmentRef> {
   if (input.data.byteLength === 0) throw new AttachmentError('File is empty.', 'INVALID_FILE')
@@ -358,7 +361,13 @@ export async function saveFileAttachmentFile(root: string, input: SaveFileAttach
   }
 }
 
-/** Read a generic file and verify its immutable content-addressed identity. */
+/**
+ * Read a generic file and verify its immutable content-addressed identity.
+ * @param root - the attachment store's private root directory.
+ * @param ref - the file attachment reference to read.
+ * @param signal - optional cancellation signal.
+ * @returns the stored file attachment payload and metadata.
+ */
 export async function readFileAttachmentFile(
   root: string, ref: FileAttachmentRef, signal?: AbortSignal,
 ): Promise<StoredFileAttachment> {

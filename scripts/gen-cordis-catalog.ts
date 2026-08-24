@@ -113,6 +113,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   web: 'web.md',
   workflowEngine: 'workflow.md',
   workspaceRegistry: 'workspace.md',
+  restoreWizard: 'restore.md',
 }
 
 /**
@@ -161,6 +162,9 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   slots: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
   workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  apiRemotesReady: 'launcher-provided readiness promise — packages/api/remotes/README.md owns the boot contract',
+  connectionState: 'client-side connection-state service handle — packages/client/runtime/README.md owns the API',
+  assembly: 'client-side assembly-progress registry — packages/client/runtime/README.md owns the API',
 }
 
 /**
@@ -297,6 +301,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   RequestImageAttachment: 'attachment.md',
   SaveImageAttachment: 'attachment.md',
   StoredImageAttachment: 'attachment.md',
+  FileAttachmentRef: 'attachment.md',
+  SaveFileAttachment: 'attachment.md',
+  StoredFileAttachment: 'attachment.md',
   ShellExecRequest: 'shell.md',
   ShellExecSpec: 'shell.md',
   ShellProcess: 'shell.md',
@@ -625,6 +632,10 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   WorkflowAgentEndInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowAgentInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowResultInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
+  BackupSummary: 'backup metadata contract is owned by packages/util/session-backup/src/index.ts',
+  RestoreDecision: 'restore decision contract is owned by packages/interaction/restore-wizard/src/index.ts',
+  RestorePlanPreview: 'read-only preview contract is owned by packages/interaction/restore-wizard/src/preview-reader.ts',
+  RestoreWizardRunOptions: 'wizard run options are owned by packages/interaction/restore-wizard/src/index.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

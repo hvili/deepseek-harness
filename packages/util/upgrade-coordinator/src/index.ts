@@ -60,6 +60,7 @@ export interface UpgradePreflight {
  * this build cannot faithfully migrate it down). Throws nothing — callers
  * decide how to surface a `downgrade-refused`.
  * @param options - store, backup root, and format resolution.
+ * @param signal - optional cancellation signal.
  * @returns the observed persisted version and the decided action.
  */
 export async function preflightUpgrade(options: UpgradeCoordinatorOptions, signal?: AbortSignal): Promise<UpgradePreflight> {

@@ -4,9 +4,17 @@ Status: implemented
 
 English | [中文](2026-08-20-web-turn-rewind-enabled.zh.md)
 
+## Problem
+
+Turn rewind shipped only as a disabled base row, so the Web profile had no way to mount the Change Ledger service, HTTP endpoint, and rewind actions.
+
 ## Decision
 
 The `web-app` bundle now overrides the base `turn-rewind` row from `disabled: true` to `disabled: false`. The Change Ledger service, `/turn-rewind` HTTP endpoint, and the per-message rewind action are therefore part of the shipped Web profile while headless/base profiles keep the feature off.
+
+## Alternatives considered
+
+Rejected: enabling the row in the base bundle for every profile (changes headless behavior) and shipping a separate web-only patch layer that duplicates base rows.
 
 ## Consequences
 

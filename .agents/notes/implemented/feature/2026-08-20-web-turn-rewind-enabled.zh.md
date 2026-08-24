@@ -4,9 +4,17 @@
 
 [English](2026-08-20-web-turn-rewind-enabled.md) | 中文
 
+## 问题
+
+Turn rewind 仅以禁用的基础行发布，因此 Web 配置无法挂载 Change Ledger 服务、HTTP 端点和回退操作。
+
 ## 决策
 
 `web-app` bundle 现在将 base 的 `turn-rewind` 行从 `disabled: true` 覆盖为 `disabled: false`。因此 Change Ledger 服务、`/turn-rewind` HTTP 端点和每条消息下的 rewind 动作都会随 Web profile 交付；headless/base profile 仍保持关闭。
+
+## 备选方案
+
+已否决：在基础包中为每个配置启用该行（改变无头行为）以及发布一个重复基础行的单独仅 Web 补丁层。
 
 ## 影响
 

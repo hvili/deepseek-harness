@@ -70,7 +70,10 @@ function buildOnePixelPng(): Uint8Array {
   )
 }
 
-/** The probe image bytes. Immutable and content-addressed once generated. */
+/**
+ * The probe image bytes. Immutable and content-addressed once generated.
+ * @returns the cached single-pixel PNG bytes.
+ */
 export function onePixelPng(): Uint8Array {
   cached ??= buildOnePixelPng()
   return cached

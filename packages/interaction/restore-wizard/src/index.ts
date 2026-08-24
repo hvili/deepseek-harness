@@ -87,6 +87,9 @@ export type RestoreApproval = (
 /**
  * Build the argv that asks the preview-reader CLI for the read-only impact.
  * The wizard confines this exact argv before spawning it.
+ * @param cmd - the confined preview command specification.
+ * @param options - wizard run options (backup/restore/rollback roots and session format version).
+ * @returns the argv handed to the preview-reader CLI.
  */
 export function previewArgv(
   cmd: PreviewCommandSpec,
@@ -107,6 +110,10 @@ export function previewArgv(
  * the standalone preview-reader as a confined subprocess and return its JSON
  * verdict. The preview never mutates the live store; the sandbox enforces that
  * even if the subprocess misbehaved.
+ * @param seam - the sandbox seam that confines and spawns the preview subprocess.
+ * @param cmd - the confined preview command specification.
+ * @param options - wizard run options.
+ * @returns the parsed read-only restore plan preview.
  */
 export async function previewRestore(
   seam: PreviewSeam,
@@ -128,6 +135,11 @@ export async function previewRestore(
  * that fails closed — yields `{ outcome: 'declined' }` with nothing touched.
  * @throws {@link RestoreNotVerifiableError} when the snapshot refused preview
  *   verification (an integrity failure is NOT a user decision).
+ * @param seam - the sandbox seam that confines and spawns the preview subprocess.
+ * @param cmd - the confined preview command specification.
+ * @param approve - the operator approval callback asked with the verified impact.
+ * @param options - wizard run options.
+ * @returns the final restore decision.
  */
 export async function restoreWithApproval(
   seam: PreviewSeam,
@@ -197,17 +209,29 @@ export class RestoreWizardService extends Service {
     }
   }
 
-  /** List stored backups newest-first, for the wizard's select step. */
+  /**
+   * List stored backups newest-first, for the wizard's select step.
+   * @param backupRoot - directory holding the backup set.
+   * @returns the backup summaries, newest first.
+   */
   list(backupRoot: string): Promise<BackupSummary[]> {
     return listBackups(backupRoot)
   }
 
-  /** Preview under read-only sandbox confinement (no mutation, no approval). */
+  /**
+   * Preview under read-only sandbox confinement (no mutation, no approval).
+   * @param options - wizard run options.
+   * @returns the read-only restore plan preview.
+   */
   preview(options: RestoreWizardRunOptions): Promise<RestorePlanPreview> {
     return previewRestore(this.seam, this.command, options)
   }
 
-  /** Preview → ask `ctx.approval` → transactionally restore (full loop). */
+  /**
+   * Preview → ask `ctx.approval` → transactionally restore (full loop).
+   * @param options - wizard run options.
+   * @returns the final restore decision.
+   */
   restore(options: RestoreWizardRunOptions): Promise<RestoreDecision> {
     const ctx = this.ctx
     return restoreWithApproval(

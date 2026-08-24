@@ -1644,7 +1644,7 @@ export interface RestoreWizardConfig {
 }
 ```
 
-Source: [`packages/interaction/restore-wizard/src/index.ts:157`](../packages/interaction/restore-wizard/src/index.ts)
+Source: [`packages/interaction/restore-wizard/src/index.ts:169`](../packages/interaction/restore-wizard/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 

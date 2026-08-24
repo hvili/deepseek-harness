@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-20-web-turn-rewind-e2e.md
-2026-08-20-web-turn-rewind-e2e.md: 65bda908a1b432f407631e6b3896c7f3c06b5389
-2026-08-20-web-turn-rewind-e2e.zh.md: a11cbdc9f9b2802d490285008b64dab7035ecd9d
+2026-08-20-web-turn-rewind-e2e.md: a6b0b00cac0ab1abd4172040c42f6c7183a97313
+2026-08-20-web-turn-rewind-e2e.zh.md: 619041cacc43df6ff041a18d370860b7d9fd257c

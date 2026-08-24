@@ -35,7 +35,10 @@ function initConnectionState(): ConnectionStateSnapshot {
   return { state: undefined, hostVersion: undefined, expectedVersion: undefined }
 }
 
-/** Factory for the concrete service (store-backed, observable). */
+/**
+ * Factory for the concrete service (store-backed, observable).
+ * @returns the connection-state service handle.
+ */
 export function createConnectionStateService(): ConnectionStateService {
   const store: SnapshotStore<ConnectionStateSnapshot> = createSnapshotStore(initConnectionState())
   return {

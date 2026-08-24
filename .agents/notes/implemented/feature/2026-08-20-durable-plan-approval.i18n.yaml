@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-durable-plan-approval.md
-2026-08-20-durable-plan-approval.md: f07efcad13087f2d028c7f8c7bc1e663bc7d7eb4
-2026-08-20-durable-plan-approval.zh.md: 8ee17ba68692e96c94dad4a8d82f39711285052a
+2026-08-20-durable-plan-approval.md: 2fd196623c2f2efcb2e5af57a82105af6ca5ebd8
+2026-08-20-durable-plan-approval.zh.md: 188ec2c1606957a450f0edb22b9f0550391e6bb1

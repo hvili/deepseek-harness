@@ -102,32 +102,44 @@ export const workspaceArchiveSessionValueSchema = z.object({
   archivedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.archiveSession'>>>
 
+/** workspace.unarchiveSession request payload. */
 export const workspaceUnarchiveSessionRequestSchema = z.object({
   sessionId: sessionIdSchema,
 }) satisfies z.ZodType<Wire<RequestPayload<'workspace.unarchiveSession'>>>
 
+/** workspace.unarchiveSession response value: the full updated archive set. */
 export const workspaceUnarchiveSessionValueSchema = z.object({
   archivedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.unarchiveSession'>>>
 
+/** workspace.favoriteSession request payload. */
 export const workspaceFavoriteSessionRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'workspace.favoriteSession'>>>
+/** workspace.favoriteSession response value: the full updated favorite set. */
 export const workspaceFavoriteSessionValueSchema = z.object({ favoriteSessionIds: z.array(sessionIdSchema) }) satisfies z.ZodType<Wire<ResponseValue<'workspace.favoriteSession'>>>
+/** workspace.unfavoriteSession request payload. */
 export const workspaceUnfavoriteSessionRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'workspace.unfavoriteSession'>>>
+/** workspace.unfavoriteSession response value: the full updated favorite set. */
 export const workspaceUnfavoriteSessionValueSchema = z.object({ favoriteSessionIds: z.array(sessionIdSchema) }) satisfies z.ZodType<Wire<ResponseValue<'workspace.unfavoriteSession'>>>
 
 const workspaceTagsSnapshotSchema = z.object({
   workspaceTagsById: z.record(z.string(), z.array(z.string())),
   sessionTagsById: z.record(z.string(), z.array(z.string())),
 })
+/** workspace.setWorkspaceTags request payload. */
 export const workspaceSetWorkspaceTagsRequestSchema = z.object({ workspaceId: workspaceIdSchema, tags: z.array(z.string()) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.setWorkspaceTags'>>>
+/** workspace.setWorkspaceTags response value: the updated tag snapshots. */
 export const workspaceSetWorkspaceTagsValueSchema = workspaceTagsSnapshotSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.setWorkspaceTags'>>>
+/** workspace.setSessionTags request payload. */
 export const workspaceSetSessionTagsRequestSchema = z.object({ sessionId: sessionIdSchema, tags: z.array(z.string()) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.setSessionTags'>>>
+/** workspace.setSessionTags response value: the updated tag snapshots. */
 export const workspaceSetSessionTagsValueSchema = workspaceTagsSnapshotSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.setSessionTags'>>>
 
+/** workspace.removeArchivedSession request payload. */
 export const workspaceRemoveArchivedSessionRequestSchema = z.object({
   sessionId: sessionIdSchema,
 }) satisfies z.ZodType<Wire<RequestPayload<'workspace.removeArchivedSession'>>>
 
+/** workspace.removeArchivedSession response value: the updated archive set and removal flag. */
 export const workspaceRemoveArchivedSessionValueSchema = z.object({
   archivedSessionIds: z.array(sessionIdSchema),
   removed: z.boolean(),

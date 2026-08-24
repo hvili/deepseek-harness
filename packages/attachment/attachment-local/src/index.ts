@@ -156,6 +156,7 @@ export class LocalAttachmentStore extends AttachmentStore {
   /** Absolute versioned storage root. */
   readonly root: string
   readonly imageLimits: ImageAttachmentLimits
+  /** Resolved instance-level file size cap in bytes. */
   readonly maxFileBytes: number
   /** Resolved provider-independent normalization policy. */
   readonly normalizationPolicy: Readonly<NormalizationPolicy>

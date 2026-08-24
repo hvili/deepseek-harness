@@ -145,7 +145,11 @@ export function textField(field: string): CardFieldSpec {
   }
 }
 
-/** A boolean field represented as the strings consumed by the card controls. */
+/**
+ * A boolean field represented as the strings consumed by the card controls.
+ * @param field - the form field key.
+ * @returns the boolean card field specification.
+ */
 export function booleanField(field: string): CardFieldSpec {
   return {
     field,

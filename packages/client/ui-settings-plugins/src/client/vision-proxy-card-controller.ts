@@ -86,6 +86,10 @@ export class VisionProxyCardController {
     }
   }
 
+  /**
+   * Build the card face exposed to the settings surface.
+   * @returns the vision-proxy card face.
+   */
   inject(): VisionProxyCardFace {
     return {
       testModel: this.testModel,
