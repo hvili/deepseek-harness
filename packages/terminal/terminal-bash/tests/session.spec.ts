@@ -317,6 +317,28 @@ describe('LocalPtySession readiness and output', () => {
     await operation.done
   })
 
+  it('does not deliver a delayed submit after the session closes', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['install-prompt'])
+    const closing = session.close('test close')
+    await vi.advanceTimersByTimeAsync(10)
+    await closing
+    expect(terminal.writes).toEqual(['install-prompt'])
+    expect((await operation.done).waitReason).toBe('session_exit')
+  })
+
   it('holds pwsh native startup through an early stdin wait until the idle window', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

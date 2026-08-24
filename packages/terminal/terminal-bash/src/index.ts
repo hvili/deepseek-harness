@@ -13,7 +13,14 @@ import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@dee
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
-import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
+import {
+  type Config,
+  DEFAULT_PWSH_ARGS,
+  type ResolvedConfig,
+  resolveConfig,
+  type ShellDialect,
+  validateConfig,
+} from './config.ts'
 import { LocalPtySession } from './session.ts'
 import { CONTROLLED_PROMPT } from './sanitize.ts'
 
@@ -97,8 +104,21 @@ export const PWSH_PROMPT_SETUP =
 export const PWSH_BOOTSTRAP = ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
   + "; [Console]::Write([char]27 + ']133;D;0' + [char]7)"
 
+function bootstrapsPwshFromArgv(config: ResolvedConfig): boolean {
+  return process.platform !== 'win32'
+    && config.shellDialect === 'pwsh'
+    && config.shellArgs.length === DEFAULT_PWSH_ARGS.length
+    && config.shellArgs.every((arg, index) => arg === DEFAULT_PWSH_ARGS[index])
+}
+
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
-  const argv = [config.shellPath, ...config.shellArgs]
+  // POSIX pwsh can publish a kernel stdin wait before its line reader owns the
+  // PTY, so its startup command must not travel through interactive input.
+  // Windows ConPTY does not reliably return from -NoExit -Command to its
+  // interactive reader, and therefore retains the in-session path below.
+  const argv = bootstrapsPwshFromArgv(config)
+    ? [config.shellPath, ...config.shellArgs, '-NoExit', '-Command', PWSH_BOOTSTRAP]
+    : [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')
   if (sandbox === undefined) {
@@ -114,10 +134,17 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  pwshBootstrappedFromArgv: boolean,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
     if (dialect === 'bash') {
+      await session.initialize(signal)
+      return
+    }
+    if (pwshBootstrappedFromArgv) {
+      // -NoExit renders the installed controlled prompt after evaluating the
+      // launch command; normal initialization waits for that full prompt.
       await session.initialize(signal)
       return
     }
@@ -199,7 +226,12 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(
+        session,
+        this.config.shellDialect,
+        bootstrapsPwshFromArgv(this.config),
+        spec.signal,
+      )
       return session
     } catch (error) {
       try {

@@ -12,7 +12,7 @@ import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId 
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
 import { BashTerminalBackend, PWSH_BOOTSTRAP } from '@deepseek-ai/dsh-terminal-bash'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
-import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+import { DEFAULT_PWSH_ARGS, type ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -427,6 +427,41 @@ describe('BashTerminalBackend startup rollback', () => {
       separateSubmit: true,
       requirePromptMarker: true,
     })
+  })
+
+  it('preloads the default pwsh bootstrap through POSIX launch argv', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const ctx = new Context()
+      await ctx.plugin(EmptySandbox)
+      await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+      let spawned: SubprocessTerminalSpawnSpec | undefined
+      const initialize = vi.fn<(signal?: AbortSignal) => Promise<void>>().mockResolvedValue(undefined)
+      const session = {
+        initialize,
+        startSend: () => { throw new Error('argv-bootstrapped pwsh must not receive an internal bootstrap send') },
+        close: () => Promise.resolve(),
+      } as unknown as LocalPtySession
+      const backend = new BashTerminalBackend(
+        ctx,
+        {
+          ...config(),
+          shellDialect: 'pwsh',
+          shellPath: 'pwsh',
+          shellArgs: [...DEFAULT_PWSH_ARGS],
+        },
+        async (spec) => { spawned = spec; return terminalHandle() },
+        () => session,
+      )
+
+      expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+      expect(spawned?.argv).toEqual([
+        'pwsh', ...DEFAULT_PWSH_ARGS, '-NoExit', '-Command', PWSH_BOOTSTRAP,
+      ])
+      expect(initialize).toHaveBeenCalledWith(undefined)
+    } finally {
+      platform.mockRestore()
+    }
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
