@@ -131,7 +131,7 @@ describe('vision-proxy composition', () => {
   })
 
   it('leaves images untouched when the switch is off', async () => {
-    const adapter = new FixtureAdapter()
+    const adapter = new PassThroughMainAdapter()
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)

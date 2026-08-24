@@ -337,7 +337,7 @@ async function transformMessage(
     // model may then reject it with its own clearer error, or — if the user
     // is experimenting with an image-capable main route — proceed normally.
     if (config.errorMode === 'pass') {
-      console.error(`[vision-proxy] image description failed; passing image through (errorMode=pass):`, error)
+      console.error('[vision-proxy] image description failed; passing image through (errorMode=pass):', error)
       return message
     }
     throw error

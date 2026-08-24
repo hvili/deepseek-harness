@@ -147,9 +147,19 @@ function decodeBase64(data: string): Uint8Array {
 
 /** Copy durable tag maps into JSON-safe wire snapshots. */
 function workspaceTagsSnapshot(ctx: Context): { workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> } {
+  const registry = (ctx as unknown as {
+    workspaceRegistry?: {
+      workspaceTagsById?: Readonly<Record<string, readonly string[]>>
+      sessionTagsById?: Readonly<Record<string, readonly string[]>>
+    }
+  }).workspaceRegistry
   return {
-    workspaceTagsById: Object.fromEntries(Object.entries(ctx.workspaceRegistry.workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
-    sessionTagsById: Object.fromEntries(Object.entries(ctx.workspaceRegistry.sessionTagsById).map(([id, tags]) => [id, [...tags]])),
+    workspaceTagsById: registry?.workspaceTagsById === undefined
+      ? {}
+      : Object.fromEntries(Object.entries(registry.workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+    sessionTagsById: registry?.sessionTagsById === undefined
+      ? {}
+      : Object.fromEntries(Object.entries(registry.sessionTagsById).map(([id, tags]) => [id, [...tags]])),
   }
 }
 

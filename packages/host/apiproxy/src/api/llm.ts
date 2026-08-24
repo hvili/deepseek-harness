@@ -86,11 +86,11 @@ export interface LlmApi {
    */
   testModel(
     request: RpcRequest<{
-        provider: string
-        model: string
-        probeVision?: boolean
-        timeoutMs?: number
-      }>,
+      provider: string
+      model: string
+      probeVision?: boolean
+      timeoutMs?: number
+    }>,
   ): Promise<RpcResponse<{ inputModalities?: string[] }>>
 }
 
