@@ -339,6 +339,51 @@ describe('LocalPtySession readiness and output', () => {
     expect((await operation.done).waitReason).toBe('session_exit')
   })
 
+  it('abandons a split submit when cancellation lands during the first provider write', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const writeGate = Promise.withResolvers<undefined>()
+    const firstWriteSettled = Promise.withResolvers<undefined>()
+    const originalWrite = terminal.write.bind(terminal)
+    let writesStarted = 0
+    terminal.write = async (data: string) => {
+      writesStarted += 1
+      if (writesStarted === 1) {
+        await writeGate.promise
+        await originalWrite(data)
+        firstWriteSettled.resolve(undefined)
+        return
+      }
+      await originalWrite(data)
+    }
+    const controller = new AbortController()
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+      signal: controller.signal,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    // The bootstrap body write is parked inside the provider; cancellation
+    // must own the send before the submit key is ever considered.
+    expect(terminal.writes).toEqual([])
+    controller.abort()
+    writeGate.resolve(undefined)
+    await firstWriteSettled.promise
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminal.writes).toEqual(['install-prompt'])
+
+    terminal.emitData('\x1b]133;D;130\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    await operation.done
+    expect(inspector.groups).toContainEqual([456, 'SIGINT'])
+  })
+
   it('holds pwsh native startup through an early stdin wait until the idle window', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
