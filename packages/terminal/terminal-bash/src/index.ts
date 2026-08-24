@@ -132,6 +132,7 @@ async function startupSession(
     const operation = session.startSend({
       text: PWSH_BOOTSTRAP,
       submit: true,
+      separateSubmit: true,
       // The kernel can publish stdin-wait before PSReadLine finishes redrawing
       // the prompt. The bootstrap emits our private OSC marker itself after
       // evaluation, so delayed input echo cannot be attributed to the first

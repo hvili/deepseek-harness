@@ -23,6 +23,12 @@ import type {
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
+type LocalTerminalSendRequest = TerminalSendRequest & {
+  requirePromptMarker?: boolean
+  requireIdleSilence?: boolean
+  separateSubmit?: boolean
+}
+
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
   const chars = Array.from(text)
@@ -230,10 +236,7 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
-  startSend(request: TerminalSendRequest & {
-    requirePromptMarker?: boolean
-    requireIdleSilence?: boolean
-  }): TerminalSendOperation {
+  startSend(request: LocalTerminalSendRequest): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
     if (this.active !== undefined) {
@@ -270,7 +273,7 @@ export class LocalPtySession implements TerminalBackendSession {
     return operation
   }
 
-  private async beginSend(operation: LocalSendOperation, request: TerminalSendRequest): Promise<void> {
+  private async beginSend(operation: LocalSendOperation, request: LocalTerminalSendRequest): Promise<void> {
     let foreground: SubprocessTerminalForeground | undefined
     try {
       foreground = await this.terminal.inspectForeground()
@@ -296,15 +299,27 @@ export class LocalPtySession implements TerminalBackendSession {
       const submitSequence = request.submit
         ? this.config.shellDialect === 'pwsh' && process.platform !== 'win32' ? '\n' : '\r'
         : ''
-      const input = `${request.text}${submitSequence}`
-      if (input.length > 0 && !operation.cancelRequested) {
+      const inputs = request.separateSubmit === true && request.text.length > 0 && submitSequence.length > 0
+        ? [request.text, submitSequence]
+        : [`${request.text}${submitSequence}`]
+      if (inputs.some(input => input.length > 0) && !operation.cancelRequested) {
         this.resetReadinessEvidence()
-        const write = this.terminal.write(input)
-        this.activeWrite = write.then(() => true, () => false)
-        try {
-          await write
-        } finally {
-          this.activeWrite = undefined
+        for (const [index, input] of inputs.entries()) {
+          if (!this.canContinueSend(operation)) break
+          if (index > 0) {
+            // Let the interactive reader consume a pasted command before Enter
+            // arrives. Hosted POSIX pwsh can otherwise treat one combined PTY
+            // write as pasted text and leave its trailing LF unsubmitted.
+            await new Promise(resolve => setTimeout(resolve, this.config.pollIntervalMs))
+          }
+          if (!this.canContinueSend(operation)) break
+          const write = this.terminal.write(input)
+          this.activeWrite = write.then(() => true, () => false)
+          try {
+            await write
+          } finally {
+            this.activeWrite = undefined
+          }
         }
       }
       // Cancellation owns post-write signalling and reservation release.
@@ -325,6 +340,10 @@ export class LocalPtySession implements TerminalBackendSession {
         else this.failActive(error)
       }
     }
+  }
+
+  private canContinueSend(operation: LocalSendOperation): boolean {
+    return this.active === operation && !this.closing && !operation.cancelRequested
   }
 
   private resetReadinessEvidence(): void {

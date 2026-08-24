@@ -290,6 +290,33 @@ describe('LocalPtySession readiness and output', () => {
     await operation.done
   })
 
+  it('can deliver pwsh bootstrap text before its submit key', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['install-prompt'])
+    await vi.advanceTimersByTimeAsync(9)
+    expect(terminal.writes).toEqual(['install-prompt'])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(terminal.writes).toEqual([
+      'install-prompt',
+      process.platform === 'win32' ? '\r' : '\n',
+    ])
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    await operation.done
+  })
+
   it('holds pwsh native startup through an early stdin wait until the idle window', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
