@@ -289,7 +289,14 @@ export class LocalPtySession implements TerminalBackendSession {
     try {
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       operation.setInitialForeground(foreground)
-      const input = `${request.text}${request.submit ? '\r' : ''}`
+      // PowerShell on POSIX falls back to System.Console line input when TERM
+      // is deliberately `dumb`; unlike PSReadLine, that path needs LF to
+      // submit the buffered line. A bare CR remains pending until teardown,
+      // which makes bootstrap look like a shell-start timeout on Linux.
+      const submitSequence = request.submit
+        ? this.config.shellDialect === 'pwsh' && process.platform !== 'win32' ? '\n' : '\r'
+        : ''
+      const input = `${request.text}${submitSequence}`
       if (input.length > 0 && !operation.cancelRequested) {
         this.resetReadinessEvidence()
         const write = this.terminal.write(input)

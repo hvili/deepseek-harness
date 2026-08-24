@@ -105,12 +105,20 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * the row before its hover-only button becomes visible.
    */
   async function clickHoverAction(row: Locator, name: string): Promise<void> {
-    const button = row.getByRole('button', { name })
     await expect.poll(async () => {
-      await row.hover()
-      return await button.isVisible()
+      try {
+        await row.hover()
+        const button = row.getByRole('button', { name })
+        if (!await button.isVisible()) return false
+        // Keep reveal and click in the retried unit: a workspace projection can
+        // replace the row between those two operations without changing its
+        // semantic identity.
+        await button.click({ timeout: 1_000 })
+        return true
+      } catch {
+        return false
+      }
     }, { timeout: 10_000 }).toBe(true)
-    await button.click()
   }
 
   beforeAll(async () => {

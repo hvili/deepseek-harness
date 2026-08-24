@@ -587,20 +587,17 @@ async function waitForPersistedChildTurnEnd(
   const failure = new Error(
     `snapshot-harness: subagent child #${child} did not persist closed turn ${minimumTurn} within ${timeoutMs}ms`,
   )
-  try {
-    await vi.waitFor(async () => {
-      const log = (await harvestSessionLogs(root))[child]
-      if (log === undefined || !latestTurnIsClosed(log.content)
-        || !hasRequestHeaderAfterDescriptor(log.content)
-        || !hasClosedTurn(log.content, minimumTurn)) throw failure
-    }, { interval: WAIT_POLL_INTERVAL_MS, timeout: timeoutMs })
-  } catch (error: unknown) {
-    // Under a loaded coverage worker, a very short contract timeout can expire
-    // between polls and Vitest substitutes its generic "Timed out in waitFor"
-    // error. Preserve the harness operation's public diagnostic in that case;
-    // unrelated parse/filesystem failures still retain their original cause.
-    if (error instanceof Error && error.message === 'Timed out in waitFor!') throw failure
-    throw error
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const log = (await harvestSessionLogs(root))[child]
+    if (log !== undefined && latestTurnIsClosed(log.content)
+      && hasRequestHeaderAfterDescriptor(log.content)
+      && hasClosedTurn(log.content, minimumTurn)) return
+    // vi.waitFor can replace the operation error with its generic timeout on
+    // some loaded workers but return the callback error on others. Keep this
+    // harness contract platform-independent by owning the small poll loop.
+    if (Date.now() >= deadline) throw failure
+    await new Promise(resolve => setTimeout(resolve, WAIT_POLL_INTERVAL_MS))
   }
 }
 
