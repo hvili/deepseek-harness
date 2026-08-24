@@ -10,8 +10,7 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend, PWSH_PROMPT_SETUP } from '@deepseek-ai/dsh-terminal-bash'
-import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
+import { BashTerminalBackend, PWSH_BOOTSTRAP } from '@deepseek-ai/dsh-terminal-bash'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
 import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
@@ -373,7 +372,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
     expect(sent).toMatchObject({
-      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      text: PWSH_BOOTSTRAP,
       submit: true,
       requirePromptMarker: true,
     })
@@ -418,7 +417,7 @@ describe('BashTerminalBackend startup rollback', () => {
       .rejects.toThrow('PTY shell bootstrap settled before the controlled prompt marker')
     expect(sends).toHaveLength(1)
     expect(sends[0]).toMatchObject({
-      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      text: PWSH_BOOTSTRAP,
       submit: true,
       requirePromptMarker: true,
     })

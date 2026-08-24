@@ -89,6 +89,14 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
+/**
+ * Startup command that installs the controlled prompt and emits one marker
+ * directly after evaluation. Unix pwsh can accept another input line without
+ * rendering `prompt`, so readiness cannot depend on the prompt callback alone.
+ */
+export const PWSH_BOOTSTRAP = ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
+  + "; [Console]::Write([char]27 + ']133;D;0' + [char]7)"
+
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
   const argv = [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
@@ -122,12 +130,12 @@ async function startupSession(
     await session.initialize(signal)
     const motd = session.motd
     const operation = session.startSend({
-      text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+      text: PWSH_BOOTSTRAP,
       submit: true,
       // The kernel can publish stdin-wait before PSReadLine finishes redrawing
-      // the prompt. Require our private OSC marker so delayed bootstrap echo is
-      // never attributed to the first user command. Linux pwsh may omit the
-      // printable prompt tail, so LocalPtySession accepts the marker itself.
+      // the prompt. The bootstrap emits our private OSC marker itself after
+      // evaluation, so delayed input echo cannot be attributed to the first
+      // user command even when Unix pwsh omits the prompt callback entirely.
       requirePromptMarker: true,
       ...signal !== undefined ? { signal } : {},
     })
