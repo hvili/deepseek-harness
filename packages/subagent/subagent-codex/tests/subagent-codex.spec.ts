@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -368,13 +369,18 @@ describe('task admission and package contracts', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.files).toContain('cordis.patch.yml')
     expect(manifest.dependencies).toHaveProperty(
-      '@deepseek-ai/dsh-sdk-protocol',
+      '@deepseek-ai/dsh-codex-app-server',
       'workspace:^',
     )
-    expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
+    expect(manifest.dependencies).not.toHaveProperty('@openai/codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
 
-    const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
+    const adapterPackageJson = fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-codex-app-server/package.json'))
+    const adapterManifest = JSON.parse(readFileSync(adapterPackageJson, 'utf8')) as {
+      dependencies: Record<string, string>
+    }
+    expect(adapterManifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
+    const codexPackageJson = createRequire(adapterPackageJson).resolve('@openai/codex/package.json')
     const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
       version: string
       bin: { codex: string }
@@ -688,7 +694,7 @@ describe('CodexAppServerWire', () => {
       clientInfo: {
         name: 'deepseek-harness',
         title: 'DeepSeek Harness',
-        version: '0.0.1',
+        version: '0.1.1-rc.2',
       },
       capabilities: {
         experimentalApi: false,
@@ -884,6 +890,11 @@ describe('CodexAppServerWire', () => {
       const child = fakeChild()
       const wire = defaultWire(child)
       wire.start()
+      const initializing = wire.initialize(new AbortController().signal)
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+      await initializing
+      await child.peer.nextMethod('initialized')
       const pending = wire.startThread('/workspace', new AbortController().signal)
       const frame = await child.peer.nextMethod('thread/start')
       child.peer.respond(frame, { thread: { id: 'thread-1', ephemeral: false } })

@@ -27,6 +27,9 @@
       "path": "../../sdk/protocol"
     },
     {
+      "path": "../codex-app-server"
+    },
+    {
       "path": "../../core/session"
     },
     {

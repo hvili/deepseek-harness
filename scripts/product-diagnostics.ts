@@ -66,8 +66,8 @@ export function validatePatchAudit(value: unknown): PatchAudit {
 
 export function collectDiagnostics(repositoryRoot: string, enhancementRoot: string): ProductDiagnostics {
   const rootManifest = readJson(resolve(repositoryRoot, 'package.json'))
-  const providerManifest = readJson(resolve(repositoryRoot, 'packages', 'subagent', 'subagent-codex', 'package.json'))
-  const dependencies = providerManifest.dependencies as Record<string, unknown> | undefined
+  const runtimeManifest = readJson(resolve(repositoryRoot, 'packages', 'subagent', 'codex-app-server', 'package.json'))
+  const dependencies = runtimeManifest.dependencies as Record<string, unknown> | undefined
   if (dependencies === undefined) throw new Error('Codex provider dependencies are missing')
   const audit = validatePatchAudit(readJson(resolve(repositoryRoot, 'product', 'core-patches.json')))
   const patchCounts: Record<string, number> = {}

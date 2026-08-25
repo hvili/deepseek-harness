@@ -8,9 +8,11 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import {
+  codexAppServerArgv,
+  disposeCodexAppServerChild,
+} from '@deepseek-ai/dsh-codex-app-server'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -33,23 +35,6 @@ import {
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
-
-interface CodexPackageManifest {
-  readonly bin: {
-    readonly codex: string
-  }
-}
-
-const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
-const codexPackageManifest = JSON.parse(
-  readFileSync(codexPackageJsonPath, 'utf8'),
-) as CodexPackageManifest
-
-/** Absolute package-local JavaScript wrapper selected by the package manifest. */
-const CODEX_PACKAGE_BIN = resolve(
-  dirname(codexPackageJsonPath),
-  codexPackageManifest.bin.codex,
-)
 
 /** Profile-selectable non-interactive Codex permission mode. */
 export type CodexPermissionMode =
@@ -129,9 +114,7 @@ export function codexStartupFailure(cause: unknown): Error {
  * Fixed package-local app-server command, independent of the host `PATH`.
  * @returns Node, the official wrapper, and the fixed app-server arguments.
  */
-export function codexAppServerArgv(): string[] {
-  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
-}
+export { codexAppServerArgv } from '@deepseek-ai/dsh-codex-app-server'
 
 /** Fully resolved inputs for one Codex app-server run. */
 export interface CodexRunSpec {
@@ -196,13 +179,7 @@ export async function disposeCodexChild(
       () => {},
     )
     try {
-      child.stdin?.end()
-    } catch {
-      // A concurrently closed stdin does not change tree ownership below.
-    }
-    child.terminate()
-    try {
-      await child.waitForExit()
+      await disposeCodexAppServerChild(child)
     } catch (error: unknown) {
       throw new CodexRunFailure({
         stage: 'teardown',
@@ -210,9 +187,8 @@ export async function disposeCodexChild(
         outcome,
       }, thrown(error))
     }
-    await child.done
   } else {
-    await child.done.catch(() => {})
+    await disposeCodexAppServerChild(child)
   }
 }
 

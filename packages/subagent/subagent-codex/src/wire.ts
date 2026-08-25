@@ -10,7 +10,7 @@
 import type { Readable, Writable } from 'node:stream'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import { CodexAppServerClient } from '@deepseek-ai/dsh-codex-app-server'
 import type { CodexPermissionMode } from './run.ts'
 
 type JsonObject = Record<string, unknown>
@@ -210,7 +210,7 @@ async function raceAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T
  * another product method must first become part of the provider contract.
  */
 export class CodexAppServerWire {
-  private readonly transport: JsonRpcLineTransport
+  private readonly transport: CodexAppServerClient
   private readonly fatal = Promise.withResolvers<never>()
   private threadId: string | undefined
   private turnId: string | undefined
@@ -246,7 +246,7 @@ export class CodexAppServerWire {
     output: Writable,
     private readonly permissionMode: CodexPermissionMode,
   ) {
-    this.transport = new JsonRpcLineTransport(input, output)
+    this.transport = new CodexAppServerClient(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
     // already settled. Keep the shared rejection observed without inserting
     // another promise-adoption hop into active races.
@@ -285,19 +285,13 @@ export class CodexAppServerWire {
    * @param signal - unpublished-start cancellation.
    */
   async initialize(signal: AbortSignal): Promise<void> {
-    object(await this.guarded(this.transport.request('initialize', {
-      clientInfo: {
-        name: 'deepseek-harness',
-        title: 'DeepSeek Harness',
-        version: '0.0.1',
-      },
-      capabilities: {
-        experimentalApi: false,
-        requestAttestation: false,
-      },
-    }, signal), signal), 'initialize response')
-    this.transport.notify('initialized')
-    await this.guarded(this.transport.flush(), signal)
+    await this.guarded(this.transport.initialize({
+      name: 'deepseek-harness',
+      title: 'DeepSeek Harness',
+      version: '0.1.1-rc.2',
+    }, {
+      requestAttestation: false,
+    }, signal), signal)
   }
 
   /**

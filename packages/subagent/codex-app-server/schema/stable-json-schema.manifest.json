@@ -1,0 +1,7 @@
+{
+  "codexRuntimeVersion": "0.147.0",
+  "experimental": false,
+  "fileCount": 285,
+  "aggregateSha256": "6b3a16b107f8cd3176d79f45cb52e7f2e40c53402f618584e6a95b9535f39a6c",
+  "algorithm": "sha256(sorted(relativePath + LF + fileSha256 + LF))"
+}
