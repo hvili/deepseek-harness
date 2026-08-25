@@ -258,6 +258,21 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/subagent/subagent-codex/src/thread-state.ts:36`](../packages/subagent/subagent-codex/src/thread-state.ts)
 
+<a id="codexthread-start-wal--log-only"></a>
+
+#### `codex/thread-start-wal` — log-only
+
+```ts persistence-catalog
+/**
+ * Durable write-ahead evidence for a persistent Codex `thread/start`.
+ * A remaining `prepared` record is an unresolved external side effect and
+ * makes automatic continuation unavailable until reconciliation.
+ */
+'codex/thread-start-wal': CodexThreadStartWal
+```
+
+来源：[`packages/subagent/subagent-codex/src/thread-state.ts:61`](../packages/subagent/subagent-codex/src/thread-state.ts)
+
 ### `command/*`
 
 <a id="commanddone--log-only"></a>
