@@ -6,7 +6,7 @@
   "officialBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
   "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 78,
+  "nonMergeCommitCount": 79,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1200,6 +1200,21 @@
       "verification": "Run the stable-schema fingerprint, handshake, persistent thread start/resume, JSONL fresh-mount recovery, approval, malformed-protocol, cancellation, process-quiescence, provider regression, typecheck, package build, and product identity gates.",
       "upstreamStatus": "product-specific-not-submitted",
       "deletionCondition": "Move this adapter out of Harness-src after an official engine extension boundary can provide the same package-local runtime ownership and all dual-path regression tests pass."
+    },
+    {
+      "commit": "be6ba9fe975c42f82d5290b9a75759a6879caeb0",
+      "subject": "feat(codex): add stateful thread execution",
+      "affectedAreas": [
+        ".agents/notes",
+        "docs/persistence-catalog.md",
+        "packages/core/session",
+        "packages/subagent/subagent-codex"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The durable Codex execution adapter, its write-ahead journal, and package-local process lifecycle need an in-tree runtime owner until DSH exposes an equivalent stable engine extension boundary.",
+      "verification": "Run focused WAL fault injection, real package-local two-process resume, cancellation/process-quiescence, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
+      "upstreamStatus": "product-specific-not-submitted",
+      "deletionCondition": "Move this adapter out of Harness-src after an official engine extension boundary provides durable external references, process ownership, and dual-path regression coverage."
     }
   ]
 }
