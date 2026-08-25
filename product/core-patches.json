@@ -1,0 +1,1183 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-25",
+  "productBranch": "product/main",
+  "productBaseline": "356faa8535c943c0bdebebd1f546724cd5f1b261",
+  "officialBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
+  "nonMergeCommitCount": 77,
+  "classifications": {
+    "minimal-core-patch": "Keep temporarily in Harness-src.",
+    "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
+    "upstream-candidate": "Prepare as an isolated official DSH contribution.",
+    "retire-or-reprove": "Drop unless the next release train reproduces a concrete need."
+  },
+  "entries": [
+    {
+      "commit": "f896232742ecdbbaf18d8c9f40b762dfdc54fbb8",
+      "subject": "feat: add conversation file intake and session archiving",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/bundle/base",
+        "packages/client/connection",
+        "packages/client/runtime",
+        "packages/client/ui-conversation",
+        "packages/client/ui-settings-plugins",
+        "packages/host/apiproxy",
+        "packages/session/session-persistence",
+        "packages/session/session-persistence-jsonl",
+        "packages/session/session-persistence-sqlite",
+        "packages/test-support/client-runtime",
+        "packages/vision/vision-proxy",
+        "packages/workspace/workspace",
+        "pnpm-lock.yaml",
+        "tsconfig.host.json"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The change owns durable or cross-package behavior that cannot move behind the current public plugin seams without first adding an upstream extension point.",
+      "verification": "Run affected package tests, typecheck, build, profile composition, Web E2E, restart recovery, and source/artifact identity checks.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after official DSH provides equivalent durable behavior or a public extension point and the product regression suite passes without this commit."
+    },
+    {
+      "commit": "b31f07ccad4e884aeb52ded8955ea44cd8668fd3",
+      "subject": "feat: session backup/restore pipeline, upgrade coordinator, build manifest, diagnostics UI",
+      "affectedAreas": [
+        ".github/workflows",
+        ".gitignore",
+        "apps/cli",
+        "apps/web",
+        "docs/event-producer-consumer.i18n.yaml",
+        "docs/event-producer-consumer.md",
+        "docs/event-producer-consumer.zh.md",
+        "package.json",
+        "packages/attachment/attachment",
+        "packages/bundle/base",
+        "packages/bundle/web-app",
+        "packages/client/connection",
+        "packages/client/locale",
+        "packages/client/runtime",
+        "packages/client/ui-conversation",
+        "packages/client/ui-layout",
+        "packages/client/ui-settings-general",
+        "packages/client/ui-settings-plugins",
+        "packages/client/ui-theme",
+        "packages/client/ui-tool",
+        "packages/client/ui-trajectory",
+        "packages/client/ui-workspace",
+        "packages/client/web",
+        "packages/hooks/hooks-claude-code",
+        "packages/hooks/hooks-codex",
+        "packages/host/apiproxy",
+        "packages/interaction/restore-wizard",
+        "packages/session/session-persistence",
+        "packages/session/session-persistence-jsonl",
+        "packages/test-support/client-runtime",
+        "packages/util/build-manifest",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "packages/vision/vision-proxy",
+        "packages/workspace/workspace",
+        "plugins/dsh-turn-rewind",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "scripts/release",
+        "tsconfig.host.json",
+        "vendor/README.md",
+        "vendor/cordis"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The change owns durable or cross-package behavior that cannot move behind the current public plugin seams without first adding an upstream extension point.",
+      "verification": "Run affected package tests, typecheck, build, profile composition, Web E2E, restart recovery, and source/artifact identity checks.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after official DSH provides equivalent durable behavior or a public extension point and the product regression suite passes without this commit."
+    },
+    {
+      "commit": "2ee7e65155c0ec8f8ea62f145afa76ef586279a9",
+      "subject": "fix: resolve client assembly lazy slots, test mocks for workspaceRegistry, scrollbar rebind, and submodule turn-rewind",
+      "affectedAreas": [
+        ".gitmodules",
+        "packages/client/runtime",
+        "packages/client/ui-conversation",
+        "packages/client/ui-settings-general",
+        "packages/host/apiproxy"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The change owns durable or cross-package behavior that cannot move behind the current public plugin seams without first adding an upstream extension point.",
+      "verification": "Run affected package tests, typecheck, build, profile composition, Web E2E, restart recovery, and source/artifact identity checks.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after official DSH provides equivalent durable behavior or a public extension point and the product regression suite passes without this commit."
+    },
+    {
+      "commit": "1094f3dcd0c7487c4f17337ef62abecb11a03650",
+      "subject": "fix(submodule): update dsh-turn-rewind pointer with local modifications",
+      "affectedAreas": [
+        "plugins/dsh-turn-rewind"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The change owns durable or cross-package behavior that cannot move behind the current public plugin seams without first adding an upstream extension point.",
+      "verification": "Run affected package tests, typecheck, build, profile composition, Web E2E, restart recovery, and source/artifact identity checks.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after official DSH provides equivalent durable behavior or a public extension point and the product regression suite passes without this commit."
+    },
+    {
+      "commit": "a39773ab237a6b3d53a04c78cfc98c4729a10807",
+      "subject": "test: align client fixtures with rc.8 contracts",
+      "affectedAreas": [
+        "packages/client/connection",
+        "packages/client/ui-conversation",
+        "packages/client/ui-workspace"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "61f7d62e14ab6f6488777318d6a0ec5189b07b6a",
+      "subject": "test(web): verify archived session restoration",
+      "affectedAreas": [
+        "apps/web"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "9299f003d19d43fb41c2b8997f66216b0842896f",
+      "subject": "feat(workspace): persist session favorites",
+      "affectedAreas": [
+        "packages/workspace/workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "0937c1517e87681ea966146f0874cfb8d51e26a0",
+      "subject": "test(workspace): cover legacy favorite state",
+      "affectedAreas": [
+        "packages/workspace/workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "a46c55c430fc7a77573fc4077936fbe6cc937ef7",
+      "subject": "feat(apiproxy): synchronize session favorites",
+      "affectedAreas": [
+        "packages/host/apiproxy"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "7040ed35a287e7ce18c8fdb2ffdb199b62dc5c3b",
+      "subject": "feat(client): synchronize session favorites",
+      "affectedAreas": [
+        "packages/client/connection",
+        "packages/client/runtime",
+        "packages/test-support/client-runtime"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "1575d17b8aed9de8a367ab2e465d3ba0dbb0350e",
+      "subject": "feat(workspace): add favorite session controls",
+      "affectedAreas": [
+        "packages/client/connection",
+        "packages/client/runtime",
+        "packages/client/ui-workspace",
+        "packages/test-support/client-runtime"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "55871ffb6c3a25f8aec938baff9b0cbcf81ba2ed",
+      "subject": "fix(workspace): preserve favorites when restoring sessions",
+      "affectedAreas": [
+        "packages/workspace/workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "a4824c5d42142ac82d61841a4f4f363deade6786",
+      "subject": "feat(workspace): persist project and session tags",
+      "affectedAreas": [
+        "packages/workspace/workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "a761bfd0a9f247c0fab66956b309bc15d514b9f1",
+      "subject": "feat(workspace): synchronize durable tags",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/client/connection",
+        "packages/client/runtime",
+        "packages/host/apiproxy",
+        "packages/test-support/client-runtime",
+        "packages/workspace/workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "587868b7876890c2dc55343601d3929f7d7e9fec",
+      "subject": "feat(workspace): edit sidebar tags",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/client/connection",
+        "packages/client/ui-workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "b70f2fe11dd5015627e8005dd905c700900aaf2d",
+      "subject": "feat(workspace): search session tags",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/client/ui-workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "090c2eed235eb8840401c463535ea8881bfaec79",
+      "subject": "feat(workspace): show fork lineage",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/client/ui-workspace"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "771d9403eb062cbeae7c168598f811b5a9580b0c",
+      "subject": "test(web): cover durable session metadata",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "1c1255636c3caf030aad35969eddd3b063f8da93",
+      "subject": "feat(attachment): persist generic file objects",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/attachment/attachment",
+        "packages/attachment/attachment-local"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "58a3b3cf8fb7302e62d98e45921304618f100455",
+      "subject": "feat(llm): retain durable file references",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/llm/llm"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "47036e69676c33deebf9311e7ce2fba52fab4647",
+      "subject": "feat(apiproxy): admit durable file prompts",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/host/apiproxy",
+        "packages/llm/llm",
+        "packages/llm/llm-deepseek",
+        "packages/llm/llm-pi-ai"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "8082af0dec49270ea15323bfde5929420705ddf9",
+      "subject": "feat(apiproxy): persist file intake previews",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/host/apiproxy",
+        "packages/llm/llm"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "f3a229a5946dd4f9e5dbb230532af55419c40e44",
+      "subject": "feat(web): render durable file attachments",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/client/connection",
+        "packages/client/runtime",
+        "packages/client/ui-attachment",
+        "packages/client/ui-conversation"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "cb395216081177bea428cbf2b7e8103a8aff6c5a",
+      "subject": "feat(plan): persist approved plan marker",
+      "affectedAreas": [
+        ".agents/notes",
+        "docs/persistence-catalog.md",
+        "packages/core/session",
+        "packages/plan/plan-mode"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "b0be2c95bc941446e937ee2f0fcfb200e4f657b2",
+      "subject": "feat(web): enable turn rewind in web profile",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/bundle/web-app"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "b9ada5f1059e4937bf03f89dbc932a80993ba193",
+      "subject": "feat(web): restore turn rewind action and cover with e2e",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "plugins/dsh-turn-rewind",
+        "tsconfig.host.json"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "b8d3f706ac34f3cfca7339cec3607db4f0d242fd",
+      "subject": "test(web): verify per-message rewind and localized UI",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "plugins/dsh-turn-rewind"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "8870a36e4234308a384c70f456d9408faaf561e4",
+      "subject": "fix(web): cover assistant blocks and fixture remotes",
+      "affectedAreas": [
+        "packages/client/connection",
+        "packages/client/ui-trajectory"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "bc310947f202c59a6ae95bfa603c4be4d6064b06",
+      "subject": "chore: update turn-rewind validation submodule",
+      "affectedAreas": [
+        "plugins/dsh-turn-rewind"
+      ],
+      "classification": "migrate-to-enhancement-layer",
+      "reason": "The behavior is product presentation, organization, or an optional feature that belongs in the independently versioned enhancement layer.",
+      "verification": "Build and test the external plugin or Bundle, then run the corresponding Web interaction and restart-persistence scenario.",
+      "upstreamStatus": "not-applicable",
+      "deletionCondition": "Delete from product/main after the external plugin passes composition, data migration, and rollback checks."
+    },
+    {
+      "commit": "94cba200790643f2751927b2a0be791896596e89",
+      "subject": "fix(web): gate remote consumers until methods are ready",
+      "affectedAreas": [
+        ".agents/notes",
+        "THIRD_PARTY_NOTICES.md",
+        "package.json",
+        "packages/api/remotes",
+        "packages/extensions/cordis-client-runner",
+        "packages/extensions/ui-cordis"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "471128b175bcc0e6933eae3a0c89f577ef667008",
+      "subject": "fix(web): stabilize Windows shell and scroll coverage",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "packages/client/ui-tool"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "ee8ff15db0b5e64b6afb6e8cde5c0301def2af3a",
+      "subject": "fix(web): map replayed bash tool names to the live platform shell",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "packages/test-support/llm-replay"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "68b0f57ede5e5a93966930829e83ce078f5758ec",
+      "subject": "fix(web): replay code mode programs under the live platform shell",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "packages/test-support/llm-replay"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "65cb462bd303bf65e40b098f952dea27e8dbfd2b",
+      "subject": "fix(web): run background job list e2e under the live platform shell",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "26c77b99dd5ba22be7d5ffe20d7faf90d85e6ffc",
+      "subject": "fix(web): dispatch composition and continuous chat e2e through the live shell",
+      "affectedAreas": [
+        "apps/web"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "79527ca349be47c385045f78e750941e1049d3d5",
+      "subject": "fix(web): refresh goldens past turn rewind and pin capture races",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "50c53d1c362abf833d23bb7b039d8f2c83346858",
+      "subject": "fix(shell): cut completed markers from persistent shell fallback output",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/shell/tool-bash-persistent",
+        "packages/shell/tool-pwsh-persistent"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "e597eb94320c1e6c5df5470faea0840a233579ab",
+      "subject": "fix(web): stabilize Windows lane addressing and refresh settings goldens",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/web",
+        "packages/bundle/base",
+        "packages/client/ui-settings-plugins"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "a3a8bda541117310d3bc96b250e2e7249a52732b",
+      "subject": "fix(shell): tolerate ConPTY line padding around persistent shell markers",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/shell/tool-bash-persistent",
+        "packages/shell/tool-pwsh-persistent"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "e59d1f08f56ebbe1e72a6c56c242f0ea20603556",
+      "subject": "fix(web): align archived-sessions order test with the nav renumbering",
+      "affectedAreas": [
+        "packages/client/ui-settings-plugins"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "fbbbce2898ade996a568114db0df9100986cc075",
+      "subject": "fix(release): align carry-line package versions and rename the golden note",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/interaction/restore-wizard",
+        "packages/util/build-manifest",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "packages/vision/vision-proxy"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "a8615f26aba883335e3f2654dabbe2a32e2fd14a",
+      "subject": "fix(ci): make issue-lifecycle skip gracefully on forks and add build-diagnostic to release",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "95ddc54f3a54936c5d6ace7d4bb41524fb43cca4",
+      "subject": "fix(ci): unblock fork pack jobs, issue policy, and lifecycle workflow parsing",
+      "affectedAreas": [
+        ".github/issue-management",
+        ".github/workflows",
+        ".gitmodules"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "4a12393e1b2c8b60e0aa4b4063deabb82e3d42bf",
+      "subject": "fix(ci): run Issue policy against the event repository on forks",
+      "affectedAreas": [
+        ".github/issue-management"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "1d7b4e3c0a073c65c900057a01f3ea5ac3afc3d5",
+      "subject": "fix(ci): let Release (dsh) verify packed installs with the in-repo turn-rewind plugin",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "e1294f12fe2c97cc13fd7830ed3418d59bdcbe43",
+      "subject": "fix(ci): drop unsupported --ignore-scripts from the turn-rewind plugin pack step",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "25ef8bc313e002f0561529cc568b9253d3d71c09",
+      "subject": "fix(ci): resolve the plugin pack destination from the repository root",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "2bce0e9041a67b96b08a577dc796d543bbaea311",
+      "subject": "fix(release): resolve pnpm through the lifecycle entrypoint when packing",
+      "affectedAreas": [
+        "scripts/release"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "92ff569b4281246b84c616fe467a24953a2fcf8c",
+      "subject": "fix(ci): check out submodules in the main CI lane",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "fc8e821b8dc217ddf1c179f99c4b8bbfeb42d31d",
+      "subject": "fix(ci): repair the submodules additions mangled by an inline patch",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "3b2e1f38e8714ea6feccf240a59ba6c99f606871",
+      "subject": "fix(ci): fall back to GitHub-hosted runners for the node-24 lanes",
+      "affectedAreas": [
+        ".github/workflows"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "b871381ac45354b86389843356d1f1fb09e8a364",
+      "subject": "fix(ci): clear the fork hygiene-gate backlog surfaced by the node-24 lanes",
+      "affectedAreas": [
+        "docs/config-catalog.md",
+        "docs/module-graph.md",
+        "docs/subsystems",
+        "packages/bundle/web-app",
+        "packages/client/ui-conversation",
+        "packages/extensions/cordis-client-runner",
+        "packages/interaction/restore-wizard",
+        "packages/util/build-manifest",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "packages/vision/vision-proxy",
+        "pnpm-lock.yaml",
+        "tsconfig.base.json"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "c9b7a6d3a249b8c6c41b81223dfcfda36836f54e",
+      "subject": "fix(ci): clear the remaining hygiene-gate backlog in the node-24 static lane",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/cli",
+        "docs/capability-seams.i18n.yaml",
+        "docs/capability-seams.md",
+        "docs/capability-seams.zh.md",
+        "docs/config-catalog.i18n.yaml",
+        "docs/config-catalog.md",
+        "docs/config-catalog.zh.md",
+        "docs/event-producer-consumer.i18n.yaml",
+        "docs/event-producer-consumer.md",
+        "docs/event-producer-consumer.zh.md",
+        "docs/module-graph.i18n.yaml",
+        "docs/module-graph.zh.md",
+        "docs/subsystems",
+        "knip.json",
+        "packages/attachment/attachment",
+        "packages/attachment/attachment-local",
+        "packages/client/runtime",
+        "packages/client/ui-settings-plugins",
+        "packages/extensions/tool-cordis",
+        "packages/host/apiproxy",
+        "packages/interaction/restore-wizard",
+        "packages/util/build-manifest",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "packages/vision/vision-proxy",
+        "packages/workspace/workspace",
+        "plugins/dsh-turn-rewind",
+        "scripts/gen-cordis-catalog.ts",
+        "scripts/gen-doc-graphs.ts",
+        "scripts/translation-pairing.manifest.json",
+        "scripts/type-equiv.manifest.json",
+        "scripts/verify-package-readme-model-experience.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "38aa243564630ec72384d701ca32f1cdfa662112",
+      "subject": "fix(ci): stabilize fork-hosted validation lanes",
+      "affectedAreas": [
+        ".github/workflows",
+        "scripts/ci-workflow.spec.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "3ff2c3e9d5ac047e7e2c21f996595d17e5e136f6",
+      "subject": "fix(hygiene): clear static and publication gates",
+      "affectedAreas": [
+        ".agents/notes",
+        "apps/cli",
+        "apps/web",
+        "docs/subsystems",
+        "knip.json",
+        "packages/attachment/attachment",
+        "packages/attachment/attachment-local",
+        "packages/client/runtime",
+        "packages/client/ui-settings-plugins",
+        "packages/client/ui-workspace",
+        "packages/extensions/cordis-client-runner",
+        "packages/extensions/tool-cordis",
+        "packages/interaction/restore-wizard",
+        "packages/session/session-persistence",
+        "packages/session/session-persistence-jsonl",
+        "packages/test-support/client-runtime",
+        "packages/util/build-manifest",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "scripts/check-workspace-constraints.ts",
+        "scripts/publint-all.spec.ts",
+        "scripts/publint-all.ts",
+        "scripts/release"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "5b419bf621a64a74e5782d69c0b57af4397a3710",
+      "subject": "fix(test): restore validation contracts",
+      "affectedAreas": [
+        "packages/client/ui-settings-general",
+        "packages/host/apiproxy",
+        "packages/vision/vision-proxy",
+        "scripts/oxlint-contract.spec.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "e018b347dac4f9d2ba5fac410e9347cad844548a",
+      "subject": "test(snapshot): calibrate validated replay goldens",
+      "affectedAreas": [
+        "examples/acp-agent"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "fd416f13191838d577bdfc90293dfeaca054b893",
+      "subject": "fix(ci): harden runner-specific validation races",
+      "affectedAreas": [
+        "packages/client/runtime",
+        "packages/client/ui-settings-general",
+        "packages/shell/tool-pwsh-persistent",
+        "packages/terminal/terminal-bash",
+        "scripts/install-lefthook.mjs"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "9d5e2eecf46ebffe0ab564c27c6924a8d22fe308",
+      "subject": "test(coverage): close feature validation gaps",
+      "affectedAreas": [
+        "docs/config-catalog.md",
+        "packages/attachment/attachment",
+        "packages/attachment/attachment-local",
+        "packages/hooks/hooks-claude-code",
+        "packages/hooks/hooks-codex",
+        "packages/host/apiproxy",
+        "packages/interaction/restore-wizard",
+        "packages/llm/llm",
+        "packages/llm/llm-deepseek",
+        "packages/llm/llm-pi-ai",
+        "packages/plan/plan-mode",
+        "packages/session/session-persistence",
+        "packages/session/session-persistence-jsonl",
+        "packages/shell/tool-bash-persistent",
+        "packages/shell/tool-pwsh-persistent",
+        "packages/test-support/llm-replay",
+        "packages/util/restore-coordinator",
+        "packages/util/session-backup",
+        "packages/util/upgrade-coordinator",
+        "packages/vision/vision-proxy",
+        "packages/workspace/workspace",
+        "vitest.config.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "2f4d056c5cd022e987fb3b8babe2102b3fb78397",
+      "subject": "test(snapshot): align diagnostics and message actions",
+      "affectedAreas": [
+        "apps/web"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "5175af13931d4311fea276f1384f6ccabf8c1dc6",
+      "subject": "fix(test): make hosted validation deterministic",
+      "affectedAreas": [
+        "apps/web",
+        "docs/config-catalog.i18n.yaml",
+        "examples/headless-agent",
+        "packages/client/ui-settings-general",
+        "packages/hooks/hooks-claude-code",
+        "packages/hooks/hooks-codex",
+        "packages/shell/tool-pwsh-persistent",
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "f32ac67f7e024ae72bc4e84d9b713de14e80fbbc",
+      "subject": "fix(ci): stabilize hosted Linux replay timing",
+      "affectedAreas": [
+        "apps/web",
+        "examples/headless-agent",
+        "packages/shell/tool-pwsh-persistent",
+        "packages/terminal/terminal-bash",
+        "packages/test-support/acp-snapshot"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "a4a4ab2a22af3e966f780dd85f4b214f5380c33e",
+      "subject": "fix(terminal): gate pwsh bootstrap on prompt marker",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "9879413ed801db75e91ad61725cd990223561b2b",
+      "subject": "fix(terminal): emit pwsh bootstrap readiness marker",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "fcce6a97ee4d78fa1f699d803a08a0db6241579c",
+      "subject": "fix(terminal): wait for pwsh input ownership",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "6337676b12bbbccf143579b38a76c8acdeef5b0e",
+      "subject": "fix(ci): close cross-platform validation races",
+      "affectedAreas": [
+        "apps/web",
+        "packages/terminal/terminal-bash",
+        "packages/test-support/acp-snapshot"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "88c7dc1b785bdeded43164ceeeb411a05e23c39f",
+      "subject": "fix(terminal): admit silent posix pwsh startup",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "af46061e48fa283e7937aeb7b1d84764e39cd0ec",
+      "subject": "fix(terminal): split pwsh bootstrap submission",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "fb5408cd1f58e85847c79c1fbbb8db1162eafdfe",
+      "subject": "fix(terminal): bootstrap posix pwsh from argv",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "ab4c5c4a913f74844fe9382de152eb01c5058540",
+      "subject": "test(terminal): cover split-submit cancellation mid-write; fix sqlite pacing flake; add POSIX PTY launch probe",
+      "affectedAreas": [
+        "examples/acp-agent",
+        "packages/session/session-persistence-sqlite",
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "21901fac52d4aaf74b574e2eb83eaf95f74f8b9b",
+      "subject": "fix(terminal): drive POSIX persistent shell input through an explicit reader loop",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "1c8de938770b93b7657709312900732967c53f91",
+      "subject": "test(terminal): expect the controlled prompt in POSIX real-shell MOTD",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "2770debaff29be04be544a49e32546aec8170abc",
+      "subject": "fix(terminal): tolerate hosts where PSReadLine never loaded; probe the harness loop contract",
+      "affectedAreas": [
+        "examples/acp-agent",
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "a6b78b7bfede5aa2ee27e2a0315aaa076fa268f6",
+      "subject": "test(terminal): admit idle-ready for the POSIX reader-loop first send",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "7f4d57063c6f03700e05a4b3b39e7a1327dc2915",
+      "subject": "fix(terminal): consume the POSIX reader-loop first-read warm-up at spawn",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "upstream-candidate",
+      "reason": "The change corrects or completes behavior that is useful to official DSH independently of the enhanced distribution.",
+      "verification": "Run the narrow package test plus the official repository gate that owns the affected runtime or platform.",
+      "upstreamStatus": "not-submitted",
+      "deletionCondition": "Delete after the equivalent upstream commit is contained in a synchronized official RC/Release and downstream regression tests pass."
+    },
+    {
+      "commit": "0d1b4d1505268992a31279950ac1e75029434b77",
+      "subject": "test(terminal): cover warm-up send failures on the POSIX argv-bootstrapped path",
+      "affectedAreas": [
+        "packages/terminal/terminal-bash"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "c6d6a8e7e5d5d1275680a5fc051ce7f0a10f42ee",
+      "subject": "chore(terminal): drop the temporary POSIX PTY launch probe",
+      "affectedAreas": [
+        "examples/acp-agent"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit is validation, release, fork-CI, generated evidence, or a follow-up whose necessity must be rechecked against the next official RC/Release.",
+      "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    }
+  ]
+}
