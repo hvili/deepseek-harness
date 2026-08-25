@@ -300,7 +300,11 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         text: '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
-      expect((await first.done).waitReason).toBe('stdin_read')
+      // The POSIX explicit-reader loop warms up its console input on the first
+      // command (a one-time ~1.5s delay before the post-command marker), so the
+      // first send can settle on the idle fallback before the marker lands.
+      // Both reasons mean "the session accepted input and is ready again".
+      expectReadyForNextSend((await first.done).waitReason)
       const second = ctx.terminals.startSend(agent, created.sessionId, {
         text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
         submit: true,
