@@ -113,10 +113,12 @@ export const PWSH_BOOTSTRAP = ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
  * `[Console]::In.ReadLine()` loop consumes stdin reliably, keeps
  * state/cwd/environment in the same runspace, renders the controlled marker
  * prompt after every command so readiness stays marker-gated, and exits
- * cleanly on `exit`.
+ * cleanly on `exit`. PSReadLine is removed only when actually loaded
+ * (`Remove-Module` of a missing module is a terminating error that would
+ * abort the whole `-Command` on hosts where PSReadLine never activated).
  */
 export const PWSH_POSIX_READER_LOOP =
-  '; Remove-Module PSReadLine; while ($true) { [Console]::Write([char]27 + \']133;D;\' + [int]$LASTEXITCODE + [char]7 + \'' + CONTROLLED_PROMPT + '\'); $line = [Console]::In.ReadLine(); if ($null -eq $line) { break }; try { Invoke-Expression $line } catch { [Console]::Error.WriteLine($_.Exception.Message) } }'
+  '; if (Get-Module PSReadLine) { Remove-Module PSReadLine -Force }; while ($true) { [Console]::Out.Write([char]27 + \']133;D;\' + [int]$LASTEXITCODE + [char]7 + \'' + CONTROLLED_PROMPT + '\'); [Console]::Out.Flush(); $line = [Console]::In.ReadLine(); if ($null -eq $line) { break }; try { Invoke-Expression $line } catch { [Console]::Error.WriteLine($_.Exception.Message) } }'
 
 function bootstrapsPwshFromArgv(config: ResolvedConfig): boolean {
   return process.platform !== 'win32'

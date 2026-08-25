@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
+import { PWSH_BOOTSTRAP, PWSH_POSIX_READER_LOOP } from '@deepseek-ai/dsh-terminal-bash'
 
 interface ProbePty {
   readonly pid: number
@@ -144,6 +145,22 @@ describe.skipIf(process.platform !== 'linux' || !hasPwsh)('POSIX pwsh PTY probe 
       { atMs: 1_500, write: 'Write-Output PPD5_CR_OK\r' },
       { atMs: 3_500, write: 'Write-Output PPD5_LF_OK\n' },
       { atMs: 5_500, write: 'exit\n' },
+    ])
+
+    // Replica of the real-shell unit harness: exact backend bootstrap + loop
+    // argv under the terminal-bash child environment, driving the same
+    // commands local.spec.ts sends (assignment/cwd, bare expression, state
+    // read-back) plus exit. This is the contract the coverage lane depends on.
+    await runProbe('harness-loop', [
+      resolvePwshPath(), '-NoLogo', '-NoProfile', '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP,
+    ], {
+      TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1',
+      DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
+    }, [
+      { atMs: 4_000, write: '$env:KEEP = "ok"; Set-Location /\n' },
+      { atMs: 6_000, write: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName\n' },
+      { atMs: 8_000, write: 'Write-Output ("keep=$env:KEEP")\n' },
+      { atMs: 10_000, write: 'exit\n' },
     ])
 
     expect(true).toBe(true)
