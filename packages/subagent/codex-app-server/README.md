@@ -14,11 +14,6 @@ Product adapters own thread selection, turn streaming, approval policy, persiste
 
 Codex is Apache-2.0 licensed. Distribution artifacts retain the official package's license and generated third-party notices. Model use can still consume OpenAI/Codex quota.
 
-## Known limitations
-
-- The package exposes stable JSON-RPC requests as method names plus object payloads; consumers bind them to generated schemas.
-- WebSocket, remote relay, plugin installation, authentication UI, and Codex's project database are outside this package.
-
 ## Model Experience
 
 ### Infrastructure seam
@@ -34,3 +29,8 @@ None by itself. Token usage belongs to the consuming adapter and its selected Co
 #### KV Cache effect
 
 None by itself. Cache behavior is determined by the consuming adapter's model-facing request shape.
+
+## Known Limitations and Deferred Work
+
+- The package exposes stable JSON-RPC requests as method names plus object payloads; consumers bind them to generated schemas.
+- WebSocket, remote relay, plugin installation, authentication UI, and Codex's project database are outside this package.

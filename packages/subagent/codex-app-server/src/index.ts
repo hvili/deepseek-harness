@@ -54,7 +54,10 @@ export interface CodexInitializeCapabilities {
   readonly optOutNotificationMethods?: readonly string[]
 }
 
-/** Fixed package-local app-server command, independent of the host `PATH`. */
+/**
+ * Fixed package-local app-server command, independent of the host `PATH`.
+ * @returns the executable and arguments for the package-local app-server.
+ */
 export function codexAppServerArgv(): string[] {
   return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
 }
@@ -110,12 +113,18 @@ export class CodexAppServerClient {
     this.transport.start()
   }
 
-  /** Replace the handler for app-server requests directed to the client. */
+  /**
+   * Replace the handler for app-server requests directed to the client.
+   * @param handler - callback for a request method and object payload.
+   */
   onRequest(handler: (method: string, params: Record<string, unknown>) => Promise<unknown>): void {
     this.transport.onRequest(handler)
   }
 
-  /** Replace the handler for app-server notifications. */
+  /**
+   * Replace the handler for app-server notifications.
+   * @param handler - callback for a notification method and object payload.
+   */
   onNotification(handler: (method: string, params: Record<string, unknown>) => void): void {
     this.transport.onNotification(handler)
   }
@@ -147,13 +156,23 @@ export class CodexAppServerClient {
     return response
   }
 
-  /** Send a product-selected request after initialization. */
+  /**
+   * Send a product-selected request after initialization.
+   * @param method - protocol method selected by the product adapter.
+   * @param params - object payload for the method.
+   * @param signal - optional cancellation while awaiting the response or write barrier.
+   * @returns the raw response returned by the app-server.
+   */
   request(method: string, params: object, signal?: AbortSignal): Promise<unknown> {
     if (!this.initialized) return Promise.reject(new Error('codex-app-server: connection is not initialized'))
     return this.transport.request(method, params, signal)
   }
 
-  /** Send a product-selected notification after initialization. */
+  /**
+   * Send a product-selected notification after initialization.
+   * @param method - protocol method selected by the product adapter.
+   * @param params - optional object payload for the method.
+   */
   notify(method: string, params?: object): void {
     if (!this.initialized) throw new Error('codex-app-server: connection is not initialized')
     this.transport.notify(method, params)
