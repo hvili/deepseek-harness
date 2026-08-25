@@ -290,7 +290,10 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         timeoutMs: 20_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('PS ')
+      // POSIX pwsh is driven by the explicit reader loop, which renders the
+      // controlled prompt instead of the native one; Windows retains the
+      // in-session bootstrap whose MOTD is the native prompt banner.
+      expect(created.motd).toContain(process.platform === 'win32' ? 'PS ' : 'dsh> ')
       expect(created.motd).not.toContain('function prompt')
 
       const first = ctx.terminals.startSend(agent, created.sessionId, {
