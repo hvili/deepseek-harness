@@ -437,9 +437,23 @@ describe('BashTerminalBackend startup rollback', () => {
       await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
       let spawned: SubprocessTerminalSpawnSpec | undefined
       const initialize = vi.fn<(signal?: AbortSignal) => Promise<void>>().mockResolvedValue(undefined)
+      const warmupSends: Array<{ text: string; submit: boolean }> = []
       const session = {
         initialize,
-        startSend: () => { throw new Error('argv-bootstrapped pwsh must not receive an internal bootstrap send') },
+        startSend: (request: { text: string; submit: boolean }) => {
+          // The explicit reader loop's first ReadLine pays a one-time console
+          // warm-up; spawn consumes it with a no-op line so the first real
+          // command settles on its prompt marker promptly.
+          warmupSends.push(request)
+          return {
+            done: Promise.resolve({
+              viewport: 'dsh> ', waitReason: 'stdin_read' as const,
+              sessionStatus: { kind: 'running' as const }, truncated: false,
+            }),
+            readOutput: () => ({ delta: '', truncated: false }),
+            cancel: () => false,
+          }
+        },
         close: () => Promise.resolve(),
       } as unknown as LocalPtySession
       const backend = new BashTerminalBackend(
@@ -459,6 +473,7 @@ describe('BashTerminalBackend startup rollback', () => {
         'pwsh', ...DEFAULT_PWSH_ARGS, '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP,
       ])
       expect(initialize).toHaveBeenCalledWith(undefined)
+      expect(warmupSends).toEqual([{ text: '', submit: true }])
     } finally {
       platform.mockRestore()
     }

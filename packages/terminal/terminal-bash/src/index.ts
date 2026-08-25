@@ -161,9 +161,24 @@ async function startupSession(
       return
     }
     if (pwshBootstrappedFromArgv) {
-      // -NoExit renders the installed controlled prompt after evaluating the
+      // The explicit reader loop renders the controlled prompt after the
       // launch command; normal initialization waits for that full prompt.
       await session.initialize(signal)
+      // The loop's first [Console]::In.ReadLine() pays a one-time .NET Unix
+      // console warm-up (~1.5s) before any buffered line is processed, so the
+      // first command's output can land after a send settled on the idle
+      // fallback. Consume that warm-up with a no-op line here so the first
+      // real command settles on its prompt marker promptly.
+      const warmup = session.startSend({
+        text: '',
+        submit: true,
+        ...signal !== undefined ? { signal } : {},
+      })
+      const warmupResult = await warmup.done
+      if (warmupResult.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
+      if (warmupResult.waitReason === 'timeout') {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      }
       return
     }
     // pwsh cannot install its prompt from the environment. On Unix it can
