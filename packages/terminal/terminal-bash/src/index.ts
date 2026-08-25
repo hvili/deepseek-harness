@@ -104,6 +104,20 @@ export const PWSH_PROMPT_SETUP =
 export const PWSH_BOOTSTRAP = ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
   + "; [Console]::Write([char]27 + ']133;D;0' + [char]7)"
 
+/**
+ * POSIX pwsh interactive reader contract. PSReadLine — and its dumb-terminal
+ * fallback — wedges under node-pty once a `-NoExit -Command` bootstrap
+ * completes: later PTY input echoes but is never accepted, so a persistent
+ * session times out on its first real command (verified with direct node-pty
+ * probes against the hosted pwsh). Driving an explicit
+ * `[Console]::In.ReadLine()` loop consumes stdin reliably, keeps
+ * state/cwd/environment in the same runspace, renders the controlled marker
+ * prompt after every command so readiness stays marker-gated, and exits
+ * cleanly on `exit`.
+ */
+export const PWSH_POSIX_READER_LOOP =
+  '; Remove-Module PSReadLine; while ($true) { [Console]::Write([char]27 + \']133;D;\' + [int]$LASTEXITCODE + [char]7 + \'' + CONTROLLED_PROMPT + '\'); $line = [Console]::In.ReadLine(); if ($null -eq $line) { break }; try { Invoke-Expression $line } catch { [Console]::Error.WriteLine($_.Exception.Message) } }'
+
 function bootstrapsPwshFromArgv(config: ResolvedConfig): boolean {
   return process.platform !== 'win32'
     && config.shellDialect === 'pwsh'
@@ -116,8 +130,10 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
   // PTY, so its startup command must not travel through interactive input.
   // Windows ConPTY does not reliably return from -NoExit -Command to its
   // interactive reader, and therefore retains the in-session path below.
+  // On POSIX the -Command payload drives the explicit reader loop because
+  // pwsh's own line editors never accept input after a -Command bootstrap.
   const argv = bootstrapsPwshFromArgv(config)
-    ? [config.shellPath, ...config.shellArgs, '-NoExit', '-Command', PWSH_BOOTSTRAP]
+    ? [config.shellPath, ...config.shellArgs, '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP]
     : [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')

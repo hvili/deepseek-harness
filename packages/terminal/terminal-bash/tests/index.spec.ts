@@ -10,7 +10,7 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend, PWSH_BOOTSTRAP } from '@deepseek-ai/dsh-terminal-bash'
+import { BashTerminalBackend, PWSH_BOOTSTRAP, PWSH_POSIX_READER_LOOP } from '@deepseek-ai/dsh-terminal-bash'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
 import { DEFAULT_PWSH_ARGS, type ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
@@ -456,7 +456,7 @@ describe('BashTerminalBackend startup rollback', () => {
 
       expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
       expect(spawned?.argv).toEqual([
-        'pwsh', ...DEFAULT_PWSH_ARGS, '-NoExit', '-Command', PWSH_BOOTSTRAP,
+        'pwsh', ...DEFAULT_PWSH_ARGS, '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP,
       ])
       expect(initialize).toHaveBeenCalledWith(undefined)
     } finally {
