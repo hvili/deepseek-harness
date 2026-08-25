@@ -12,6 +12,7 @@ interface PatchAudit {
   schemaVersion: number
   productBaseline: string
   officialBase: string
+  initialRangeCommitCount: number
   nonMergeCommitCount: number
   entries: PatchEntry[]
 }
@@ -45,6 +46,11 @@ export function validatePatchAudit(value: unknown): PatchAudit {
   if (audit.schemaVersion !== 1) throw new Error('patch audit schemaVersion must be 1')
   requireString(audit.productBaseline, 'patch audit productBaseline')
   requireString(audit.officialBase, 'patch audit officialBase')
+  if (typeof audit.initialRangeCommitCount !== 'number'
+    || !Number.isInteger(audit.initialRangeCommitCount)
+    || audit.initialRangeCommitCount < 0) {
+    throw new Error('patch audit initialRangeCommitCount must be a non-negative integer')
+  }
   if (typeof audit.nonMergeCommitCount !== 'number'
     || !Number.isInteger(audit.nonMergeCommitCount)
     || audit.nonMergeCommitCount < 0) {
@@ -95,7 +101,7 @@ export function verifyProductState(repositoryRoot: string, enhancementRoot: stri
   const audited = new Set(audit.entries.map(entry => entry.commit))
   const actual = git(repositoryRoot, ['rev-list', '--no-merges', 'origin/master..dsh-enhanced-baseline-2026-08-25'])
     .split(/\r?\n/u).filter(Boolean)
-  if (actual.length !== audited.size || actual.some(commit => !audited.has(commit))) {
+  if (actual.length !== audit.initialRangeCommitCount || actual.some(commit => !audited.has(commit))) {
     throw new Error('patch audit does not cover the complete initial downstream range')
   }
   if (git(enhancementRoot, ['status', '--porcelain']) !== '') throw new Error('enhancement repository has uncommitted changes')

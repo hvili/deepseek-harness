@@ -5,7 +5,8 @@
   "productBaseline": "356faa8535c943c0bdebebd1f546724cd5f1b261",
   "officialBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
   "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
-  "nonMergeCommitCount": 77,
+  "initialRangeCommitCount": 77,
+  "nonMergeCommitCount": 78,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1178,6 +1179,23 @@
       "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
       "upstreamStatus": "review-on-next-sync",
       "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "7111e56de83fb360ef8f5da2fd15c3f01e0d76be",
+      "subject": "feat(codex): extract the shared app-server adapter",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/subagent/codex-app-server",
+        "packages/subagent/subagent-codex",
+        "scripts/product-diagnostics.ts",
+        "pnpm-lock.yaml",
+        "tsconfig.host.json"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The package-level runtime, schema, handshake, and process lifecycle seam must remain beside the current in-tree Codex provider until DSH exposes an equivalent stable engine extension boundary.",
+      "verification": "Run the stable-schema fingerprint, handshake, approval, malformed-protocol, cancellation, process-quiescence, provider regression, typecheck, package build, and product identity gates.",
+      "upstreamStatus": "product-specific-not-submitted",
+      "deletionCondition": "Move this adapter out of Harness-src after an official engine extension boundary can provide the same package-local runtime ownership and all dual-path regression tests pass."
     }
   ]
 }

@@ -7,6 +7,7 @@ describe('product diagnostics', () => {
       schemaVersion: 1,
       productBaseline: 'a',
       officialBase: 'b',
+      initialRangeCommitCount: 1,
       nonMergeCommitCount: 1,
       entries: [{ commit: 'c', classification: 'minimal-core-patch' }],
     }).entries).toHaveLength(1)
@@ -17,6 +18,7 @@ describe('product diagnostics', () => {
       schemaVersion: 1,
       productBaseline: 'a',
       officialBase: 'b',
+      initialRangeCommitCount: 2,
       nonMergeCommitCount: 2,
       entries: [
         { commit: 'c', classification: 'minimal-core-patch' },
