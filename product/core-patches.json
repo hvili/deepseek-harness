@@ -1215,6 +1215,18 @@
       "verification": "Run focused WAL fault injection, real package-local two-process resume, cancellation/process-quiescence, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
       "upstreamStatus": "product-specific-not-submitted",
       "deletionCondition": "Move this adapter out of Harness-src after an official engine extension boundary provides durable external references, process ownership, and dual-path regression coverage."
+    },
+    {
+      "commit": "7473efe847e7d5c7736dab0a64ea2924fa3878aa",
+      "subject": "fix(codex): close stateful turn notification race",
+      "affectedAreas": [
+        "packages/subagent/subagent-codex"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The in-tree stateful Codex adapter must retain its JSON-RPC ordering and failure handling until DSH exposes an equivalent stable engine extension boundary.",
+      "verification": "Run batched response/notification regression coverage, real package-local stateful service failure, resume, cancellation/process-quiescence, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
+      "upstreamStatus": "product-specific-not-submitted",
+      "deletionCondition": "Delete with the stateful Codex adapter after an official engine extension boundary provides the same ordered persistent-turn lifecycle and the dual-path regression suite passes."
     }
   ]
 }
