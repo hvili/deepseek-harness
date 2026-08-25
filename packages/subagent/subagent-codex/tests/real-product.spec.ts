@@ -640,4 +640,35 @@ describe('real @openai/codex 0.147.0 product', () => {
     await expect(running).rejects.toThrow()
     await expectQuiescent(runtime.handles)
   }, 60_000)
+
+  it('surfaces a stateful turn failure from the real package-local app-server and waits for its tree', async () => {
+    const instance = await realInstanceFixture([{
+      kind: 'error',
+      status: 503,
+      message: 'fixture stateful service failure',
+    }])
+    const events: SessionEvent[] = []
+    const journal: codex.CodexThreadJournal = {
+      load: async () => events,
+      appendWal: async (data) => {
+        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
+      },
+      appendReference: async (data) => {
+        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
+      },
+    }
+    const runtime = await realRuntime()
+    const execution = new codex.CodexStatefulExecution({
+      cwd: instance.workspace,
+      env: instance.env,
+      disposeGraceMs: 2_000,
+      spawn: spec => runtime.ctx.subprocess.spawn(spec),
+      journal,
+    })
+
+    await expect(execution.execute(['Exercise the stateful service failure path.']))
+      .rejects.toThrow('stateful Codex turn ended with')
+    await expectQuiescent(runtime.handles)
+    expect(runtime.handles).toHaveLength(1)
+  }, 60_000)
 })

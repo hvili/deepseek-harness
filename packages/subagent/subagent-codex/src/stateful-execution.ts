@@ -70,6 +70,13 @@ function textInput(input: readonly string[]): Array<{ type: 'text'; text: string
   return input.map(text => ({ type: 'text', text, text_elements: [] }))
 }
 
+function requiredId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`subagent-codex: invalid ${label}`)
+  }
+  return value
+}
+
 /**
  * Executes one turn in a durable Codex thread. A fresh app-server process is
  * always disposed before this method resolves or rejects; native Codex state
@@ -100,28 +107,40 @@ export class CodexStatefulExecution {
     let turnId: string | undefined
     let finalAnswer: string | undefined
     const completed = Promise.withResolvers<void>()
-    client.onRequest(async (method) => {
-      throw new Error(`subagent-codex: unsupported stateful app-server request ${method}`)
-    })
-    client.onNotification((method, params) => {
-      if (method === 'item/completed' && params.threadId === threadId && params.turnId === turnId) {
-        const item = object(params.item, 'stateful item')
-        if (item.type === 'agentMessage' && (item.phase === 'final_answer' || item.phase === null)) {
-          if (typeof item.text !== 'string') throw new Error('subagent-codex: invalid stateful agent message')
-          if (item.phase === 'final_answer' || finalAnswer === undefined) finalAnswer = item.text
+    const earlyNotifications: Array<{ method: string; params: Record<string, unknown> }> = []
+    const processNotification = (method: string, params: Record<string, unknown>): void => {
+      if (threadId === undefined || turnId === undefined) {
+        if (method === 'item/completed' || method === 'turn/completed') {
+          earlyNotifications.push({ method, params })
         }
         return
       }
-      if (method === 'turn/completed' && params.threadId === threadId) {
-        const turn = object(params.turn, 'stateful completed turn')
-        if (turn.id !== turnId) return
-        if (turn.status !== 'completed') {
-          completed.reject(new Error(`subagent-codex: stateful Codex turn ended with ${String(turn.status)}`))
-        } else {
-          completed.resolve()
+      try {
+        if (method === 'item/completed' && params.threadId === threadId && params.turnId === turnId) {
+          const item = object(params.item, 'stateful item')
+          if (item.type === 'agentMessage' && (item.phase === 'final_answer' || item.phase === null)) {
+            if (typeof item.text !== 'string') throw new Error('subagent-codex: invalid stateful agent message')
+            if (item.phase === 'final_answer' || finalAnswer === undefined) finalAnswer = item.text
+          }
+          return
         }
+        if (method === 'turn/completed' && params.threadId === threadId) {
+          const turn = object(params.turn, 'stateful completed turn')
+          if (turn.id !== turnId) return
+          if (turn.status !== 'completed') {
+            completed.reject(new Error(`subagent-codex: stateful Codex turn ended with ${String(turn.status)}`))
+          } else {
+            completed.resolve()
+          }
+        }
+      } catch (error) {
+        completed.reject(error)
       }
-    })
+    }
+    client.onRequest(method => Promise.reject(
+      new Error(`subagent-codex: unsupported stateful app-server request ${method}`),
+    ))
+    client.onNotification(processNotification)
     const interrupt = (): void => {
       if (threadId !== undefined && turnId !== undefined) {
         client.request('turn/interrupt', { threadId, turnId }).catch(() => {})
@@ -154,8 +173,11 @@ export class CodexStatefulExecution {
         threadId: reference.threadId,
         input: textInput(input),
       }, signal), 'stateful turn/start response')
-      turnId = String(object(response.turn, 'stateful turn/start turn').id)
+      turnId = requiredId(object(response.turn, 'stateful turn/start turn').id, 'stateful turn/start turn id')
       threadId = reference.threadId
+      for (const notification of earlyNotifications.splice(0)) {
+        processNotification(notification.method, notification.params)
+      }
       await completed.promise
       if (finalAnswer === undefined || finalAnswer.trim().length === 0) {
         throw new Error('subagent-codex: stateful Codex turn completed without a final answer')

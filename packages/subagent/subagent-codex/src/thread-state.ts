@@ -304,7 +304,10 @@ export async function startCodexThreadWithWal(
   signal?: AbortSignal,
 ): Promise<CodexThreadReference> {
   const operationId = crypto.randomUUID()
-  const base = { version: CODEX_THREAD_START_WAL_VERSION, operationId }
+  const base: Pick<CodexThreadStartWal, 'version' | 'operationId'> = {
+    version: CODEX_THREAD_START_WAL_VERSION,
+    operationId,
+  }
   await journal.appendWal({ ...base, state: 'prepared' }, signal)
   const reference = await threads.start(cwd, options, signal)
   await journal.appendWal({ ...base, state: 'accepted', threadId: reference.threadId }, signal)
