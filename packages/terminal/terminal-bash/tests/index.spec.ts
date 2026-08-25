@@ -500,6 +500,28 @@ describe('BashTerminalBackend startup rollback', () => {
     await expect(exited.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
     const timedOut = new BashTerminalBackend(ctx, { ...config(), shellDialect: 'pwsh' }, async () => terminalHandle(), () => sessionFor('timeout'))
     await expect(timedOut.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+
+    // POSIX argv-bootstrapped sessions surface the same startup failures from
+    // the warm-up send that consumes the reader-loop first-read latency.
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const argvExited = new BashTerminalBackend(
+        ctx,
+        { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: [...DEFAULT_PWSH_ARGS] },
+        async () => terminalHandle(),
+        () => sessionFor('session_exit'),
+      )
+      await expect(argvExited.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
+      const argvTimedOut = new BashTerminalBackend(
+        ctx,
+        { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: [...DEFAULT_PWSH_ARGS] },
+        async () => terminalHandle(),
+        () => sessionFor('timeout'),
+      )
+      await expect(argvTimedOut.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    } finally {
+      platform.mockRestore()
+    }
   })
 
   it('forwards the spawn signal into the pwsh bootstrap sends', async () => {
