@@ -22,6 +22,7 @@ import type {
   SubprocessOutcome,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
@@ -561,5 +562,82 @@ describe('real @openai/codex 0.147.0 product', () => {
     await expect(run.result).resolves.toMatchObject({ stopReason: 'aborted' })
     await run.dispose()
     await expectQuiescent(harness.handles)
+  }, 60_000)
+
+  it('resumes one non-ephemeral thread in a second real package-local app-server process', async () => {
+    const firstAnswer = 'STATEFUL_FIRST_PROCESS_0_147_0'
+    const secondAnswer = 'STATEFUL_SECOND_PROCESS_0_147_0'
+    const instance = await realInstanceFixture([
+      { kind: 'complete', text: firstAnswer },
+      { kind: 'complete', text: secondAnswer },
+    ])
+    const events: SessionEvent[] = []
+    const journal: codex.CodexThreadJournal = {
+      load: async () => events,
+      appendWal: async (data) => {
+        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
+      },
+      appendReference: async (data) => {
+        if (events.some(event => event.type === 'codex/thread-reference')) return
+        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
+      },
+    }
+    const firstRuntime = await realRuntime()
+    const first = new codex.CodexStatefulExecution({
+      cwd: instance.workspace,
+      env: instance.env,
+      disposeGraceMs: 2_000,
+      spawn: spec => firstRuntime.ctx.subprocess.spawn(spec),
+      journal,
+    })
+    await expect(first.execute(['Return the first stateful sentinel.'])).resolves.toMatchObject({ text: firstAnswer })
+    await expectQuiescent(firstRuntime.handles)
+    const reference = events.find(event => event.type === 'codex/thread-reference')
+    expect(reference?.data).toMatchObject({ version: 1 })
+
+    const secondRuntime = await realRuntime()
+    const second = new codex.CodexStatefulExecution({
+      cwd: instance.workspace,
+      env: instance.env,
+      disposeGraceMs: 2_000,
+      spawn: spec => secondRuntime.ctx.subprocess.spawn(spec),
+      journal,
+    })
+    await expect(second.execute(['Return the second stateful sentinel.'])).resolves.toMatchObject({
+      text: secondAnswer,
+      reference: reference?.data,
+    })
+    await expectQuiescent(secondRuntime.handles)
+    expect(events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
+    expect(firstRuntime.handles).toHaveLength(1)
+    expect(secondRuntime.handles).toHaveLength(1)
+  }, 60_000)
+
+  it('cancels a stateful real app-server turn and waits for its tree to exit', async () => {
+    const instance = await realInstanceFixture([{ kind: 'hold' }])
+    const events: SessionEvent[] = []
+    const journal: codex.CodexThreadJournal = {
+      load: async () => events,
+      appendWal: async (data) => {
+        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
+      },
+      appendReference: async (data) => {
+        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
+      },
+    }
+    const runtime = await realRuntime()
+    const controller = new AbortController()
+    const execution = new codex.CodexStatefulExecution({
+      cwd: instance.workspace,
+      env: instance.env,
+      disposeGraceMs: 2_000,
+      spawn: spec => runtime.ctx.subprocess.spawn(spec),
+      journal,
+    })
+    const running = execution.execute(['Wait for cancellation.'], controller.signal)
+    await instance.fixture.requestStarted
+    controller.abort(new Error('stateful cancellation'))
+    await expect(running).rejects.toThrow()
+    await expectQuiescent(runtime.handles)
   }, 60_000)
 })

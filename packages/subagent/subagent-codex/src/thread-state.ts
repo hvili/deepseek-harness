@@ -11,6 +11,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import { CodexAppServerClient } from '@deepseek-ai/dsh-codex-app-server'
 import { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import { isAbsolute } from 'node:path'
 
 /** Opaque external identity assigned by Codex to one persistent thread. */
 export type CodexThreadId = Branded<'CodexThreadId'>
@@ -18,12 +19,30 @@ export type CodexThreadId = Branded<'CodexThreadId'>
 /** Current wire-compatible persistent-reference payload version. */
 export const CODEX_THREAD_REFERENCE_VERSION = 1
 
+/** Current write-ahead record version for persistent Codex thread creation. */
+export const CODEX_THREAD_START_WAL_VERSION = 1
+
 /** The DSH-owned durable pointer to a Codex persistent thread. */
 export interface CodexThreadReference {
   /** Payload version ({@link CODEX_THREAD_REFERENCE_VERSION}). */
-  readonly version: number
+  readonly version: typeof CODEX_THREAD_REFERENCE_VERSION
   /** Opaque Codex thread id; it is not a DSH Session id. */
   readonly threadId: CodexThreadId
+}
+
+/**
+ * A durably recorded thread-start attempt. `prepared` deliberately blocks
+ * recovery because Codex does not accept a caller-supplied idempotency key.
+ */
+export interface CodexThreadStartWal {
+  /** WAL record version. */
+  readonly version: typeof CODEX_THREAD_START_WAL_VERSION
+  /** DSH-generated operation identity used only for audit and recovery. */
+  readonly operationId: string
+  /** Whether the external identity has reached durable DSH storage. */
+  readonly state: 'prepared' | 'accepted'
+  /** Observed external id, present only after it reaches the WAL. */
+  readonly threadId?: CodexThreadId
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -34,6 +53,12 @@ declare module '@deepseek-ai/dsh-session/types' {
      * must not pretend it can safely resume the linked Codex conversation.
      */
     'codex/thread-reference': CodexThreadReference
+    /**
+     * Durable write-ahead evidence for a persistent Codex `thread/start`.
+     * A remaining `prepared` record is an unresolved external side effect and
+     * makes automatic continuation unavailable until reconciliation.
+     */
+    'codex/thread-start-wal': CodexThreadStartWal
   }
 }
 
@@ -45,6 +70,14 @@ export interface CodexPersistentThreadOptions {
   readonly approvalsReviewer?: 'auto_review'
   /** Optional native sandbox setting. */
   readonly sandbox?: 'workspace-write' | 'danger-full-access'
+}
+
+/** Durable callbacks for the three ordered records of a persistent start. */
+export interface CodexThreadStartJournal {
+  /** Record an intent before requesting any upstream side effect. */
+  readonly appendWal: (entry: CodexThreadStartWal, signal?: AbortSignal) => Promise<void>
+  /** Commit the durable DSH-owned external reference. */
+  readonly appendReference: (reference: CodexThreadReference, signal?: AbortSignal) => Promise<void>
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -73,6 +106,31 @@ function parseReference(value: unknown, label: string): CodexThreadReference | u
   if (source.version !== CODEX_THREAD_REFERENCE_VERSION) return undefined
   return {
     version: CODEX_THREAD_REFERENCE_VERSION,
+    threadId: parseThreadId(source.threadId, `${label} thread id`),
+  }
+}
+
+function parseWal(value: unknown, label: string): CodexThreadStartWal {
+  const source = record(value, label)
+  const keys = Object.keys(source)
+  if (keys.some(key => key !== 'version' && key !== 'operationId' && key !== 'state' && key !== 'threadId')) {
+    throw new Error(`subagent-codex: ${label} has an unknown field`)
+  }
+  if (source.version !== CODEX_THREAD_START_WAL_VERSION) {
+    throw new Error(`subagent-codex: ${label} version is unsupported`)
+  }
+  if (typeof source.operationId !== 'string' || source.operationId.length === 0) {
+    throw new Error(`subagent-codex: invalid ${label} operation id`)
+  }
+  if (source.state === 'prepared') {
+    if (source.threadId !== undefined) throw new Error(`subagent-codex: invalid ${label} prepared thread id`)
+    return { version: CODEX_THREAD_START_WAL_VERSION, operationId: source.operationId, state: 'prepared' }
+  }
+  if (source.state !== 'accepted') throw new Error(`subagent-codex: invalid ${label} state`)
+  return {
+    version: CODEX_THREAD_START_WAL_VERSION,
+    operationId: source.operationId,
+    state: 'accepted',
     threadId: parseThreadId(source.threadId, `${label} thread id`),
   }
 }
@@ -128,6 +186,42 @@ export function foldCodexThreadReference(events: readonly SessionEvent[]): Codex
 }
 
 /**
+ * Recover a reference from the durable create journal without guessing after
+ * a response-loss crash. Callers must append the returned reference before
+ * submitting another turn.
+ * @param events - complete Session log loaded from DSH persistence.
+ * @returns existing reference or an accepted id ready to commit.
+ * @throws when creation remains unobserved, records conflict, or data is malformed.
+ */
+export function recoverCodexThreadStartWal(events: readonly SessionEvent[]): CodexThreadReference | undefined {
+  const reference = foldCodexThreadReference(events)
+  let wal: CodexThreadStartWal | undefined
+  for (const event of events) {
+    if (event.type !== 'codex/thread-start-wal') continue
+    const next = parseWal(event.data, 'persisted Codex thread start WAL')
+    if (wal === undefined) {
+      wal = next
+      continue
+    }
+    if (wal.state !== 'prepared' || next.state !== 'accepted' || wal.operationId !== next.operationId) {
+      throw new Error('subagent-codex: invalid Codex thread start WAL transition')
+    }
+    wal = next
+  }
+  if (reference !== undefined) {
+    if (wal?.state === 'accepted' && wal.threadId !== reference.threadId) {
+      throw new Error('subagent-codex: Codex thread WAL conflicts with the persisted reference')
+    }
+    return reference
+  }
+  if (wal === undefined) return undefined
+  if (wal.state === 'prepared') {
+    throw new Error('subagent-codex: unresolved Codex thread start WAL requires reconciliation')
+  }
+  return createCodexThreadReference(wal.threadId as string)
+}
+
+/**
  * Stage a durable thread reference before a Session is published.
  * @param sessionId - DSH Session that will own the external reference.
  * @param seed - optional existing complete event prefix.
@@ -166,7 +260,7 @@ export class CodexPersistentThreadClient {
     options: CodexPersistentThreadOptions = {},
     signal?: AbortSignal,
   ): Promise<CodexThreadReference> {
-    if (cwd.length === 0) throw new Error('subagent-codex: persistent Codex thread cwd must not be empty')
+    if (!isAbsolute(cwd)) throw new Error('subagent-codex: persistent Codex thread cwd must be an absolute path')
     return responseReference(await this.appServer.request('thread/start', {
       cwd,
       ephemeral: false,
@@ -181,8 +275,39 @@ export class CodexPersistentThreadClient {
    * @returns the verified unchanged reference.
    */
   async resume(reference: CodexThreadReference, signal?: AbortSignal): Promise<CodexThreadReference> {
+    const validated = parseReference(reference, 'Codex thread reference')
+    if (validated === undefined) throw new Error('subagent-codex: Codex thread reference version is unsupported')
     return responseReference(await this.appServer.request('thread/resume', {
-      threadId: reference.threadId,
-    }, signal), 'thread/resume', reference.threadId)
+      threadId: validated.threadId,
+    }, signal), 'thread/resume', validated.threadId)
   }
+}
+
+/**
+ * Create a persistent thread with durable write-ahead evidence. The callback
+ * order is an at-least-once protocol: an observed id is never used for a turn
+ * until its accepted WAL and final reference both resolve. A process crash
+ * before Codex returns an id remains an intentionally fail-closed `prepared`
+ * record because the upstream method has no idempotency key or lookup token.
+ * @param threads - initialized persistent-thread app-server client.
+ * @param cwd - absolute app-server workspace.
+ * @param journal - durable DSH Session journal operations.
+ * @param options - selected native persistent-thread policy.
+ * @param signal - optional cancellation for all records and request.
+ * @returns the reference committed by the journal.
+ */
+export async function startCodexThreadWithWal(
+  threads: CodexPersistentThreadClient,
+  cwd: string,
+  journal: CodexThreadStartJournal,
+  options: CodexPersistentThreadOptions = {},
+  signal?: AbortSignal,
+): Promise<CodexThreadReference> {
+  const operationId = crypto.randomUUID()
+  const base = { version: CODEX_THREAD_START_WAL_VERSION, operationId }
+  await journal.appendWal({ ...base, state: 'prepared' }, signal)
+  const reference = await threads.start(cwd, options, signal)
+  await journal.appendWal({ ...base, state: 'accepted', threadId: reference.threadId }, signal)
+  await journal.appendReference(reference, signal)
+  return reference
 }

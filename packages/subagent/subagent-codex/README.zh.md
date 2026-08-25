@@ -24,7 +24,9 @@
 
 `thread-state.ts` 为未来的有状态 Codex 消费方单独提供底层状态模型。它只创建 `ephemeral: false` 的线程，把不透明 id 校验为 `CodexThreadId`，在 DSH 自有的 append-only Session 日志中恰好保存一条必需的 `codex/thread-reference` 事件，并在全新的持久化挂载后用 `thread/resume` 重新打开同一 id。恢复响应仍必须描述相同的非临时线程；重复、畸形或不受支持的引用会失败关闭。该记录只是外部执行引用：DSH 不复制 Codex 项目数据库、历史或设置。
 
-现有 Profile provider 不消费这层基础设施。它的一次性行为、临时线程所有权、无人值守审批和默认关闭的产品路径保持不变，直到后续执行适配器显式组装持久模型。本次不包含 UI、item 流、用量、diff、review 或审批桥接。
+现有 Profile provider 不消费这层基础设施。它的一次性行为、临时线程所有权、无人值守审批和默认关闭的产品路径保持不变。
+
+`CodexStatefulExecution` 是显式的底层适配器。它的 Session 所有者会耐久写入 `prepared` 和 `accepted(threadId)` 的 `codex/thread-start-wal`，再写入唯一的 `codex/thread-reference`，然后才启动 turn。accepted 记录可补全为最终引用；只有 prepared 的记录失败关闭，因为 Codex 0.147.0 既没有调用方幂等键，也没有补偿性线程删除方法。这是“已观察 id 至少一次”而非 exactly-once。每次适配器调用都会在完成、取消或失败后等待 package-local app-server 进程树退出。UI、item 流、用量、diff、review 和审批桥接仍不属于它。
 
 ## 配置
 

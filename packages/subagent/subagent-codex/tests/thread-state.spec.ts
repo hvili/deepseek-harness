@@ -14,7 +14,9 @@ import {
   CodexPersistentThreadClient,
   createCodexThreadReference,
   foldCodexThreadReference,
+  recoverCodexThreadStartWal,
   seedCodexThreadReference,
+  startCodexThreadWithWal,
 } from '../src/thread-state.ts'
 
 type Frame = Record<string, unknown>
@@ -152,5 +154,55 @@ describe('Codex persistent thread state', () => {
     expect(() => foldCodexThreadReference(malformed as never)).toThrow('invalid persisted Codex thread reference thread id')
     const future = [{ type: 'codex/thread-reference', seq: 0, time: 0, data: { version: 2, threadId: 'future' } }]
     expect(() => foldCodexThreadReference(future as never)).toThrow('version is unsupported')
+  })
+
+  it('fails closed for malformed public resume values and non-absolute app-server cwd values', async () => {
+    const { client } = await initializedClient()
+    const threads = new CodexPersistentThreadClient(client)
+    await expect(threads.start('relative-workspace')).rejects.toThrow('must be an absolute path')
+    await expect(threads.resume({ version: 1, threadId: 'id', extra: true } as never))
+      .rejects.toThrow('unknown field')
+    await expect(threads.resume({ version: 2, threadId: 'id' } as never))
+      .rejects.toThrow('version is unsupported')
+    client.close()
+  })
+
+  it('recovers an observed accepted id but fails closed for an unobserved start WAL', () => {
+    const accepted = [{
+      type: 'codex/thread-start-wal', seq: 0, time: 0,
+      data: { version: 1, operationId: 'op-1', state: 'accepted', threadId: 'codex-thread-accepted' },
+    }]
+    expect(recoverCodexThreadStartWal(accepted as never)).toEqual({
+      version: CODEX_THREAD_REFERENCE_VERSION,
+      threadId: 'codex-thread-accepted',
+    })
+    const unresolved = [{
+      type: 'codex/thread-start-wal', seq: 0, time: 0,
+      data: { version: 1, operationId: 'op-2', state: 'prepared' },
+    }]
+    expect(() => recoverCodexThreadStartWal(unresolved as never))
+      .toThrow('requires reconciliation')
+  })
+
+  it('does not publish a reference when fault injection rejects the accepted WAL write', async () => {
+    const { client, peer } = await initializedClient()
+    const threads = new CodexPersistentThreadClient(client)
+    const entries: unknown[] = []
+    const references: unknown[] = []
+    const started = startCodexThreadWithWal(threads, 'D:/workspace', {
+      appendWal: async (entry) => {
+        entries.push(entry)
+        if (entry.state === 'accepted') throw new Error('injected accepted WAL durability failure')
+      },
+      appendReference: async (reference) => { references.push(reference) },
+    })
+    const request = await peer.request('thread/start')
+    peer.respond(request, { thread: { id: 'accepted-but-not-logged', ephemeral: false } })
+    await expect(started).rejects.toThrow('injected accepted WAL durability failure')
+    expect(entries).toMatchObject([{ state: 'prepared' }, {
+      state: 'accepted', threadId: 'accepted-but-not-logged',
+    }])
+    expect(references).toEqual([])
+    client.close()
   })
 })

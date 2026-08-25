@@ -25,6 +25,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'assistant/chunk',
   'assistant/message',
   'codex/thread-reference',
+  'codex/thread-start-wal',
   'command/done',
   'command/run',
   'compaction/end',

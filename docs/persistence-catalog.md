@@ -254,7 +254,22 @@ Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/
 'codex/thread-reference': CodexThreadReference
 ```
 
-Source: [`packages/subagent/subagent-codex/src/thread-state.ts:36`](../packages/subagent/subagent-codex/src/thread-state.ts)
+Source: [`packages/subagent/subagent-codex/src/thread-state.ts:55`](../packages/subagent/subagent-codex/src/thread-state.ts)
+
+<a id="codexthread-start-wal--log-only"></a>
+
+#### `codex/thread-start-wal` — log-only
+
+```ts persistence-catalog
+/**
+ * Durable write-ahead evidence for a persistent Codex `thread/start`.
+ * A remaining `prepared` record is an unresolved external side effect and
+ * makes automatic continuation unavailable until reconciliation.
+ */
+'codex/thread-start-wal': CodexThreadStartWal
+```
+
+Source: [`packages/subagent/subagent-codex/src/thread-state.ts:61`](../packages/subagent/subagent-codex/src/thread-state.ts)
 
 ### `command/*`
 

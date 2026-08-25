@@ -10,9 +10,13 @@ The one-shot Codex provider creates an ephemeral thread and discards its id with
 
 ## Decision
 
-`dsh-subagent-codex/thread-state` owns a versioned `CodexThreadReference` and the narrow stable `thread/start` and `thread/resume` client operations. The reference is appended once as the required, log-only `codex/thread-reference` Session event. It carries only the opaque Codex id. A persistent start requires `ephemeral: false`; resume requires the returned non-ephemeral id to match the stored value. Recovery rejects duplicate, malformed, and unsupported reference records.
+`dsh-subagent-codex/thread-state` owns versioned references, `codex/thread-start-wal`, and stable `thread/start`/`thread/resume` operations. The final reference is the one required, log-only `codex/thread-reference` event. Resume revalidates its literal version, opaque id, and keys, then requires the returned persistent id to match. Recovery rejects malformed, conflicting, duplicate, and unsupported records.
 
-The one-shot provider does not call this API. A future execution adapter must explicitly compose it with turn lifecycle and policy mapping.
+`CodexStatefulExecution` is the separate consumer. It starts a package-local app-server per turn, resumes the durable id, and waits for the full child tree after success, cancellation, or failure. The one-shot provider does not call this API.
+
+## Durable start protocol
+
+The Session owner appends `prepared(operationId)` before `thread/start`, then `accepted(operationId, threadId)` after observing the upstream id, and the final reference before `turn/start`. An observed id is never used before both durable writes resolve. Recovery completes an accepted record; a remaining prepared record fails closed and blocks automatic continuation.
 
 ## Alternatives considered
 
@@ -22,6 +26,8 @@ The one-shot provider does not call this API. A future execution adapter must ex
 
 **Reuse ephemeral threads.** Rejected because an ephemeral identity cannot establish a restart guarantee.
 
+**Exactly-once `thread/start`.** Rejected as unattainable: 0.147.0 has no caller-supplied idempotency key, transaction token, or compensating deletion. A crash after upstream acceptance but before its response reaches DSH leaves an unresolved prepared record instead of silently creating a divergent conversation.
+
 ## Consequences
 
-DSH now has a small, strict state model that can be written and recovered through existing persistence backends. It does not make the existing provider stateful and deliberately leaves output, item, usage, approval, and UI projection to later work.
+DSH provides an at-least-once observed-id protocol: observed upstream identities are journaled before use, while unobserved starts stop recovery. Fault injection pins an accepted-write failure. Item streams, usage, approval bridging, and UI projection remain outside this adapter.

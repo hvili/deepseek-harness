@@ -30,13 +30,24 @@ import {
 export {
   CODEX_THREAD_REFERENCE_VERSION,
   CodexPersistentThreadClient,
+  recoverCodexThreadStartWal,
+  startCodexThreadWithWal,
   createCodexThreadReference,
   foldCodexThreadReference,
   seedCodexThreadReference,
   type CodexPersistentThreadOptions,
   type CodexThreadId,
   type CodexThreadReference,
+  type CodexThreadStartWal,
+  type CodexThreadStartJournal,
 } from './thread-state.ts'
+
+export {
+  CodexStatefulExecution,
+  type CodexStatefulExecutionSpec,
+  type CodexStatefulTurn,
+  type CodexThreadJournal,
+} from './stateful-execution.ts'
 
 export const name = 'subagent-codex'
 export const inject = ['subagents', 'subprocess']

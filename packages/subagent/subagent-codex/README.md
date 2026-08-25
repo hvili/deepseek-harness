@@ -24,7 +24,9 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 `thread-state.ts` separately provides the bottom-layer state model for a future stateful Codex consumer. It creates only `ephemeral: false` threads, validates their opaque id as `CodexThreadId`, stores exactly one required `codex/thread-reference` event in the DSH-owned append-only Session log, and reopens that exact id with `thread/resume` after a fresh persistence mount. A resumed response must still describe the same non-ephemeral thread; duplicate, malformed, or unsupported references fail closed. This record is an external execution reference only: DSH does not copy the Codex project database, history, or settings.
 
-The existing Profile provider does not consume this foundation. Its one-shot behavior, temporary-thread ownership, unattended approvals, and disabled-by-default product path remain unchanged until a later execution adapter explicitly composes the persistent model. No UI, item stream, usage, diff, review, or approval bridge is included here.
+The existing Profile provider does not consume this foundation. Its one-shot behavior, temporary-thread ownership, unattended approvals, and disabled-by-default product path remain unchanged.
+
+`CodexStatefulExecution` is the explicit lower-level adapter. Its Session owner durably writes `prepared` and then `accepted(threadId)` `codex/thread-start-wal` records, followed by the one `codex/thread-reference`, before a turn starts. An accepted record recovers into the final reference; a prepared-only record fails closed because Codex 0.147.0 has neither a caller idempotency key nor a compensating thread deletion method. This is at-least-once for observed ids, not exactly-once. Every adapter call awaits its package-local app-server process tree after completion, cancellation, or failure. UI, item streams, usage, diff, review, and approval bridging remain outside it.
 
 ## Configuration
 

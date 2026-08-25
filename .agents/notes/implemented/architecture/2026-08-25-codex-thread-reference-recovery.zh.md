@@ -10,9 +10,13 @@ Status: implemented
 
 ## 决策
 
-`dsh-subagent-codex/thread-state` 负责版本化的 `CodexThreadReference`，以及范围很窄的稳定 `thread/start`、`thread/resume` 客户端操作。引用作为必需的、仅日志用途的 `codex/thread-reference` Session 事件写入一次，只携带不透明 Codex id。持久启动要求 `ephemeral: false`；恢复要求返回的非临时 id 与保存值一致。恢复会拒绝重复、畸形和不支持版本的引用记录。
+`dsh-subagent-codex/thread-state` 负责版本化引用、`codex/thread-start-wal` 及稳定的 `thread/start`／`thread/resume` 操作。最终引用是唯一必需、仅日志用途的 `codex/thread-reference` 事件。恢复会重新验证字面量版本、不透明 id 和字段，并要求返回的持久 id 匹配。它拒绝畸形、冲突、重复和不支持的记录。
 
-一次性 provider 不调用该 API。后续执行适配器必须显式把它与 turn 生命周期和策略映射组合。
+`CodexStatefulExecution` 是独立消费者。它为每个 turn 启动 package-local app-server，恢复耐久 id，并在成功、取消或失败后等待完整子进程树退出。一次性 provider 不调用该 API。
+
+## 耐久启动协议
+
+Session 所有者先追加 `prepared(operationId)`，再执行 `thread/start`；观察到上游 id 后追加 `accepted(operationId, threadId)`，并在 `turn/start` 前写入最终引用。已观察 id 在两次耐久写入完成前绝不使用。恢复会补全 accepted 记录；仍为 prepared 的记录失败关闭并阻止自动 continuation。
 
 ## 考虑过的替代方案
 
@@ -22,6 +26,8 @@ Status: implemented
 
 **复用临时线程。** 不予采用，因为临时身份无法建立跨重启保证。
 
+**`thread/start` exactly-once。** 不予采用，因为 0.147.0 没有调用方提供的幂等键、事务 token 或补偿删除。上游已接受但响应到达 DSH 前崩溃会留下未解决 prepared 记录，不会静默创建分叉会话。
+
 ## 结果
 
-DSH 现在有一套小而严格的状态模型，可通过既有持久化后端写入和恢复。它不会让现有 provider 变成有状态，并有意把输出、item、用量、审批和 UI 投影留给后续工作。
+DSH 提供“已观察 id 至少一次”协议：已观察上游身份会在使用前写入日志；未观察启动会停止恢复。故障注入固定覆盖 accepted 写入失败。item 流、用量、审批桥接和 UI 投影仍不属于此适配器。
