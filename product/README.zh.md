@@ -12,6 +12,8 @@
 - `feature/<name>` 承载一项可以独立审查的产品改动。
 - `D:\DeepSeek\plugins` 是独立增强层仓库，拥有可选界面、运维和 Profile Bundle 能力。
 
+[AI agent 任务包](agent-task-packages.md)为剩余的发行与恢复工作定义了隔离且可审查的交接单元。
+
 可恢复起点是位于 `356faa8535c943c0bdebebd1f546724cd5f1b261` 的标签 `dsh-enhanced-baseline-2026-08-25`。此模型不重写历史。旧功能分支保留到产品分支通过构建和真实运行验证为止。
 
 ## 核心补丁清单

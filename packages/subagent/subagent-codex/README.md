@@ -20,6 +20,12 @@ Local cancellation wins the result race and maps to `aborted`. For failed turns,
 
 The provider advertises no optional start-time capabilities and reports `inheritsParentContext: false`. Codex receives the standalone text task and the parent Session cwd, but not the parent conversation, persona, tool filter, depth policy, or structured-output contract. The ephemeral Codex thread id and turn id stay private to this run and are never persisted in the parent Session.
 
+## Persistent-thread foundation
+
+`thread-state.ts` separately provides the bottom-layer state model for a future stateful Codex consumer. It creates only `ephemeral: false` threads, validates their opaque id as `CodexThreadId`, stores exactly one required `codex/thread-reference` event in the DSH-owned append-only Session log, and reopens that exact id with `thread/resume` after a fresh persistence mount. A resumed response must still describe the same non-ephemeral thread; duplicate, malformed, or unsupported references fail closed. This record is an external execution reference only: DSH does not copy the Codex project database, history, or settings.
+
+The existing Profile provider does not consume this foundation. Its one-shot behavior, temporary-thread ownership, unattended approvals, and disabled-by-default product path remain unchanged until a later execution adapter explicitly composes the persistent model. No UI, item stream, usage, diff, review, or approval bridge is included here.
+
 ## Configuration
 
 | Key | Default | Meaning |

@@ -1185,15 +1185,19 @@
       "subject": "feat(codex): extract the shared app-server adapter",
       "affectedAreas": [
         ".agents/notes",
+        "docs/persistence-catalog.md",
+        "docs/persistence-catalog.zh.md",
         "packages/subagent/codex-app-server",
         "packages/subagent/subagent-codex",
+        "product/agent-task-packages.md",
+        "product/agent-task-packages.zh.md",
         "scripts/product-diagnostics.ts",
         "pnpm-lock.yaml",
         "tsconfig.host.json"
       ],
       "classification": "minimal-core-patch",
-      "reason": "The package-level runtime, schema, handshake, and process lifecycle seam must remain beside the current in-tree Codex provider until DSH exposes an equivalent stable engine extension boundary.",
-      "verification": "Run the stable-schema fingerprint, handshake, approval, malformed-protocol, cancellation, process-quiescence, provider regression, typecheck, package build, and product identity gates.",
+      "reason": "The package-level runtime, schema, handshake, process lifecycle, and DSH-owned persistent Codex thread-reference seam must remain beside the current in-tree Codex provider until DSH exposes an equivalent stable engine extension boundary.",
+      "verification": "Run the stable-schema fingerprint, handshake, persistent thread start/resume, JSONL fresh-mount recovery, approval, malformed-protocol, cancellation, process-quiescence, provider regression, typecheck, package build, and product identity gates.",
       "upstreamStatus": "product-specific-not-submitted",
       "deletionCondition": "Move this adapter out of Harness-src after an official engine extension boundary can provide the same package-local runtime ownership and all dual-path regression tests pass."
     }

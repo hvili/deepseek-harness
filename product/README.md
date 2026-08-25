@@ -12,6 +12,8 @@ This directory owns the product-only policy layered over official DeepSeek Harne
 - `feature/<name>` carries one independently reviewable product change.
 - `D:\DeepSeek\plugins` is the independent enhancement-layer repository and owns optional UI, operations, and Profile Bundle behavior.
 
+[Agent task packages](agent-task-packages.md) define isolated, reviewable handoffs for the remaining distribution and recovery work.
+
 The recoverable starting point is tag `dsh-enhanced-baseline-2026-08-25` at `356faa8535c943c0bdebebd1f546724cd5f1b261`. Rewriting history is not part of this model. The old feature branch remains recoverable until the product branch passes build and real runtime verification.
 
 ## Core patch inventory

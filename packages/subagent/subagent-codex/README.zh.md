@@ -20,6 +20,12 @@
 
 本提供方不声明任何可选的启动时能力，并报告 `inheritsParentContext: false`。Codex 会接收独立文本任务和父会话 cwd，但不会接收父会话的对话、角色设定、工具筛选器、深度策略或结构化输出约定。临时 Codex 线程 ID 与轮次 ID 仅在此次运行内部可见，绝不会持久化到父会话。
 
+## 持久线程基础层
+
+`thread-state.ts` 为未来的有状态 Codex 消费方单独提供底层状态模型。它只创建 `ephemeral: false` 的线程，把不透明 id 校验为 `CodexThreadId`，在 DSH 自有的 append-only Session 日志中恰好保存一条必需的 `codex/thread-reference` 事件，并在全新的持久化挂载后用 `thread/resume` 重新打开同一 id。恢复响应仍必须描述相同的非临时线程；重复、畸形或不受支持的引用会失败关闭。该记录只是外部执行引用：DSH 不复制 Codex 项目数据库、历史或设置。
+
+现有 Profile provider 不消费这层基础设施。它的一次性行为、临时线程所有权、无人值守审批和默认关闭的产品路径保持不变，直到后续执行适配器显式组装持久模型。本次不包含 UI、item 流、用量、diff、review 或审批桥接。
+
 ## 配置
 
 | 配置键 | 默认值 | 含义 |

@@ -21,6 +21,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
@@ -31,6 +34,9 @@
     },
     {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../session/session-persistence-jsonl"
     },
     {
       "path": "../subagent"

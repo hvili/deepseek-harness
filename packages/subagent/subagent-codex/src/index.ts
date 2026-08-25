@@ -27,6 +27,17 @@ import {
   type CodexRunSpec,
 } from './run.ts'
 
+export {
+  CODEX_THREAD_REFERENCE_VERSION,
+  CodexPersistentThreadClient,
+  createCodexThreadReference,
+  foldCodexThreadReference,
+  seedCodexThreadReference,
+  type CodexPersistentThreadOptions,
+  type CodexThreadId,
+  type CodexThreadReference,
+} from './thread-state.ts'
+
 export const name = 'subagent-codex'
 export const inject = ['subagents', 'subprocess']
 

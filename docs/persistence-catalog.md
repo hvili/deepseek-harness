@@ -239,6 +239,23 @@ Types: [TokenUsage](subsystems/llm-streaming.md)
 
 Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
+### `codex/*`
+
+<a id="codexthread-reference--log-only"></a>
+
+#### `codex/thread-reference` — log-only
+
+```ts persistence-catalog
+/**
+ * The one external Codex execution identity attached to this DSH Session.
+ * It is log-only and required: a runtime that cannot interpret this record
+ * must not pretend it can safely resume the linked Codex conversation.
+ */
+'codex/thread-reference': CodexThreadReference
+```
+
+Source: [`packages/subagent/subagent-codex/src/thread-state.ts:36`](../packages/subagent/subagent-codex/src/thread-state.ts)
+
 ### `command/*`
 
 <a id="commanddone--log-only"></a>
