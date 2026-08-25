@@ -148,6 +148,23 @@ describe('AttachmentStore.readImageRequest', () => {
   })
 })
 
+describe('AttachmentStore generic-file defaults', () => {
+  it('rejects generic files explicitly for image-only backends', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const ref = {
+      kind: 'file' as const,
+      attachmentId: AttachmentId(`sha256:${'1'.repeat(64)}`),
+      mediaType: 'text/plain',
+      bytes: 1,
+    }
+
+    await expect(store.saveFile({ data: Uint8Array.of(1), mediaType: 'text/plain' }))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_FILE_ATTACHMENT' })
+    await expect(store.readFile(ref))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_FILE_ATTACHMENT' })
+  })
+})
+
 describe('isImageAdmissionError', () => {
   it('separates caller-correctable image admission failures from storage faults', () => {
     expect(isImageAdmissionError(new AttachmentError('bad bytes', 'INVALID_IMAGE'))).toBe(true)

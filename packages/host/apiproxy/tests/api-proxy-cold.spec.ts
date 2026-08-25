@@ -220,6 +220,7 @@ describe('attached updatedAt tracks human prompts', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(UserQuestionService)
     await ctx.plugin(AgentRegistry)
+    ctx.provide('workspaceRegistry', { isPermanentlyRemoved: () => false } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
     // Old work, resumed just now: the log tail would report the pickup.

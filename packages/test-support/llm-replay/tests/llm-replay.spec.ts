@@ -597,6 +597,118 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
     })
   })
 
+  describe('toolNames mapping', () => {
+    /** One recorded shell call: name rides the first delta and the block-end. */
+    function shellCall(name: string, command: string): StreamChunk[] {
+      const argumentsJson = JSON.stringify({ command })
+      return [
+        { type: 'block-start', index: 0, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), name, argumentsDelta: argumentsJson.slice(0, 4) },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), argumentsDelta: argumentsJson.slice(4) },
+        { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('c1'), name, arguments: argumentsJson } },
+        { type: 'finish', reason: { kind: 'tool-calls' } },
+      ]
+    }
+
+    it('renames the tool on the named delta and the block-end while streaming recorded args unchanged', async () => {
+      writeLog(shellCall('bash', 'echo hi > notes.txt'))
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const namedDelta = streamed.find(chunk => chunk.type === 'tool-call-delta' && chunk.name !== undefined)
+      expect(namedDelta).toMatchObject({ name: 'pwsh', argumentsDelta: '{"co' })
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { type: 'tool-call', name: 'pwsh', arguments: '{"command":"echo hi > notes.txt"}' } })
+      // The continuation delta (no name) passes through untouched.
+      expect(streamed.filter(chunk => chunk.type === 'tool-call-delta')).toHaveLength(2)
+    })
+
+    it('applies the map to override sidecar entries too', async () => {
+      writeLog(TEXT_CHUNKS)
+      const overrideFile = join(dir, 'replay.override.json')
+      writeFileSync(overrideFile, JSON.stringify([{ kind: 'chunks', chunks: shellCall('bash', 'echo hi') }]), 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, overrideFile, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'pwsh' } })
+    })
+
+    it('leaves hang entries intact while applying a tool-name map', async () => {
+      writeLog(TEXT_CHUNKS)
+      const overrideFile = join(dir, 'replay.override.json')
+      writeFileSync(overrideFile, JSON.stringify([{ kind: 'hang' }]), 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, overrideFile, toolNames: { bash: 'pwsh' } })
+      await expect(drain(ctx.llm.stream({
+        provider: 'm', model: 'm', messages: [], signal: AbortSignal.abort(new Error('stop hang')),
+      }))).rejects.toThrow('aborted')
+    })
+
+    it('leaves unmapped tool names untouched', async () => {
+      writeLog(shellCall('read', '{"file_path":"notes.txt"}'))
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const end = streamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'read' } })
+    })
+
+    it('applies the map to child scripts as well', async () => {
+      const parentFile = writeSession('session.jsonl', { id: 'rec-parent', createdAt: 100 }, [TEXT_CHUNKS])
+      const childFile = writeSession('session.1.jsonl', { id: 'rec-child', createdAt: 200 }, [shellCall('bash', 'echo hi')])
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file: parentFile, childFiles: [childFile], toolNames: { bash: 'pwsh' } })
+      // The anonymous first call binds the parent script; a distinct live
+      // session id binds the child, whose streamed shell call is renamed.
+      await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const childStreamed = await drain(ctx.llm.stream({
+        provider: 'm', model: 'm', messages: [],
+        sessionId: 'live-child' as NonNullable<GenerateOptions['sessionId']>,
+      }))
+      const end = childStreamed.find(chunk => chunk.type === 'block-end')
+      expect(end).toMatchObject({ block: { name: 'pwsh' } })
+    })
+
+    it('rewrites tools.<name> bindings in a run_code program and leaves other arguments untouched', async () => {
+      // One recorded stream with two calls: a run_code program addressing the
+      // recorded shell through the SDK binding, and a shell call whose command
+      // string legitimately contains the literal `tools.bash`.
+      const program = 'const out = await tools.bash({ command: "echo hi" });\nreturn out'
+      const runCodeArguments = JSON.stringify({ code: program, description: 'run shell' })
+      const shellArguments = JSON.stringify({ command: 'echo tools.bash', description: 'echo' })
+      writeLog([
+        { type: 'block-start', index: 0, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), name: 'run_code', argumentsDelta: runCodeArguments.slice(0, 4) },
+        { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('c1'), name: 'run_code', arguments: runCodeArguments } },
+        { type: 'block-start', index: 1, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 1, id: CallId('c2'), name: 'bash', argumentsDelta: shellArguments.slice(0, 4) },
+        { type: 'block-end', index: 1, block: { type: 'tool-call', id: CallId('c2'), name: 'bash', arguments: shellArguments } },
+        { type: 'finish', reason: { kind: 'tool-calls' } },
+      ])
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      installLlmReplay(ctx, { file, toolNames: { bash: 'pwsh' } })
+      const streamed = await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))
+      const ends = streamed.filter((chunk): chunk is Extract<StreamChunk, { type: 'block-end' }> => chunk.type === 'block-end')
+      const programEnd = ends.find(end => end.block.type === 'tool-call' && end.block.name === 'run_code')
+      if (programEnd?.block.type !== 'tool-call') throw new Error('the run_code block-end was not streamed')
+      const expectedProgram = 'const out = await tools.pwsh({ command: "echo hi" });\nreturn out'
+      expect(programEnd.block.arguments).toBe(JSON.stringify({ code: expectedProgram, description: 'run shell' }))
+      expect(programEnd.block.arguments).not.toContain('tools.bash')
+      const shellEnd = ends.find(end => end.block.type === 'tool-call' && end.block.name === 'pwsh')
+      if (shellEnd?.block.type !== 'tool-call') throw new Error('the renamed shell block-end was not streamed')
+      // A non-program call's arguments are command data, not SDK source: the
+      // literal token belongs to the recorded scenario and streams unchanged.
+      expect(shellEnd.block.arguments).toBe(shellArguments)
+    })
+  })
+
   it('registers a replay-only provider catalog when configured', async () => {
     writeLog(TEXT_CHUNKS)
     const ctx = new Context()

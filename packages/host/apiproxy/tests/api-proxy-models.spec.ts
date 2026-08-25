@@ -129,6 +129,45 @@ function registerTextOnly(ctx: Context): void {
   }('Text Only', []))
 }
 
+/** Adapter that records its stream options and returns one terminal finish. */
+class VisionProbeAdapter extends LlmAdapter {
+  constructor(
+    private readonly onStream: (options: GenerateOptions) => void,
+    private readonly finish: Extract<StreamChunk, { type: 'finish' }> = { type: 'finish', reason: { kind: 'stop' } },
+  ) {
+    super()
+  }
+
+  override providerInfo(provider: string): LlmProviderInfo {
+    return { id: provider, name: provider }
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text', 'image'] })
+  }
+
+  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.onStream(options)
+    yield { type: 'usage', usage: { inputTokens: 1, outputTokens: 1 } }
+    yield this.finish
+  }
+}
+
+/** Attachments double that accepts the generated 1px probe. */
+function provideProbeAttachments(ctx: Context) {
+  const saveImage = vi.fn(async (input: { data: Uint8Array; mediaType: 'image/png'; name?: string }) => ({
+    attachmentId: 'att-probe',
+    mediaType: input.mediaType,
+    bytes: input.data.byteLength,
+    width: 1,
+    height: 1,
+    ...input.name === undefined ? {} : { name: input.name },
+  }))
+  ctx.provide('attachments', { saveImage } as never)
+  return saveImage
+}
+
+
 describe('Web session model selection', () => {
   it('validates an ordered image batch before persisting any member', async () => {
     const { ctx, agent, sessionId } = await harness()
@@ -199,6 +238,45 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('promotes a generic browser file into one durable, model-visible file block', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const saveFile = vi.fn(async (input: { data: Uint8Array; mediaType: string; name?: string }) => ({
+      kind: 'file' as const,
+      attachmentId: 'file-1',
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      ...input.name === undefined ? {} : { name: input.name },
+    }))
+    ctx.provide('attachments', { saveFile } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'file' as const, mediaType: 'application/pdf', data: 'AQI=', name: 'brief.pdf' },
+        { type: 'text' as const, text: 'summarize this' },
+      ],
+    }))
+
+    expect(result.result.ok).toBe(true)
+    expect(saveFile).toHaveBeenCalledWith({ data: Uint8Array.of(1, 2), mediaType: 'application/pdf', name: 'brief.pdf' })
+    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toMatchObject([
+      {
+        type: 'file',
+        attachment: { kind: 'file', attachmentId: 'file-1', mediaType: 'application/pdf', bytes: 2, name: 'brief.pdf' },
+        extraction: { status: 'failed', code: 'PDF_TEXT_EXTRACTION_UNAVAILABLE' },
+      },
+      { type: 'text', text: 'summarize this' },
+    ])
+    await ctx.fiber.dispose()
+  })
+
   it('allows a text-only selection while durable or pending images remain available for later models', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)
@@ -227,6 +305,29 @@ describe('Web session model selection', () => {
     ;(agent.inbox.nextTurn as UserMessage[]).push({
       id: 'pending-image', role: 'user', source: { kind: 'user' }, content: [image],
     } as never)
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+    await ctx.fiber.dispose()
+  })
+
+  it('allows a text-only selection when the configured vision route is live', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    ctx.provide('settings', {
+      get: vi.fn(() => ({ enabled: true, visionProvider: 'text-only' })),
+    } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    ;(agent.inbox.nextTurn as UserMessage[]).push({
+      id: 'image-message-proxy', role: 'user', source: { kind: 'user' }, content: [{
+        type: 'image',
+        attachment: { attachmentId: 'att-proxy', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+      }],
+    } as never)
+
     expect(expectValue(await api.sessions.selectModel(request({
       sessionId, provider: 'text-only', model: 'plain',
     }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
@@ -496,4 +597,111 @@ describe('Web session model selection', () => {
       .not.toContain('deleted-gateway/deleted-model')
     await ctx.fiber.dispose()
   })
+
+  it('sends a 1px image probe when llm.testModel requests vision', async () => {
+    const { ctx } = await harness()
+    const onStream = vi.fn()
+    ctx.llm.registerAdapter(['vision-route'], new VisionProbeAdapter(onStream))
+    const saveImage = provideProbeAttachments(ctx)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.llm.testModel(request({
+      provider: 'vision-route',
+      model: 'vision-model',
+      probeVision: true,
+    }))
+
+    expect(result.result).toMatchObject({ ok: true, value: { inputModalities: ['text', 'image'] } })
+    expect(saveImage).toHaveBeenCalledOnce()
+    const saved = saveImage.mock.calls[0]?.[0]
+    expect(saved).toMatchObject({ mediaType: 'image/png', name: 'vision-proxy-test.png' })
+    expect((saved as { data: Uint8Array }).data.byteLength).toBeGreaterThan(0)
+    expect(onStream).toHaveBeenCalledOnce()
+    const options = onStream.mock.calls[0]?.[0] as GenerateOptions
+    expect(options.maxTokens).toBe(32)
+    expect(options.messages[0]?.content.some(block => block.type === 'image')).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps llm.testModel token-free when vision probing is not requested', async () => {
+    const { ctx } = await harness()
+    const onStream = vi.fn()
+    ctx.llm.registerAdapter(['vision-route'], new VisionProbeAdapter(onStream))
+    const saveImage = provideProbeAttachments(ctx)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.llm.testModel(request({
+      provider: 'vision-route',
+      model: 'vision-model',
+    }))
+
+    expect(result.result).toMatchObject({ ok: true, value: { inputModalities: ['text', 'image'] } })
+    expect(saveImage).not.toHaveBeenCalled()
+    expect(onStream).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('skips the token spend when the model declares text-only input', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['text-only-probe'], new class extends LlmAdapter {
+      override providerInfo(provider: string): LlmProviderInfo {
+        return { id: provider, name: provider }
+      }
+
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
+      }
+
+      override async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        throw new Error('text-only probe should not stream')
+      }
+    }())
+    const saveImage = provideProbeAttachments(ctx)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.llm.testModel(request({
+      provider: 'text-only-probe',
+      model: 'plain',
+      probeVision: true,
+    }))
+
+    expect(result.result).toMatchObject({ ok: true, value: { inputModalities: ['text'] } })
+    expect(saveImage).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports the model failure when the image probe stream finishes in error', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['vision-route'], new VisionProbeAdapter(vi.fn(), {
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: 'image route offline', code: 'PI_AI_ERROR' } },
+    }))
+    provideProbeAttachments(ctx)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.llm.testModel(request({
+      provider: 'vision-route',
+      model: 'vision-model',
+      probeVision: true,
+    }))
+
+    expect(result.result).toMatchObject({
+      ok: false,
+      error: { code: 'model-unavailable', message: 'image route offline' },
+    })
+    await ctx.fiber.dispose()
+  })
+
 })

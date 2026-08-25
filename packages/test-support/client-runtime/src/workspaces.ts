@@ -212,4 +212,61 @@ export class TestWorkspaces implements IWorkspaces {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
     })
   }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unarchiveSession', args: [sessionId] })
+    const stub = this.stubs.get('unarchiveSession')
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  /** Add a session to the user-maintained favorites set (recorded). */
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'favoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('favoriteSession')
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
+    await this.update((draft) => {
+      if (!(draft.favoriteSessionIds ?? []).includes(sessionId)) {
+        draft.favoriteSessionIds = [...(draft.favoriteSessionIds ?? []), sessionId]
+      }
+    })
+  }
+
+  /** Remove a session from the user-maintained favorites set (recorded). */
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unfavoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('unfavoriteSession')
+    if (stub !== undefined) {  await (stub(sessionId) as Promise<void>); return }
+    await this.update((draft) => {
+      draft.favoriteSessionIds = (draft.favoriteSessionIds ?? []).filter(id => id !== sessionId)
+    })
+  }
+
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void> {
+    this.calls.push({ method: 'setWorkspaceTags', args: [workspaceId, tags] })
+    const stub = this.stubs.get('setWorkspaceTags')
+    if (stub !== undefined) {  await (stub(workspaceId, tags) as Promise<void>); return }
+    await this.update((draft) => { draft.workspaceTagsById = { ...(draft.workspaceTagsById ?? {}), [workspaceId]: tags } })
+  }
+
+  async setSessionTags(sessionId: SessionId, tags: string[]): Promise<void> {
+    this.calls.push({ method: 'setSessionTags', args: [sessionId, tags] })
+    const stub = this.stubs.get('setSessionTags')
+    if (stub !== undefined) {  await (stub(sessionId, tags) as Promise<void>); return }
+    await this.update((draft) => { draft.sessionTagsById = { ...(draft.sessionTagsById ?? {}), [sessionId]: tags } })
+  }
+
+  async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
+    this.calls.push({ method: 'removeArchivedSession', args: [sessionId] })
+    const stub = this.stubs.get('removeArchivedSession')
+    if (stub !== undefined) return await (stub(sessionId) as Promise<boolean>)
+    const wasArchived = this.list.getSnapshot().archivedSessionIds.includes(sessionId)
+    await this.update((draft) => {
+      draft.archivedSessionIds = draft.archivedSessionIds.filter(id => id !== sessionId)
+      draft.favoriteSessionIds = (draft.favoriteSessionIds ?? []).filter(id => id !== sessionId)
+    })
+    return wasArchived
+  }
 }

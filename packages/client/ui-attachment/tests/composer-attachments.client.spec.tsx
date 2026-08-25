@@ -91,6 +91,18 @@ describe('ComposerAttachments', () => {
     expect(view.queryByRole('status')).toBeNull()
   })
 
+  it('renders generic files as removable cards instead of image thumbnails', () => {
+    const onRemoveImage = vi.fn()
+    const generic: ComposerAttachment = {
+      kind: 'file', id: 'pdf-1' as ComposerAttachment['id'],
+      file: new File([Uint8Array.of(1)], 'brief.pdf', { type: 'application/pdf' }),
+    }
+    const view = render(<ComposerAttachments {...props({ attachments: [generic], onRemoveImage })} />)
+    expect(view.getByText('brief.pdf')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'input.removeFile' }))
+    expect(onRemoveImage).toHaveBeenCalledWith(generic.id)
+  })
+
   it('tracks nested file drags and clears an aborted drag', () => {
     const view = render(<ComposerAttachments {...props()} />)
     const dataTransfer = { types: ['Files'], files: [], dropEffect: 'none' }

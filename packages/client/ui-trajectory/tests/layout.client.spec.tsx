@@ -64,6 +64,7 @@ describe('deriveTrajectoryLayout', () => {
         blocks: [
           { kind: 'reasoning', text: 'thinking…' },
           { kind: 'text', text: 'I will run bash' },
+          { kind: 'file', attachment: { id: 'attachment-1', name: 'notes.txt' } },
           { kind: 'tool-call', callId: 'c1', name: 'bash', argsRaw: '{"command":"ls"}' },
         ],
         usage: { inputTokens: 10, outputTokens: 20, reasoningTokens: 5 },
@@ -83,6 +84,8 @@ describe('deriveTrajectoryLayout', () => {
     expect(message).toMatchObject({
       input: 10, output: 20, think: 5, timeSeconds: 5,
     })
+    const sourceFile = message?.sourceBlocks?.find(block => block.type === 'file')
+    expect(sourceFile?.content).toContain('"name": "notes.txt"')
     const tool = turns[0]?.groups.flatMap(g => g.cells).find(c => c.kind === 'tool')
     expect(tool).toMatchObject({
       text: 'bash',

@@ -80,10 +80,12 @@ export function workspaceListState(): WorkspaceListState {
   return {
     items: [],
     archivedSessionIds: [],
+    favoriteSessionIds: [],
     state: 'idle',
     phase: 'ready',
     error: null,
     baselinesReady: true,
     recentWorkspaceId: undefined,
+    cwdWorkspaceId: undefined,
   }
 }

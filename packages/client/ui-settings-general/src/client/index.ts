@@ -9,7 +9,7 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings slot declarations plus the ctx.settingsScope Context
 // merge. Cross-plugin collaboration goes through the service, never a value
 // import (client bundle purity gate).
@@ -22,6 +22,8 @@ import type {
 import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
+import { DiagnosticsSection } from './DiagnosticsSection.tsx'
+import { createDiagnosticsStore } from './diagnostics-store.ts'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
@@ -174,4 +176,46 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+
+  // Diagnostics section: the "我是谁、由什么组成" surface. It mirrors the same
+  // host-description identity as the General version row, plus the observable
+  // capability assembly snapshot (the runtime's slot-seam tree). The assembly
+  // service is optional — compositions without the runtime render the section
+  // with an empty assembly rather than fail.
+  const diagnosticsStore = createDiagnosticsStore()
+  const assembly = ctx.get('assembly')
+  let boundDiagnostics: BoundActions<typeof diagnosticsStore> | undefined
+  const syncDiagnostics = (): void => {
+    const description = connection.hostDescription.getSnapshot()
+    const snapshot = assembly?.getSnapshot()
+    boundDiagnostics?.sync({
+      status: description === undefined ? 'idle' : 'ready',
+      version: description?.version ?? '',
+      commit: description?.commit,
+      buildHash: description?.buildHash,
+      schemaVersion: description?.schemaVersion,
+      seams: snapshot?.seams ?? [],
+      seamCount: snapshot?.seamCount ?? 0,
+      occupantCount: snapshot?.occupantCount ?? 0,
+    })
+  }
+  ctx.effect(() => connection.hostDescription.subscribe(syncDiagnostics),
+    'ui-settings-general: diagnostics host-description subscription')
+  if (assembly !== undefined) {
+    ctx.effect(() => assembly.subscribe(syncDiagnostics),
+      'ui-settings-general: diagnostics assembly subscription')
+  }
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'diagnostics',
+    order: 5,
+    label: () => t('diagnostics.nav'),
+    locale: NS,
+    store: diagnosticsStore,
+    inject: (actions) => {
+      boundDiagnostics = actions
+      syncDiagnostics()
+      return {}
+    },
+  }, DiagnosticsSection))
 }

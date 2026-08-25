@@ -48,7 +48,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
-  LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
+  ContentBlock, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
 import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
@@ -99,6 +99,15 @@ export function webSnapshotMode(): WebSnapshotMode {
   if (value === 'record' || value === 'refresh') return value
   throw new Error(`DSH_SNAPSHOT must be replay, record, or refresh; got ${JSON.stringify(value)}`)
 }
+
+/**
+ * The shell tool the live composition mounts on this platform: the Windows
+ * standard preset ships pwsh, every other platform ships bash. Tests that
+ * dispatch or assert the live shell tool import this instead of hardcoding
+ * either name; the replay tool-name map derives from it so bash-recorded
+ * fixtures dispatch under the platform's real tool.
+ */
+export const liveShellToolName: 'bash' | 'pwsh' = process.platform === 'win32' ? 'pwsh' : 'bash'
 
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
@@ -422,10 +431,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     },
     { id: 'session-persistence-jsonl', config: { root: persistenceRoot } },
-    // Content search is enabled here although the shipped bundles default it
-    // off (`openAt: never`, pinned by apps/cli/tests/lazy-search-startup):
-    // the seeded-session scenarios navigate by content search, and these e2e
-    // runs are the assembled coverage for the opt-in search path.
+    // Content search is enabled here and is the shipped default
+    // (`openAt: first-search` on the base and Web bundles, pinned by
+    // apps/cli/tests/lazy-search-startup): the seeded-session scenarios
+    // navigate by content search, and these e2e runs are the assembled
+    // coverage for that default-on path.
     { id: 'session-query-sqlite', config: { path: ':memory:', openAt: 'first-search' } },
     // storage-json's yml root is anchored to the real $DSH_HOME; pin the row
     // to an absolute temp root (removed with the workspace at close) so tests
@@ -613,6 +623,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         ...(options.replayOverride === undefined ? {} : { overrideFile: options.replayOverride }),
         ...(options.replayChildFixtures === undefined ? {} : { childFiles: options.replayChildFixtures }),
         ...(options.paceMs === undefined ? {} : { paceMs: options.paceMs }),
+        // Fixtures record the shell tool of the recording platform (bash); the
+        // Windows standard preset mounts pwsh instead, so replayed shell calls
+        // must dispatch under the live tool's name. One mapping here keeps every
+        // cross-platform scenario off per-test shims; POSIX keeps replaying
+        // bash untouched.
+        ...(liveShellToolName === 'bash' ? {} : { toolNames: { bash: liveShellToolName } }),
       })
     } else if (mode !== 'record' && options.deepSeekMissingCredential !== true) {
       // No fixture and no shipped adapter would leave the tree with ZERO
@@ -766,13 +782,58 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * @returns the realized fixture text.
  */
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
+  // Fixtures are JSONL, so a Windows workspace path must stay JSON-escaped
+  // while it is substituted into the raw text. JSON.parse below converts the
+  // header back to the runtime path before persistence sees it.
+  const encodedWorkspaceCwd = JSON.stringify(scaffold.workspaceCwd).slice(1, -1)
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
-    .split('{{cwd}}').join(scaffold.workspaceCwd)
+    .split('{{cwd}}').join(encodedWorkspaceCwd)
   const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
   return fixtureCwd === undefined
     ? realized
-    : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
+    : realized.split(JSON.stringify(fixtureCwd).slice(1, -1)).join(encodedWorkspaceCwd)
+}
+
+/**
+ * Rewrite a seeded log's recorded `bash` tool calls to the live shell tool on
+ * win32 — the seed-time twin of installLlmReplay's toolNames mapping. Seeded
+ * rows present through the live registry (the api-proxy recomputes render
+ * intents by tool name), so a POSIX-recorded seed on a pwsh host would render
+ * generic rows with no terminal card; replayed sessions already carry the live
+ * name because the replay mapping renames at dispatch. POSIX hosts keep the
+ * fixture verbatim.
+ * @param events - parsed seed events.
+ * @returns events whose shell tool calls carry the live platform name.
+ */
+function foldSeededShellTool(events: readonly SessionEvent[]): readonly SessionEvent[] {
+  if (liveShellToolName === 'bash') return events
+  return events.map((event) => {
+    if (event.type === 'tool/call' && event.data.name === 'bash') {
+      return { ...event, data: { ...event.data, name: liveShellToolName } }
+    }
+    if (event.type === 'assistant/message') {
+      // Durable-file boundary: hand-authored seeds may carry the flat shape
+      // with the content blocks at the top level, so fold them wherever they
+      // live and keep the seed's own envelope.
+      const data = event.data as { message?: { content: ContentBlock[] }; content?: ContentBlock[] }
+      const blocks = data.message?.content ?? data.content
+      if (Array.isArray(blocks)) {
+        const content = blocks.map(block => (
+          typeof block === 'object' && block !== null
+            && (block as { type?: unknown }).type === 'tool-call'
+            && (block as { name?: unknown }).name === 'bash'
+            ? { ...block, name: liveShellToolName }
+            : block
+        ))
+        // The flat arm re-serializes a shape the typed union does not carry.
+        return data.message !== undefined
+          ? { ...event, data: { ...event.data, message: { ...event.data.message, content } } }
+          : { ...event, data: { ...event.data, content } } as SessionEvent<'assistant/message'>
+      }
+    }
+    return event
+  })
 }
 
 /**
@@ -816,7 +877,7 @@ export async function seedSession(
   agentPreset?: string,
 ): Promise<SessionId> {
   const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
-  const events = decoded.events
+  const events = foldSeededShellTool(decoded.events)
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
   // An open final turn would be mutated by resume's crash repair on first
@@ -895,8 +956,14 @@ async function persistSeedSession(
 function normalizeAria(snapshot: string, workspaceCwd: string): string {
   // The session heading renders the workspace's basename, not the full
   // path, so both spellings must collapse to the token.
-  const base = workspaceCwd.split('/').pop()!
-  return snapshot
+  const base = workspaceCwd.split(/[\\/]/).pop()!
+  const normalized = snapshot
+    // A Windows cwd renders as native backslashed paths, which the aria
+    // snapshot's YAML quoting doubles; collapse BOTH spellings before the
+    // basename pass so a full path folds into {{cwd}} instead of having its
+    // basename eaten first. A POSIX cwd carries no backslash, making the two
+    // splits identical there.
+    .split(workspaceCwd.split('\\').join('\\\\')).join('{{cwd}}')
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
@@ -915,6 +982,16 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
+    // A settled background job's outcome detail is platform-shaped: POSIX
+    // kills carry the terminating signal, Windows force-kills settle without
+    // one (the pwsh tool documents the difference). Fold both spellings — and
+    // the YAML quoting the POSIX colon induces — so one golden asserts the
+    // settled detail renders without asserting either platform's kill
+    // semantics; the vocabulary itself is unit-covered (tool-pwsh
+    // processOutcome suite).
+    .replace(/signal: SIGTERM\b/g, '{{outcome}}')
+    .replace(/\bkilled before exit\b/g, '{{outcome}}')
+    .replace(/- listitem: "([^"]*\{\{outcome\}\}[^"]*)"/g, '- listitem: $1')
     // Session summaries and Message IconActions clocks cross calendar
     // boundaries; collapse every shape so goldens stay stable across them.
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '{{timestamp}}')
@@ -922,6 +999,34 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     .replace(/\d{1,2}月\d{1,2}日 \d{2}:\d{2}/g, '{{clock}}')
     .replace(/(?<!\d)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s*[AP]M)?(?!\d)/gi, '{{clock}}')
     .replace(/(?<!\d)\d{2}:\d{2}(?!\d)/g, '{{clock}}')
+  // Windows replays bash fixtures through pwsh (installLlmReplay's toolNames),
+  // so shell rows carry the Pwsh title where the POSIX recording rendered Bash.
+  // The title is incidental to every golden that shows it (they assert
+  // placement, states, and actions), so collapse the twin's spelling to the
+  // fixture's and keep one committed golden per scenario. Position-anchored:
+  // the title opens an accessible-name quote or a text line, optionally behind
+  // the Failed prefix; POSIX passes through untouched.
+  return process.platform === 'win32'
+    ? normalized
+      .replace(/(?<=")(Failed )?Pwsh /g, '$1Bash ')
+      .replace(/(?<=text: ?"?)(Failed )?Pwsh /g, '$1Bash ')
+      // The background-job row renders the registry kind lowercase as the
+      // first listitem token; fold it the same way the title folds.
+      .replace(/(?<=listitem: )pwsh /g, 'bash ')
+      // The trajectory ledger labels a shell row with the durable tool name
+      // (row "TOOL, pwsh {...}") and repeats it in the args cell; fold both
+      // so the seeded/replayed ledger matches the POSIX recording.
+      .replace(/(?<=row "TOOL, )pwsh (?=\{)/g, 'bash ')
+      .replace(/(?<=cell ")pwsh(?=\{)/g, 'bash')
+      // Remaining doubled backslashes are the path separators the cwd collapse
+      // left behind (the YAML escaping of a Windows path); fold them to the
+      // POSIX spelling so one golden serves both platforms. The lookahead
+      // refuses a following quote or backslash, so the YAML encoding of a
+      // CONTENT backslash survives: a JSON-escaped quote renders as three
+      // backslashes and a quote in the snapshot, and folding its first pair
+      // would rewrite recorded arguments. A path-separator pair still folds.
+      .replace(/\\\\(?=[^"\\])/g, '/')
+    : normalized
 }
 
 /**

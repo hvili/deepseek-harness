@@ -23,6 +23,10 @@ export type AttachmentErrorCode =
   | 'ATTACHMENT_WRITE_FAILED'
   | 'ATTACHMENT_NOT_FOUND'
   | 'ATTACHMENT_READ_FAILED'
+  | 'INVALID_FILE'
+  | 'INVALID_MEDIA_TYPE'
+  | 'FILE_TOO_LARGE'
+  | 'UNSUPPORTED_FILE_ATTACHMENT'
   | 'ATTACHMENT_PROJECTION_UNSUPPORTED'
 
 /** Runtime membership for structurally compatible errors crossing package boundaries. */

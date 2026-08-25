@@ -146,6 +146,45 @@ export function textField(field: string): CardFieldSpec {
 }
 
 /**
+ * A boolean field represented as the strings consumed by the card controls.
+ * @param field - the form field key.
+ * @returns the boolean card field specification.
+ */
+export function booleanField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => typeof value === 'boolean' ? String(value) : '',
+    parse: (text) => {
+      const trimmed = text.trim().toLowerCase()
+      if (trimmed === '') return { kind: 'clear' }
+      if (trimmed === 'true') return { kind: 'set', value: true }
+      if (trimmed === 'false') return { kind: 'set', value: false }
+      return undefined
+    },
+  }
+}
+
+/**
+ * A bounded-choice field rendered as a native select. An empty draft clears
+ * the field; any value outside `options` blocks the save.
+ * @param field - field name inside the namespace section.
+ * @param options - allowed string values.
+ * @returns the field's conversion spec.
+ */
+export function selectField(field: string, options: readonly string[]): CardFieldSpec {
+  const allowed = new Set(options)
+  return {
+    field,
+    format: value => typeof value === 'string' && allowed.has(value) ? value : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return { kind: 'clear' }
+      return allowed.has(trimmed) ? { kind: 'set', value: trimmed } : undefined
+    },
+  }
+}
+
+/**
  * Stages one card's edits over one settings namespace and writes them on save.
  *
  * The form publishes through a snapshot store because slot components read

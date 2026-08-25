@@ -38,9 +38,15 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const workspaceState = (items: readonly WorkspaceView[], archivedSessionIds: readonly SessionId[] = []): WorkspaceListState => ({
-  items, archivedSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
-  recentWorkspaceId: items[0]?.workspaceId,
+const workspaceState = (
+  items: readonly WorkspaceView[],
+  archivedSessionIds: readonly SessionId[] = [],
+  favoriteSessionIds: readonly SessionId[] = [],
+  workspaceTagsById: Readonly<Record<string, readonly string[]>> = {},
+  sessionTagsById: Readonly<Record<string, readonly string[]>> = {},
+): WorkspaceListState => ({
+  items, archivedSessionIds, favoriteSessionIds, workspaceTagsById, sessionTagsById, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
+  recentWorkspaceId: items[0]?.workspaceId, cwdWorkspaceId: undefined,
 })
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
@@ -76,6 +82,10 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    favoriteSession: vi.fn(async () => {}),
+    unfavoriteSession: vi.fn(async () => {}),
+    setWorkspaceTags: vi.fn(async () => {}),
+    setSessionTags: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -355,6 +365,60 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     expect(screen.getByText('kept-s')).toBeTruthy()
     expect(screen.queryByText('gone-s')).toBeNull()
+  })
+
+  it('toggles durable favorites from the session menu and marks favorite rows', () => {
+    const favoriteSession = vi.fn(async () => {})
+    const unfavoriteSession = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 1), summary('two', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('one')])),
+      favoriteSession,
+      unfavoriteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByLabelText('已收藏')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“two”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '收藏会话' }))
+    expect(favoriteSession).toHaveBeenCalledWith(sid('two'))
+
+    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消收藏' }))
+    expect(unfavoriteSession).toHaveBeenCalledWith(sid('one'))
+
+    rerender(b, {
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('two')])),
+    })
+    expect(screen.getByLabelText('已收藏').previousSibling?.textContent).toBe('two')
+  })
+
+  it('shows tags and saves comma-separated workspace and session edits', async () => {
+    const setWorkspaceTags = vi.fn(async () => {})
+    const setSessionTags = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState(
+        [workspace('alpha', ['one'])], [], [], { alpha: ['review'] }, { one: ['todo'] },
+      )),
+      setWorkspaceTags,
+      setSessionTags,
+    })
+    expect(screen.getByText('review')).toBeTruthy()
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByText('todo')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '会话“one”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }))
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: '标签（用逗号分隔）' })
+    fireEvent.change(input, { target: { value: 'urgent, review' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存标签' }))
+    expect(setSessionTags).toHaveBeenCalledWith(sid('one'), ['urgent', ' review'])
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: '工作区“alpha”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存标签' }))
+    expect(setWorkspaceTags).toHaveBeenCalledWith(wid('alpha'), ['review'])
   })
 
   it('logs and keeps the tree when the archive call rejects', async () => {

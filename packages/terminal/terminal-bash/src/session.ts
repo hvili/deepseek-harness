@@ -23,6 +23,12 @@ import type {
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
+type LocalTerminalSendRequest = TerminalSendRequest & {
+  requirePromptMarker?: boolean
+  requireIdleSilence?: boolean
+  separateSubmit?: boolean
+}
+
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
   const chars = Array.from(text)
@@ -86,6 +92,8 @@ class LocalSendOperation implements TerminalSendOperation {
     maxBytes: number,
     readonly startedAt: number,
     private readonly onCancel: () => void,
+    readonly requirePromptMarker: boolean,
+    readonly requireIdleSilence: boolean,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
     this.promise = Promise.withResolvers<TerminalSendResult>()
@@ -204,12 +212,18 @@ export class LocalPtySession implements TerminalBackendSession {
   /**
    * Capture startup output through the same readiness contract as later sends.
    * @param signal - optional cancellation while the shell reaches its first prompt.
+   * @param requireIdleSilence - ignore early kernel stdin waits and require the full idle window.
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
-  async initialize(signal?: AbortSignal): Promise<void> {
+  async initialize(signal?: AbortSignal, requireIdleSilence = false): Promise<void> {
     this.initializing = true
     try {
-      const operation = this.startSend({ text: '', submit: false, ...signal !== undefined ? { signal } : {} })
+      const operation = this.startSend({
+        text: '',
+        submit: false,
+        requireIdleSilence,
+        ...signal !== undefined ? { signal } : {},
+      })
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
@@ -222,7 +236,7 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
-  startSend(request: TerminalSendRequest): TerminalSendOperation {
+  startSend(request: LocalTerminalSendRequest): TerminalSendOperation {
     if (this.closing) throw new Error('PTY session is closing')
     if (this.statusValue.kind === 'exited') throw new Error('PTY session has exited')
     if (this.active !== undefined) {
@@ -239,6 +253,8 @@ export class LocalPtySession implements TerminalBackendSession {
       this.config.maxReadBytes,
       Date.now(),
       () => { this.interrupt(operation) },
+      request.requirePromptMarker ?? false,
+      request.requireIdleSilence ?? false,
     )
     this.active = operation
     this.resetReadinessEvidence()
@@ -257,7 +273,7 @@ export class LocalPtySession implements TerminalBackendSession {
     return operation
   }
 
-  private async beginSend(operation: LocalSendOperation, request: TerminalSendRequest): Promise<void> {
+  private async beginSend(operation: LocalSendOperation, request: LocalTerminalSendRequest): Promise<void> {
     let foreground: SubprocessTerminalForeground | undefined
     try {
       foreground = await this.terminal.inspectForeground()
@@ -276,15 +292,34 @@ export class LocalPtySession implements TerminalBackendSession {
     try {
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       operation.setInitialForeground(foreground)
-      const input = `${request.text}${request.submit ? '\r' : ''}`
-      if (input.length > 0 && !operation.cancelRequested) {
+      // PowerShell on POSIX falls back to System.Console line input when TERM
+      // is deliberately `dumb`; unlike PSReadLine, that path needs LF to
+      // submit the buffered line. A bare CR remains pending until teardown,
+      // which makes bootstrap look like a shell-start timeout on Linux.
+      const submitSequence = request.submit
+        ? this.config.shellDialect === 'pwsh' && process.platform !== 'win32' ? '\n' : '\r'
+        : ''
+      const inputs = request.separateSubmit === true && request.text.length > 0 && submitSequence.length > 0
+        ? [request.text, submitSequence]
+        : [`${request.text}${submitSequence}`]
+      if (inputs.some(input => input.length > 0) && !operation.cancelRequested) {
         this.resetReadinessEvidence()
-        const write = this.terminal.write(input)
-        this.activeWrite = write.then(() => true, () => false)
-        try {
-          await write
-        } finally {
-          this.activeWrite = undefined
+        for (const [index, input] of inputs.entries()) {
+          if (!this.canContinueSend(operation)) break
+          if (index > 0) {
+            // Let the interactive reader consume a pasted command before Enter
+            // arrives. Hosted POSIX pwsh can otherwise treat one combined PTY
+            // write as pasted text and leave its trailing LF unsubmitted.
+            await new Promise(resolve => setTimeout(resolve, this.config.pollIntervalMs))
+          }
+          if (!this.canContinueSend(operation)) break
+          const write = this.terminal.write(input)
+          this.activeWrite = write.then(() => true, () => false)
+          try {
+            await write
+          } finally {
+            this.activeWrite = undefined
+          }
         }
       }
       // Cancellation owns post-write signalling and reservation release.
@@ -305,6 +340,10 @@ export class LocalPtySession implements TerminalBackendSession {
         else this.failActive(error)
       }
     }
+  }
+
+  private canContinueSend(operation: LocalSendOperation): boolean {
+    return this.active === operation && !this.closing && !operation.cancelRequested
   }
 
   private resetReadinessEvidence(): void {
@@ -443,7 +482,16 @@ export class LocalPtySession implements TerminalBackendSession {
       if (this.promptSeen && foreground !== undefined && this.shellPgid === undefined) {
         this.shellPgid = foreground.processGroupId
       }
-      if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
+      const promptReady = this.promptSeen && (this.promptTextSeen || operation.requirePromptMarker)
+      // A marker-gated bootstrap emits its own marker at the end of evaluation,
+      // before pwsh may asynchronously redraw the controlled prompt. Keep that
+      // internal send open for the full silence window so the redraw cannot be
+      // attributed to the first user command. Ordinary prompt-driven sends
+      // retain their one-poll fast path.
+      const promptIdleMs = operation.requirePromptMarker
+        ? this.config.idleSilenceMs
+        : this.config.pollIntervalMs
+      if (promptReady && idleFor >= promptIdleMs
         && foreground?.processGroupId === this.shellPgid) {
         this.settleActive('stdin_read')
         return
@@ -452,7 +500,8 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
+      if (!operation.requirePromptMarker && !operation.requireIdleSilence
+        && elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
         this.settleActive('stdin_read')
         return
       }
@@ -460,8 +509,18 @@ export class LocalPtySession implements TerminalBackendSession {
       // child also inherits PROMPT_COMMAND. Silence therefore remains the bound
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
-      const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      const handoffGrace = this.promptSeen || operation.requireIdleSilence
+        ? this.config.handoffGraceMs
+        : 0
+      // The pwsh pre-bootstrap grace intentionally accepts a completely quiet
+      // native host: TERM=dumb PowerShell on POSIX may print no banner or
+      // prompt at all. The following marker-gated bootstrap is the actual
+      // readiness proof, so this operation only owns the startup quiet window.
+      const idleEvidence = operation.requireIdleSilence && process.platform !== 'win32'
+        ? true
+        : startupHasOutput
+      if (!operation.requirePromptMarker
+        && idleEvidence && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

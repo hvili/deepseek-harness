@@ -177,6 +177,22 @@ abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
+ * Persist a generic material attachment. Backends that predate structured
+ * file intake fail explicitly instead of silently treating it as an image.
+ * @param _input - the file attachment material (unsupported by this store).
+ * @returns never resolves; the store rejects with a file-unsupported error.
+ */
+saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>
+
+/**
+ * Read a generic material attachment, preserving cancellation semantics.
+ * @param _ref - the file attachment reference (unsupported by this store).
+ * @param _signal - optional cancellation signal (unused by this store).
+ * @returns never resolves; the store rejects with a file-unsupported error.
+ */
+readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>
+
+/**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
  * @param policy - exact route pixel and encoded-byte budget.

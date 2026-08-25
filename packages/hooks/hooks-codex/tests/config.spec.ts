@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseCodexConfig, CODEX_EVENTS } from '@deepseek-ai/dsh-hooks-codex/src/config.ts'
+import { join } from 'node:path'
+import {
+  parseCodexConfig, mergeCodexConfigs, defaultCodexHookPaths,
+  CODEX_EVENTS,
+} from '@deepseek-ai/dsh-hooks-codex/src/config.ts'
 
 describe('parseCodexConfig', () => {
   it('honors only the five bridge-supported Codex events, dropping the rest', () => {
@@ -82,5 +86,35 @@ describe('parseCodexConfig', () => {
       UserPromptSubmit: [{ hooks: [{ command: 'prompt.sh' }] }],
       Stop: [{ hooks: [{ command: 'stop.sh' }] }],
     })
+  })
+})
+
+describe('mergeCodexConfigs', () => {
+  it('concatenates per-event groups, earlier layers before later ones', () => {
+    const project = parseCodexConfig({ PreToolUse: [{ matcher: '^Bash$', hooks: [{ type: 'command', command: 'p.sh' }] }] }).config
+    const user = parseCodexConfig({ PreToolUse: [{ hooks: [{ type: 'command', command: 'u.sh' }] }], Stop: [{ hooks: [{ type: 'command', command: 's.sh' }] }] }).config
+    const merged = mergeCodexConfigs(project, user)
+    expect(merged.PreToolUse).toEqual([
+      { matcher: '^Bash$', hooks: [{ command: 'p.sh' }] },
+      { hooks: [{ command: 'u.sh' }] },
+    ])
+    // A hook defined in both layers still runs under both (concatenated, not replaced).
+    expect(merged.Stop).toEqual([{ hooks: [{ command: 's.sh' }] }])
+  })
+
+  it('is empty-safe and order-sensitive', () => {
+    const only = parseCodexConfig({ Stop: [{ hooks: [{ type: 'command', command: 'a.sh' }] }] }).config
+    expect(mergeCodexConfigs()).toEqual({})
+    expect(mergeCodexConfigs(only, {})).toEqual(mergeCodexConfigs({}, only))
+  })
+})
+
+describe('defaultCodexHookPaths', () => {
+  it('resolves project `.codex/hooks.json` (launch cwd) before user `~/.codex/hooks.json`', () => {
+    const paths = defaultCodexHookPaths('/w/proj', '/home/u')
+    expect(paths).toEqual([
+      join('/w/proj', '.codex', 'hooks.json'),
+      join('/home/u', '.codex', 'hooks.json'),
+    ])
   })
 })

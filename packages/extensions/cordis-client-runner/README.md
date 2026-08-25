@@ -20,6 +20,8 @@ Loads converge by `(id, rev)` against live state: loading a revision this page a
 
 Nothing loads at activation, and nothing is restored after a refresh — a page runs a dynamic package only when someone answers a run request or asks for it here.
 
+The page-local inspect registry stops new publication and cancels live queries before its provider effects unload. A manifest sync that settles after page teardown is intentionally ignored rather than reported as a carrier failure.
+
 ## What a run surface reads and calls
 
 `ctx.dynamicCordisRunner` is the whole face:

@@ -7,6 +7,9 @@
     "docs/cordis-api/inherited.md",
     "docs/i18n/style-samples.md",
     "docs/i18n/terminology.md",
-    "docs/i18n/translation-prompt.md"
+    "docs/i18n/translation-prompt.md",
+    "plugins/dsh-turn-rewind/README.md",
+    "plugins/dsh-turn-rewind/README.zh.md",
+    "plugins/dsh-turn-rewind/README.i18n.yaml"
   ]
 }

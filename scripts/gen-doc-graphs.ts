@@ -98,6 +98,15 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'restoreWizard',
+    pkg: 'restore-wizard',
+    title: 'Session restore wizard',
+    mode: 'core',
+    implementations: ['restore-wizard'],
+    consumers: ['apiproxy'],
+    note: 'Previews a restore under read-only sandbox confinement and, after operator approval, replays the transactional restore through the coordinator.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

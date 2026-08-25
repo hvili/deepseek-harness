@@ -150,7 +150,9 @@ export class FakeApiClient implements IApiClient {
   }
 
   readonly workspace: IApiClient['workspace'] = {
-    list: (payload: unknown) => this.record('workspace.list', payload, Promise.resolve(ok({ items: [], archivedSessionIds: [] }))),
+    list: (payload: unknown) => this.record('workspace.list', payload, Promise.resolve(ok({
+      items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {},
+    }))),
     create: (payload: unknown) => this.record('workspace.create', payload, Promise.resolve(ok({
       workspace: { workspaceId: 'fk-ws' as never, path: '/f/ws', title: 'ws', sessionIds: [], createdAt: '0', updatedAt: '0' },
       created: true,
@@ -167,6 +169,24 @@ export class FakeApiClient implements IApiClient {
     }))),
     archiveSession: (payload: unknown) => this.record('workspace.archiveSession', payload, Promise.resolve(ok({
       archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId],
+    }))),
+    unarchiveSession: (payload: unknown) => this.record('workspace.unarchiveSession', payload, Promise.resolve(ok({
+      archivedSessionIds: [],
+    }))),
+    favoriteSession: (payload: unknown) => this.record('workspace.favoriteSession', payload, Promise.resolve(ok({
+      favoriteSessionIds: [(payload as { sessionId: SessionId }).sessionId],
+    }))),
+    unfavoriteSession: (payload: unknown) => this.record('workspace.unfavoriteSession', payload, Promise.resolve(ok({
+      favoriteSessionIds: [],
+    }))),
+    setWorkspaceTags: (payload: unknown) => this.record('workspace.setWorkspaceTags', payload, Promise.resolve(ok({
+      workspaceTagsById: { [(payload as { workspaceId: string }).workspaceId]: (payload as { tags: string[] }).tags }, sessionTagsById: {},
+    }))),
+    setSessionTags: (payload: unknown) => this.record('workspace.setSessionTags', payload, Promise.resolve(ok({
+      workspaceTagsById: {}, sessionTagsById: { [(payload as { sessionId: string }).sessionId]: (payload as { tags: string[] }).tags },
+    }))),
+    removeArchivedSession: (payload: unknown) => this.record('workspace.removeArchivedSession', payload, Promise.resolve(ok({
+      archivedSessionIds: [], removed: true,
     }))),
   }
 
@@ -223,6 +243,7 @@ export class FakeApiClient implements IApiClient {
     providers: payload => this.record('llm.providers', payload, Promise.resolve(ok({ providers: [] }))),
     models: payload => this.record('llm.models', payload, Promise.resolve(ok({ groups: [], failures: [] }))),
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
+    testModel: payload => this.record('llm.testModel', payload, Promise.resolve(ok({ inputModalities: ['text'] }))),
   }
 
   /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */

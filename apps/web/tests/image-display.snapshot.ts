@@ -134,20 +134,26 @@ it('accepts pasted images into the composer rail in order and removes them', asy
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   })
 
-  // An unsupported file announces a transient toast (the inline strip is
-  // gone) and the banner dismisses itself after its hold-and-fade lifetime.
+  // A pasted non-image file is conversation intake: it parks in the files
+  // rail as a named attachment instead of being refused (the DOM query
+  // mirrors the images rail above — jsdom hides the composer subtree from
+  // role queries).
   fireEvent.paste(textarea, {
     clipboardData: {
       items: [{ kind: 'file', type: 'text/plain', getAsFile: () => new File(['x'], 'notes.txt', { type: 'text/plain' }) }],
       getData: () => '',
     },
   })
-  const unsupportedMessage = 'Only PNG, JPG, WebP, and GIF images are supported'
-  const toast = await screen.findByText(unsupportedMessage)
-  expect(toast.closest('[role="alert"]')).not.toBeNull()
+  const files = await waitFor(() => {
+    const el = document.querySelector('[aria-label="Attachments"]')
+    if (el === null) throw new Error('files rail missing')
+    return el
+  }, { timeout: 5_000 })
+  expect(files.textContent).toContain('notes.txt')
+  fireEvent.click(screen.getByRole('button', { name: 'Remove file notes.txt' }))
   await waitFor(() => {
-    expect(screen.queryByText(unsupportedMessage)).toBeNull()
-  }, { timeout: 6_000 })
+    expect(document.querySelector('[aria-label="Attachments"]')).toBeNull()
+  })
 })
 
 it('accepts a whole-page drop under the limits-labeled overlay and refuses an over-limit batch at intake', async () => {

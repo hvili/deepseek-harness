@@ -33,6 +33,9 @@ import {
 } from '../api/sessions.schema.ts'
 import {
   workspaceArchiveSessionValueSchema,
+  workspaceFavoriteSessionValueSchema, workspaceUnfavoriteSessionValueSchema,
+  workspaceSetWorkspaceTagsValueSchema, workspaceSetSessionTagsValueSchema,
+  workspaceUnarchiveSessionValueSchema, workspaceRemoveArchivedSessionValueSchema,
   workspaceCreateValueSchema,
   workspaceDeleteValueSchema,
   workspaceInsertBeforeValueSchema,
@@ -60,7 +63,7 @@ import {
 import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
 } from '../api/credentials.schema.ts'
-import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
+import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema, llmTestModelValueSchema } from '../api/llm.schema.ts'
 import {
   subagentHistoryValueSchema,
   subagentInterruptValueSchema,
@@ -120,6 +123,12 @@ export interface IApiClient {
     insertBefore(payload: RequestPayload<'workspace.insertBefore'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.insertBefore'>>>
     insertSessionBefore(payload: RequestPayload<'workspace.insertSessionBefore'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.insertSessionBefore'>>>
     archiveSession(payload: RequestPayload<'workspace.archiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.archiveSession'>>>
+    unarchiveSession(payload: RequestPayload<'workspace.unarchiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.unarchiveSession'>>>
+    favoriteSession(payload: RequestPayload<'workspace.favoriteSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.favoriteSession'>>>
+    unfavoriteSession(payload: RequestPayload<'workspace.unfavoriteSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.unfavoriteSession'>>>
+    setWorkspaceTags(payload: RequestPayload<'workspace.setWorkspaceTags'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.setWorkspaceTags'>>>
+    setSessionTags(payload: RequestPayload<'workspace.setSessionTags'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.setSessionTags'>>>
+    removeArchivedSession(payload: RequestPayload<'workspace.removeArchivedSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.removeArchivedSession'>>>
   }
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
@@ -160,6 +169,7 @@ export interface IApiClient {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
     discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
+    testModel(payload: RequestPayload<'llm.testModel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.testModel'>>>
   }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
   respond(message: ClientResponse, signal?: AbortSignal): Promise<RpcReceipt>
@@ -198,6 +208,12 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.insertBefore': workspaceInsertBeforeValueSchema,
   'workspace.insertSessionBefore': workspaceInsertSessionBeforeValueSchema,
   'workspace.archiveSession': workspaceArchiveSessionValueSchema,
+  'workspace.unarchiveSession': workspaceUnarchiveSessionValueSchema,
+  'workspace.favoriteSession': workspaceFavoriteSessionValueSchema,
+  'workspace.unfavoriteSession': workspaceUnfavoriteSessionValueSchema,
+  'workspace.setWorkspaceTags': workspaceSetWorkspaceTagsValueSchema,
+  'workspace.setSessionTags': workspaceSetSessionTagsValueSchema,
+  'workspace.removeArchivedSession': workspaceRemoveArchivedSessionValueSchema,
   'skill.list': skillListValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
@@ -222,6 +238,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'llm.testModel': llmTestModelValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -451,6 +468,12 @@ export abstract class AbstractApiClient implements IApiClient {
     insertBefore: (payload, signal) => this.callUnary('workspace.insertBefore', payload, signal),
     insertSessionBefore: (payload, signal) => this.callUnary('workspace.insertSessionBefore', payload, signal),
     archiveSession: (payload, signal) => this.callUnary('workspace.archiveSession', payload, signal),
+    unarchiveSession: (payload, signal) => this.callUnary('workspace.unarchiveSession', payload, signal),
+    favoriteSession: (payload, signal) => this.callUnary('workspace.favoriteSession', payload, signal),
+    unfavoriteSession: (payload, signal) => this.callUnary('workspace.unfavoriteSession', payload, signal),
+    setWorkspaceTags: (payload, signal) => this.callUnary('workspace.setWorkspaceTags', payload, signal),
+    setSessionTags: (payload, signal) => this.callUnary('workspace.setSessionTags', payload, signal),
+    removeArchivedSession: (payload, signal) => this.callUnary('workspace.removeArchivedSession', payload, signal),
   }
 
   readonly skills: IApiClient['skills'] = {
@@ -498,6 +521,7 @@ export abstract class AbstractApiClient implements IApiClient {
     providers: (payload, signal) => this.callUnary('llm.providers', payload, signal),
     models: (payload, signal) => this.callUnary('llm.models', payload, signal),
     discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
+    testModel: (payload, signal) => this.callUnary('llm.testModel', payload, signal),
   }
 
   readonly events: IApiClient['events'] = {

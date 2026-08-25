@@ -13,7 +13,14 @@ import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@dee
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
-import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
+import {
+  type Config,
+  DEFAULT_PWSH_ARGS,
+  type ResolvedConfig,
+  resolveConfig,
+  type ShellDialect,
+  validateConfig,
+} from './config.ts'
 import { LocalPtySession } from './session.ts'
 import { CONTROLLED_PROMPT } from './sanitize.ts'
 
@@ -89,8 +96,47 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 export const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
+/**
+ * Startup command that installs the controlled prompt and emits one marker
+ * directly after evaluation. Unix pwsh can accept another input line without
+ * rendering `prompt`, so readiness cannot depend on the prompt callback alone.
+ */
+export const PWSH_BOOTSTRAP = ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
+  + "; [Console]::Write([char]27 + ']133;D;0' + [char]7)"
+
+/**
+ * POSIX pwsh interactive reader contract. PSReadLine — and its dumb-terminal
+ * fallback — wedges under node-pty once a `-NoExit -Command` bootstrap
+ * completes: later PTY input echoes but is never accepted, so a persistent
+ * session times out on its first real command (verified with direct node-pty
+ * probes against the hosted pwsh). Driving an explicit
+ * `[Console]::In.ReadLine()` loop consumes stdin reliably, keeps
+ * state/cwd/environment in the same runspace, renders the controlled marker
+ * prompt after every command so readiness stays marker-gated, and exits
+ * cleanly on `exit`. PSReadLine is removed only when actually loaded
+ * (`Remove-Module` of a missing module is a terminating error that would
+ * abort the whole `-Command` on hosts where PSReadLine never activated).
+ */
+export const PWSH_POSIX_READER_LOOP =
+  '; if (Get-Module PSReadLine) { Remove-Module PSReadLine -Force }; while ($true) { [Console]::Out.Write([char]27 + \']133;D;\' + [int]$LASTEXITCODE + [char]7 + \'' + CONTROLLED_PROMPT + '\'); [Console]::Out.Flush(); $line = [Console]::In.ReadLine(); if ($null -eq $line) { break }; try { Invoke-Expression $line } catch { [Console]::Error.WriteLine($_.Exception.Message) } }'
+
+function bootstrapsPwshFromArgv(config: ResolvedConfig): boolean {
+  return process.platform !== 'win32'
+    && config.shellDialect === 'pwsh'
+    && config.shellArgs.length === DEFAULT_PWSH_ARGS.length
+    && config.shellArgs.every((arg, index) => arg === DEFAULT_PWSH_ARGS[index])
+}
+
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
-  const argv = [config.shellPath, ...config.shellArgs]
+  // POSIX pwsh can publish a kernel stdin wait before its line reader owns the
+  // PTY, so its startup command must not travel through interactive input.
+  // Windows ConPTY does not reliably return from -NoExit -Command to its
+  // interactive reader, and therefore retains the in-session path below.
+  // On POSIX the -Command payload drives the explicit reader loop because
+  // pwsh's own line editors never accept input after a -Command bootstrap.
+  const argv = bootstrapsPwshFromArgv(config)
+    ? [config.shellPath, ...config.shellArgs, '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP]
+    : [config.shellPath, ...config.shellArgs]
   if (policy.mode === 'danger-full-access') return argv
   const sandbox = ctx.get('sandbox')
   if (sandbox === undefined) {
@@ -106,6 +152,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  pwshBootstrappedFromArgv: boolean,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -113,32 +160,54 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment: write the prompt
-    // function through the session and wait for the first marker prompt,
-    // which is also the readiness contract of the bash initialize path. The
-    // first send also pins UTF-8 output (the shared pwsh-local preamble)
-    // before anything runs: the session decode path treats PTY bytes as
-    // UTF-8, and an un-pinned console writes its host code page for
-    // non-ASCII output. The banner-to-prompt gap can outlast the silence
-    // bound, so the wait loops over follow-up sends until the controlled
-    // prompt is actually visible (in the viewport or the retained scrollback
-    // when it landed between sends), bounded by the send deadline.
-    let viewport = ''
-    for (;;) {
-      const first = viewport.length === 0
-      const operation = session.startSend({
-        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: first,
+    if (pwshBootstrappedFromArgv) {
+      // The explicit reader loop renders the controlled prompt after the
+      // launch command; normal initialization waits for that full prompt.
+      await session.initialize(signal)
+      // The loop's first [Console]::In.ReadLine() pays a one-time .NET Unix
+      // console warm-up (~1.5s) before any buffered line is processed, so the
+      // first command's output can land after a send settled on the idle
+      // fallback. Consume that warm-up with a no-op line here so the first
+      // real command settles on its prompt marker promptly.
+      const warmup = session.startSend({
+        text: '',
+        submit: true,
         ...signal !== undefined ? { signal } : {},
       })
-      const result = await operation.done
-      if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
-      if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
-      viewport = result.viewport
-      const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      const warmupResult = await warmup.done
+      if (warmupResult.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
+      if (warmupResult.waitReason === 'timeout') {
+        throw new Error('PTY shell did not reach readiness before startup timeout')
+      }
+      return
     }
-    session.motd = viewport
+    // pwsh cannot install its prompt from the environment. On Unix it can
+    // publish a kernel stdin wait before PSReadLine owns the terminal; a write
+    // at that false boundary loses its carriage return and remains pending
+    // until the first user command submits it. Require the native prompt's
+    // full silence window, then install the marker prompt and pin UTF-8 through
+    // a send that may settle only after its controlled marker is observed.
+    await session.initialize(signal, true)
+    const motd = session.motd
+    const operation = session.startSend({
+      text: PWSH_BOOTSTRAP,
+      submit: true,
+      separateSubmit: true,
+      // The kernel can publish stdin-wait before PSReadLine finishes redrawing
+      // the prompt. The bootstrap emits our private OSC marker itself after
+      // evaluation, so delayed input echo cannot be attributed to the first
+      // user command even when Unix pwsh omits the prompt callback entirely.
+      requirePromptMarker: true,
+      ...signal !== undefined ? { signal } : {},
+    })
+    const result = await operation.done
+    if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
+    if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
+    if (result.waitReason !== 'stdin_read') {
+      throw new Error('PTY shell bootstrap settled before the controlled prompt marker')
+    }
+    // Prompt installation is transport setup, not user-visible MOTD.
+    session.motd = motd
   }
   if (signal === undefined) {
     await start()
@@ -190,7 +259,12 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(
+        session,
+        this.config.shellDialect,
+        bootstrapsPwshFromArgv(this.config),
+        spec.signal,
+      )
       return session
     } catch (error) {
       try {

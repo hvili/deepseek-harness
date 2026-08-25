@@ -139,7 +139,12 @@ describe('web e2e: Goal keeps one assistant action row per completed turn', () =
     await recordFixture(scaffold!, sessionId, FIXTURE)
   }, 380_000)
 
-  it.skipIf(MODE === 'record')('keeps actions on both completed Goal turn tails', async () => {
+  // The recorded model commands are POSIX-bound (find/awk/python3/shuf) and
+  // the golden keeps their macOS spellings: pwsh genuinely fails them, and
+  // baking Failed rows into a Windows golden would break the POSIX one. The
+  // scenario's replay coverage stays with the macOS/Linux hosts the testing
+  // policy scopes fixture replay to; record remains available on win32.
+  it.skipIf(MODE === 'record' || process.platform === 'win32')('keeps actions on both completed Goal turn tails', async () => {
     const fixtureEvents = parseSessionLog(await readFile(FIXTURE, 'utf8'))
     expect(createdObjectives(fixtureEvents)).toEqual([PROMPT])
     expect(goalRounds(fixtureEvents)).toEqual([1, 2])

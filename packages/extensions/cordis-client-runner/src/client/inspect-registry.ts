@@ -39,6 +39,7 @@ export interface ClientCordisInspectHost {
 export class ClientCordisInspectRegistry {
   private readonly providers = new Map<string, ClientCordisInspectProviderRegistration>()
   private readonly active = new Map<CordisInspectRequestId, AbortController>()
+  private disposed = false
   private publishQueued = false
   private syncChain = Promise.resolve()
 
@@ -51,6 +52,7 @@ export class ClientCordisInspectRegistry {
    * @returns idempotent disposer.
    */
   register(registration: ClientCordisInspectProviderRegistration): () => void {
+    if (this.disposed) throw new Error('Client Cordis inspect registry is disposed')
     const { manifest } = registration
     if (manifest.id.trim() === '') throw new Error('Client Cordis inspect provider id must not be empty')
     if (this.providers.has(manifest.id)) throw new Error(`Client Cordis inspect provider "${manifest.id}" is already registered`)
@@ -74,14 +76,16 @@ export class ClientCordisInspectRegistry {
 
   /** Publish the current complete manifest, including after reconnect. */
   publish(): void {
-    if (this.publishQueued) return
+    if (this.disposed || this.publishQueued) return
     this.publishQueued = true
     queueMicrotask(() => {
       this.publishQueued = false
+      if (this.disposed) return
       const manifests = [...this.providers.values()].map(provider => provider.manifest)
       this.syncChain = this.syncChain.then(async () => {
         await this.host.sync(manifests)
       }).catch((error: unknown) => {
+        if (this.disposed) return
         console.error('[cordis-client-runner] syncing inspect providers failed:', error)
       })
     })
@@ -93,6 +97,7 @@ export class ClientCordisInspectRegistry {
    * @returns after the first local result has been sent back to Host.
    */
   async query(request: CordisInspectQueryRequest): Promise<void> {
+    if (this.disposed) return
     if (this.active.has(request.requestId)) return
     const controller = new AbortController()
     this.active.set(request.requestId, controller)
@@ -130,6 +135,15 @@ export class ClientCordisInspectRegistry {
   close(requestId: CordisInspectRequestId): void {
     this.active.get(requestId)?.abort()
     this.active.delete(requestId)
+  }
+
+  /** Stop publication and cancel every in-flight page-local query. */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    for (const controller of this.active.values()) controller.abort()
+    this.active.clear()
+    this.providers.clear()
   }
 }
 

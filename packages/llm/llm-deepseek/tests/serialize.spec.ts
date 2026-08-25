@@ -205,6 +205,31 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
+  it('serializes a durable file preview as text for a text-only provider', () => {
+    const wire = serializeMessages([createUserMessage({
+      content: [{
+        type: 'file',
+        attachment: { kind: 'file', attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'application/pdf', bytes: 4, name: 'brief.pdf' },
+        preview: '[File: brief.pdf]\nThe proposal has two sections.',
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })])
+    expect(wire).toEqual([{ role: 'user', content: '[File: brief.pdf]\nThe proposal has two sections.' }])
+  })
+
+  it('serializes a durable file preview through the image-aware path', async () => {
+    const messages = [createUserMessage({
+      content: [{
+        type: 'file',
+        attachment: { kind: 'file', attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), mediaType: 'text/plain', bytes: 4 },
+        preview: 'durable material',
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })]
+    await expect(serializeMessagesWithImages(messages, imageOptions([], fileResolver())))
+      .resolves.toEqual([{ role: 'user', content: 'durable material' }])
+  })
+
   it('rejects image blocks instead of silently flattening them away', () => {
     expect(() => serializeMessages([createUserMessage({
       content: [{
@@ -585,6 +610,24 @@ describe('image serialization', () => {
     })
     expect(resolveFileId).toHaveBeenCalledTimes(1)
     expect(resolveFileId.mock.calls[0]?.[0]).toMatchObject({ attachment: { mediaType: 'image/jpeg' } })
+  })
+
+  it('applies an explicit image-count watermark', async () => {
+    const ref = imageRef('image/png', 3)
+    const wire = await serializeRequestWithImages(request({
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: Array.from({ length: 2 }, () => ({ type: 'image' as const, attachment: ref })),
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), {
+      ...imageOptions([ref]),
+      maxImagesPerRequest: 1,
+      countQuantum: 1,
+    })
+
+    expect(JSON.stringify(wire.messages[0]?.content).match(/older images are omitted first/g)).toHaveLength(1)
+    expect(JSON.stringify(wire.messages[0]?.content).match(/"type":"file"/g)).toHaveLength(1)
   })
 
   it('drops base64 history from a 20-unit high watermark to a 10-unit low watermark', async () => {

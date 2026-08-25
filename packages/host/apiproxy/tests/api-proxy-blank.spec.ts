@@ -33,6 +33,7 @@ async function harness(): Promise<{ ctx: Context; api: ApiProxy; attach: (sessio
   await ctx.plugin(SessionStore)
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
+  ctx.provide('workspaceRegistry', { isPermanentlyRemoved: () => false } as never)
   return {
     ctx,
     api: createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),

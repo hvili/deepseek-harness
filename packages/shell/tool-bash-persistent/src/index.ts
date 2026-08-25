@@ -91,12 +91,18 @@ function commandOutput(
 ): CapturedOutput | undefined {
   const text = snapshot.text
   const end = text.lastIndexOf(marker.end)
-  const status = /^(\d+)\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
+  // A Windows ConPTY render pads lines with trailing spaces: the status
+  // digits can carry horizontal padding before their newline, and the
+  // start marker line carries padding before its newline. The completion
+  // pattern and the after-marker trim tolerate that padding; the trailing
+  // trim keeps the output's own trailing spaces, which are legitimate
+  // output (a command can print the prompt spelling).
+  const status = /^(\d+)[ \t]*\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
   if (status === undefined) return undefined
   const startMarker = text.lastIndexOf(marker.start, end)
   const start = startMarker < 0 ? 0 : startMarker + marker.start.length
   return {
-    text: trimTrailingNewline(text.slice(start, end).replace(/^\r?\n/, '')),
+    text: trimTrailingNewline(text.slice(start, end).replace(/^[ \t]*\r?\n/, '')),
     incomplete: startMarker < 0,
     exitCode: Number(status),
   }
@@ -110,15 +116,32 @@ function partialOutput(
 ): CapturedOutput {
   const startMarker = snapshot.text.lastIndexOf(marker.start)
   if (startMarker >= 0) {
+    const tail = snapshot.text.slice(startMarker + marker.start.length)
+    // A completed end marker (with status digits) inside the tail means the
+    // command finished after the completion check's newest-page read missed
+    // the retained marker lines; cut there so the internal marker never
+    // reaches the model, and carry the status it reported.
+    const endAt = tail.lastIndexOf(marker.end)
+    if (endAt >= 0) {
+      const status = /^(\d+)[ \t]*\r?\n/.exec(tail.slice(endAt + marker.end.length))?.[1]
+      /* v8 ignore next -- a torn marker stays incomplete until the polling loop observes its status digits. */
+      if (status !== undefined) {
+        return {
+          text: trimTrailingNewline(tail.slice(0, endAt).replace(/^[ \t]*\r?\n/, '')),
+          incomplete: false,
+          exitCode: Number(status),
+        }
+      }
+    }
     return {
-      text: trimTrailingNewline(snapshot.text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
+      text: trimTrailingNewline(tail.replace(/^[ \t]*\r?\n/, '')),
       incomplete: false,
     }
   }
   const fallbackStart = fallback.lastIndexOf(marker.start)
   const afterStart = fallbackStart < 0
     ? fallback
-    : fallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
+    : fallback.slice(fallbackStart + marker.start.length).replace(/^[ \t]*\r?\n/, '')
   const fallbackEnd = afterStart.lastIndexOf(marker.end)
   const beforeEnd = fallbackEnd < 0 ? afterStart : afterStart.slice(0, fallbackEnd)
   return {

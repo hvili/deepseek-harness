@@ -162,6 +162,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  // Restore previews run in a sandboxed subprocess, so the reader is a real
+  // runtime entry even though it is intentionally not a public export.
+  '@deepseek-ai/dsh-restore-wizard': ['lib/preview-reader.js'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

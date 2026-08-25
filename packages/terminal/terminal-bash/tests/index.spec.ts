@@ -10,10 +10,9 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import TerminalSessionService, { TerminalBackendCleanupError, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendRequest, TerminalWaitReason } from '@deepseek-ai/dsh-terminal'
-import { BashTerminalBackend, PWSH_PROMPT_SETUP } from '@deepseek-ai/dsh-terminal-bash'
-import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
+import { BashTerminalBackend, PWSH_BOOTSTRAP, PWSH_POSIX_READER_LOOP } from '@deepseek-ai/dsh-terminal-bash'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
-import type { ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+import { DEFAULT_PWSH_ARGS, type ResolvedConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import type { LocalPtySession } from '@deepseek-ai/dsh-terminal-bash/src/session.ts'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -347,14 +346,18 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
-    let sent: TerminalSendRequest | undefined
+    let sent: (TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean }) | undefined
+    let initializedWithIdleSilence: boolean | undefined
     const session = {
-      motd: '',
-      startSend: (request: TerminalSendRequest) => {
+      motd: 'PowerShell banner',
+      initialize: async (_signal?: AbortSignal, requireIdleSilence?: boolean) => {
+        initializedWithIdleSilence = requireIdleSilence
+      },
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean }) => {
         sent = request
         return {
           done: Promise.resolve({
-            viewport: 'setup-echo dsh> ', waitReason: 'stdin_read' as const,
+            viewport: 'setup-echo without a printable prompt', waitReason: 'stdin_read' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -362,6 +365,7 @@ describe('BashTerminalBackend startup rollback', () => {
         }
       },
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -370,8 +374,14 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
-    expect(sent).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
-    expect(session.motd).toBe('setup-echo dsh> ')
+    expect(sent).toMatchObject({
+      text: PWSH_BOOTSTRAP,
+      submit: true,
+      separateSubmit: true,
+      requirePromptMarker: true,
+    })
+    expect(initializedWithIdleSilence).toBe(true)
+    expect(session.motd).toBe('PowerShell banner')
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
     })
@@ -379,19 +389,19 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
   })
 
-  it('keeps waiting for the marker prompt when the first send settles on silence', async () => {
+  it('rejects a pwsh bootstrap that settles before its controlled prompt marker', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
+    const sends: (TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean })[] = []
     const session = {
-      motd: '',
-      startSend: (request: TerminalSendRequest) => {
+      motd: 'PowerShell banner',
+      initialize: async () => {},
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean }) => {
         sends.push(request)
-        const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : 'PowerShell 7.6.4\n',
+            viewport: '',
             waitReason: 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -400,6 +410,7 @@ describe('BashTerminalBackend startup rollback', () => {
         }
       },
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => Promise.resolve(),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(
       ctx,
@@ -407,10 +418,65 @@ describe('BashTerminalBackend startup rollback', () => {
       async () => terminalHandle(),
       () => session,
     )
-    await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(2)
-    expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('dsh> ')
+    await expect(backend.spawn(spec(agent(ctx))))
+      .rejects.toThrow('PTY shell bootstrap settled before the controlled prompt marker')
+    expect(sends).toHaveLength(1)
+    expect(sends[0]).toMatchObject({
+      text: PWSH_BOOTSTRAP,
+      submit: true,
+      separateSubmit: true,
+      requirePromptMarker: true,
+    })
+  })
+
+  it('preloads the default pwsh bootstrap through POSIX launch argv', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const ctx = new Context()
+      await ctx.plugin(EmptySandbox)
+      await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+      let spawned: SubprocessTerminalSpawnSpec | undefined
+      const initialize = vi.fn<(signal?: AbortSignal) => Promise<void>>().mockResolvedValue(undefined)
+      const warmupSends: Array<{ text: string; submit: boolean }> = []
+      const session = {
+        initialize,
+        startSend: (request: { text: string; submit: boolean }) => {
+          // The explicit reader loop's first ReadLine pays a one-time console
+          // warm-up; spawn consumes it with a no-op line so the first real
+          // command settles on its prompt marker promptly.
+          warmupSends.push(request)
+          return {
+            done: Promise.resolve({
+              viewport: 'dsh> ', waitReason: 'stdin_read' as const,
+              sessionStatus: { kind: 'running' as const }, truncated: false,
+            }),
+            readOutput: () => ({ delta: '', truncated: false }),
+            cancel: () => false,
+          }
+        },
+        close: () => Promise.resolve(),
+      } as unknown as LocalPtySession
+      const backend = new BashTerminalBackend(
+        ctx,
+        {
+          ...config(),
+          shellDialect: 'pwsh',
+          shellPath: 'pwsh',
+          shellArgs: [...DEFAULT_PWSH_ARGS],
+        },
+        async (spec) => { spawned = spec; return terminalHandle() },
+        () => session,
+      )
+
+      expect(await backend.spawn(spec(agent(ctx)))).toBe(session)
+      expect(spawned?.argv).toEqual([
+        'pwsh', ...DEFAULT_PWSH_ARGS, '-NoExit', '-Command', PWSH_BOOTSTRAP + PWSH_POSIX_READER_LOOP,
+      ])
+      expect(initialize).toHaveBeenCalledWith(undefined)
+      expect(warmupSends).toEqual([{ text: '', submit: true }])
+    } finally {
+      platform.mockRestore()
+    }
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
@@ -418,6 +484,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
+      initialize: async () => {},
       startSend: () => ({
         done: Promise.resolve({
           viewport: 'no-prompt', waitReason,
@@ -433,16 +500,42 @@ describe('BashTerminalBackend startup rollback', () => {
     await expect(exited.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
     const timedOut = new BashTerminalBackend(ctx, { ...config(), shellDialect: 'pwsh' }, async () => terminalHandle(), () => sessionFor('timeout'))
     await expect(timedOut.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+
+    // POSIX argv-bootstrapped sessions surface the same startup failures from
+    // the warm-up send that consumes the reader-loop first-read latency.
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      const argvExited = new BashTerminalBackend(
+        ctx,
+        { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: [...DEFAULT_PWSH_ARGS] },
+        async () => terminalHandle(),
+        () => sessionFor('session_exit'),
+      )
+      await expect(argvExited.spawn(spec(agent(ctx)))).rejects.toThrow('PTY shell exited during startup')
+      const argvTimedOut = new BashTerminalBackend(
+        ctx,
+        { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', shellArgs: [...DEFAULT_PWSH_ARGS] },
+        async () => terminalHandle(),
+        () => sessionFor('timeout'),
+      )
+      await expect(argvTimedOut.spawn(spec(agent(ctx)))).rejects.toThrow('did not reach readiness before startup timeout')
+    } finally {
+      platform.mockRestore()
+    }
   })
 
   it('forwards the spawn signal into the pwsh bootstrap sends', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
-    const sends: TerminalSendRequest[] = []
+    const sends: (TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean })[] = []
+    let initializeSignal: AbortSignal | undefined
     const session = {
-      motd: '',
-      startSend: (request: TerminalSendRequest) => {
+      motd: 'PowerShell banner',
+      async initialize(signal?: AbortSignal) {
+        initializeSignal = signal
+      },
+      startSend: (request: TerminalSendRequest & { requirePromptMarker?: boolean; separateSubmit?: boolean }) => {
         sends.push(request)
         return {
           done: Promise.resolve({
@@ -463,8 +556,9 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     const signal = new AbortController().signal
     const spawned = await backend.spawn({ ...spec(agent(ctx)), signal })
-    expect(spawned.motd).toBe('dsh> ')
+    expect(spawned.motd).toBe('PowerShell banner')
     expect(sends).toHaveLength(1)
+    expect(initializeSignal).toBe(signal)
     expect(sends[0]?.signal).toBe(signal)
   })
 })

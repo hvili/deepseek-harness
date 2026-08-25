@@ -179,7 +179,9 @@ async function boot(): Promise<Bench> {
     },
   }
   ctx.reflect.provide('remote', remote)
+  ctx.reflect.provide('connection', {})
   ctx.reflect.provide('remote.dynamicCordisRunner', namespace)
+  ctx.reflect.provide('apiRemotesReady', true)
   const fiber = ctx.plugin(ClientHalf)
   await fiber
   return {

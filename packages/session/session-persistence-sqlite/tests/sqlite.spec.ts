@@ -503,14 +503,25 @@ describe('SessionPersistenceSqlite schema ownership', () => {
       attempts += 1
       return Object.assign(new Error('database is locked'), { errcode: 5 })
     })
-    await expect(openDatabase(
-      BusyDatabase,
-      await freshDbPath('dsh-sqlite-journal-paced-'),
-      'wal',
-      50,
-    )).rejects.toThrow('database is locked')
-    expect(attempts).toBeGreaterThan(1)
-    expect(attempts).toBeLessThanOrEqual(6)
+    const path = await freshDbPath('dsh-sqlite-journal-paced-')
+    // Drive the open-relative deadline through a scripted clock so the paced
+    // retry is asserted deterministically: attempt 1 fails inside the budget,
+    // the retry interval elapses while the budget still holds, and attempt 2
+    // lands exactly on the deadline. A real clock lets a loaded runner spend
+    // the whole 50 ms budget inside the first 10 ms delay (coarse host
+    // timers), which observed flakes reduced the scenario to a single
+    // attempt on the Windows coverage lane.
+    const clock = vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(50)
+    try {
+      await expect(openDatabase(BusyDatabase, path, 'wal', 50)).rejects.toThrow('database is locked')
+    } finally {
+      clock.mockRestore()
+    }
+    expect(attempts).toBe(2)
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {

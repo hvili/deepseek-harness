@@ -35,6 +35,12 @@ export interface WorkspaceView {
   updatedAt: string
 }
 
+/** Complete durable tag projections keyed by workspace and session id. */
+export interface WorkspaceTagsSnapshot {
+  workspaceTagsById: Record<string, string[]>
+  sessionTagsById: Record<string, string[]>
+}
+
 /** Workspace-domain unary methods (the map keys workspace.* of RpcMethodMap). */
 export interface WorkspaceApi {
   /**
@@ -43,7 +49,11 @@ export interface WorkspaceApi {
    * `host/archived-sessions-changed`). Archived sessions stay in their
    * workspace's `sessionIds` account; grouping surfaces hide them.
    */
-  list(request: RpcRequest<{}>): Promise<RpcResponse<{ items: WorkspaceView[]; archivedSessionIds: SessionId[] }>>
+  list(request: RpcRequest<{}>): Promise<RpcResponse<{
+    items: WorkspaceView[]
+    archivedSessionIds: SessionId[]
+    favoriteSessionIds: SessionId[]
+  } & WorkspaceTagsSnapshot>>
 
   /**
    * Creates (or idempotently resolves) a workspace over an EXISTING directory
@@ -106,4 +116,26 @@ export interface WorkspaceApi {
    */
   archiveSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /** Restore an archived session without changing its durable log. */
+  unarchiveSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  favoriteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>>
+
+  unfavoriteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ favoriteSessionIds: SessionId[] }>>
+
+  /** Replace one workspace's normalized durable tags. */
+  setWorkspaceTags(request: RpcRequest<{ workspaceId: WorkspaceId; tags: string[] }>):
+  Promise<RpcResponse<WorkspaceTagsSnapshot>>
+
+  /** Replace one session's normalized durable tags. */
+  setSessionTags(request: RpcRequest<{ sessionId: SessionId; tags: string[] }>):
+  Promise<RpcResponse<WorkspaceTagsSnapshot>>
+
+  /** Permanently remove an archived cold session's log and registry references. */
+  removeArchivedSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[]; removed: boolean }>>
 }

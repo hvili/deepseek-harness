@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { NormalizationPolicy } from '../src/normalization.ts'
-import { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile } from '../src/store.ts'
+import { commitPreparedImageFile, prepareImageFile, readFileAttachmentFile, readImageFile, saveFileAttachmentFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
@@ -261,6 +261,50 @@ describe('local attachment store', () => {
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
   })
 
+  it('persists generic material files with the same opaque identity and integrity checks', async () => {
+    const storageRoot = await root()
+    const data = Uint8Array.from(Buffer.from('%PDF-1.7\nmaterial', 'utf8'))
+    const ref = await saveFileAttachmentFile(storageRoot, {
+      data, mediaType: 'application/pdf', name: 'C:\\private\\brief.pdf',
+    })
+    expect(ref).toMatchObject({ kind: 'file', mediaType: 'application/pdf', bytes: data.byteLength, name: 'brief.pdf' })
+    expect(String(ref.attachmentId)).toMatch(/^sha256:[a-f0-9]{64}$/)
+    await expect(readFileAttachmentFile(storageRoot, ref)).resolves.toEqual({ ref, data })
+    await expect(saveFileAttachmentFile(storageRoot, { data: new Uint8Array(), mediaType: 'application/pdf' }))
+      .rejects.toMatchObject({ code: 'INVALID_FILE' })
+    await expect(saveFileAttachmentFile(storageRoot, { data, mediaType: 'application/\u0000pdf' }))
+      .rejects.toMatchObject({ code: 'INVALID_MEDIA_TYPE' })
+    await expect(readFileAttachmentFile(storageRoot, { ...ref, bytes: ref.bytes + 1 }))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+
+    const unnamed = await saveFileAttachmentFile(storageRoot, {
+      data: Uint8Array.of(7), mediaType: 'application/octet-stream', name: ' \u0000 ',
+    })
+    expect(unnamed).not.toHaveProperty('name')
+
+    await expect(readFileAttachmentFile(storageRoot, {
+      ...ref, attachmentId: 'not-a-digest' as typeof ref.attachmentId,
+    })).rejects.toMatchObject({ code: 'INVALID_ATTACHMENT_REF' })
+    await expect(readFileAttachmentFile(storageRoot, {
+      ...ref, mediaType: 'application/\u0000pdf',
+    })).rejects.toMatchObject({ code: 'INVALID_ATTACHMENT_REF' })
+
+    const missing = {
+      ...ref,
+      attachmentId: `sha256:${'0'.repeat(64)}` as typeof ref.attachmentId,
+    }
+    await expect(readFileAttachmentFile(storageRoot, missing, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND' })
+
+    const unreadable = {
+      ...ref,
+      attachmentId: `sha256:${'f'.repeat(64)}` as typeof ref.attachmentId,
+    }
+    await mkdir(join(storageRoot, 'objects', 'ff', 'f'.repeat(64)), { recursive: true })
+    await expect(readFileAttachmentFile(storageRoot, unreadable))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_READ_FAILED' })
+  })
+
   it('rejects prepared bytes that no longer match their content-addressed reference', async () => {
     const storageRoot = await root()
     const prepared = await prepareImageFile({ data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
@@ -268,6 +312,5 @@ describe('local attachment store', () => {
     await expect(commitPreparedImageFile(storageRoot, {
       ...prepared,
       data: Uint8Array.of(...prepared.data, 0),
-    })).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
-  })
+    })).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })  })
 })

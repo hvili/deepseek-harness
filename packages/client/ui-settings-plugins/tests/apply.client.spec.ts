@@ -9,12 +9,10 @@ import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {
-  ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
+  ArchivedSessionsTabInjected, ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
 } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 
-// These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
-// so browser-language detection never runs and a fresh LocaleRuntime opens on
-// FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
+// The test lane has no browser language; state the shipped Chinese copy.
 
 /**
  * @param served - namespaces the Host describes; omitted answers a failed read,
@@ -53,6 +51,13 @@ async function bench(served?: string[]) {
       credentials: { describe: describeCredentials },
     },
   } as never)
+  ctx.provide('workspaces', {
+    unarchiveSession: vi.fn(async () => {}),
+    removeArchivedSession: vi.fn(async () => true),
+  } as never)
+  ctx.provide('sessions', {
+    open: vi.fn(),
+  } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings }
 }
@@ -66,16 +71,16 @@ function declareRoot(slots: SlotRegistry): () => void {
 
 describe('ui-settings-plugins apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'workspaces', 'sessions'])
   })
 
-  it('registers one Plugins section and declares the tab and card slots', async () => {
+  it('registers Plugins and Archived conversations as separate Settings sections', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const section = slots.entries('settings.section')[0]!
+    const section = slots.entries('settings.section').find(entry => entry.options.id === 'plugins')!
     expect(section.options).toMatchObject({ id: 'plugins', order: 15 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
     expect(resolveSlotLabel(section.options.label)).toBe('插件')
@@ -84,6 +89,11 @@ describe('ui-settings-plugins apply', () => {
     expect(tab.options).toMatchObject({ id: 'configurable', order: 0 })
     expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
+
+    const archived = slots.entries('settings.section').find(entry => entry.options.id === 'archived-sessions')!
+    expect(archived.options).toMatchObject({ order: 25 })
+    expect(resolveSlotLabel(archived.options.label)).toBe('已归档对话')
+    expect(slots.entries('settings.plugins.tab').map(entry => entry.options.id)).toEqual(['configurable'])
   })
 
 
@@ -92,7 +102,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const section = slots.entries('settings.section')[0]!
+    const section = slots.entries('settings.section').find(entry => entry.options.id === 'plugins')!
     const sectionFace = (section.inject as unknown as () => PluginsSettingsSectionInjected)()
     const initialTabs = sectionFace.hooks.tabs.getSnapshot()
     expect(initialTabs).toEqual([
@@ -117,6 +127,10 @@ describe('ui-settings-plugins apply', () => {
       // Each card injects exactly one snapshot store plus its own actions.
       expect(Object.keys(face.hooks)).toHaveLength(1)
     }
+    const archived = slots.entries('settings.section').find(entry => entry.options.id === 'archived-sessions')!
+    const archivedFace = (archived.inject as unknown as () => ArchivedSessionsTabInjected)()
+    expect(typeof archivedFace.restore).toBe('function')
+    expect(typeof archivedFace.remove).toBe('function')
   })
 
   it('keys each card it ships on the settings namespace that card edits', async () => {
@@ -126,7 +140,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'web-search-deepseek'])
+      .toEqual(['shell', 'agent-loop', 'web-search-deepseek', 'vision-proxy'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -204,7 +218,7 @@ describe('ui-settings-plugins apply', () => {
 
     declareRoot(slots)
 
-    await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
+    await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(2) })
   })
 
   it('collapses every contribution on teardown', async () => {
@@ -212,7 +226,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(3)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
 
     await fiber.dispose()
 

@@ -9,6 +9,19 @@ export const OFFLOADED_IMAGE_TEXT
   = '[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]'
 
 /**
+ * Model-visible text for a durable generic file when a provider has no native
+ * file-input vocabulary. Intake replaces this fallback with a bounded parser
+ * preview when extraction succeeds.
+ * @param block - durable file block from the session log.
+ * @returns bounded text that identifies the supplied material without bytes or paths.
+ */
+export function fileBlockText(block: Extract<ContentBlock, { type: 'file' }>): string {
+  if (block.preview !== undefined && block.preview !== '') return block.preview
+  const name = block.attachment.name ?? 'unnamed file'
+  return `[Attached file: ${name} (${block.attachment.mediaType}). Text extraction is unavailable for this file.]`
+}
+
+/**
  * Stable text shown to a model that cannot accept one durable image reference.
  * @param ref - durable master reference omitted from the request.
  * @returns deterministic text-only placeholder.

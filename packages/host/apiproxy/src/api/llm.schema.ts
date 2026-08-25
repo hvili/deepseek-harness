@@ -62,3 +62,19 @@ export const llmDiscoverModelsRequestSchema = z.object({
 export const llmDiscoverModelsValueSchema = z.object({
   models: z.array(discoveredModelViewSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'llm.discoverModels'>>>
+
+/** llm.testModel request payload. */
+export const llmTestModelRequestSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  // When true, llm.testModel sends one 1x1 image through the provider's real
+  // streaming path instead of only resolving catalog metadata. The probe spends
+  // a tiny token budget; omit it for the original no-cost configuration check.
+  probeVision: z.boolean().optional(),
+  timeoutMs: z.number().int().positive().max(300000).optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'llm.testModel'>>>
+
+/** llm.testModel response value. */
+export const llmTestModelValueSchema = z.object({
+  inputModalities: z.array(z.string()).optional(),
+}) satisfies z.ZodType<Wire<ResponseValue<'llm.testModel'>>>

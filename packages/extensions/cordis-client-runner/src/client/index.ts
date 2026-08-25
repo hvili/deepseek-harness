@@ -178,16 +178,18 @@ export const name = 'cordis-client-runner'
  * namespace parks this plugin until the host side exists, so a page never loads
  * a browser half whose host half it could not reach.
  */
-export const inject = ['loader', 'modules', 'slots', 'remote', 'remote.dynamicCordisRunner']
+export const inject = ['loader', 'modules', 'slots', 'remote', 'connection', 'apiRemotesReady', 'remote.dynamicCordisRunner']
 
 /**
  * Client plugin body: build the runner and subscribe the dispatch family.
  * @param ctx - client root context.
+ * @returns disposer that retires page-local inspector work before its providers unload.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context): () => void {
   provideClientTimer(ctx)
   const inspect = new ClientCordisInspectRegistry({
     sync: async (providers) => {
+      if (ctx.get('connection') === undefined) return
       const answered = await ctx.remote.dynamicCordisRunner.syncInspectManifest(providers)
       if (!answered.ok) throw new Error(`${answered.error.code}: ${answered.error.message}`)
     },
@@ -305,4 +307,6 @@ export function apply(ctx: Context): void {
     })
   })
   ctx.remote.$on('cordis/inspect-query-resolved', (resolved) => { inspect.close(resolved.requestId) })
+
+  return () => { inspect.dispose() }
 }

@@ -20,7 +20,7 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   SessionEvent,
   SessionId,
@@ -1583,6 +1583,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
+  const favoriteSessionIds: SessionId[] = []
+  const workspaceTagsById: Record<string, string[]> = {}
+  const sessionTagsById: Record<string, string[]> = {}
 
   // In-memory browse tree behind the fixture's `browse` picker capability —
   // deterministic content mirroring the design mock so assembled Web tests
@@ -2508,6 +2511,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          if (block.type === 'file') {
+            const attachment: FileAttachmentRef = {
+              kind: 'file',
+              attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
+              mediaType: block.mediaType,
+              bytes: Math.max(1, Math.floor(block.data.length * 3 / 4)),
+              ...block.name === undefined ? {} : { name: block.name },
+            }
+            return {
+              type: 'file', attachment,
+              preview: `[Attached file: ${attachment.name ?? 'unnamed file'} (${attachment.mediaType})]`,
+              extraction: { status: 'failed', code: 'UNSUPPORTED_FILE_TYPE', message: 'Fixture does not extract files.' },
+            }
+          }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,
@@ -2661,6 +2678,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
+        favoriteSessionIds: [...favoriteSessionIds],
+        workspaceTagsById: Object.fromEntries(Object.entries(workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+        sessionTagsById: Object.fromEntries(Object.entries(sessionTagsById).map(([id, tags]) => [id, [...tags]])),
       }),
       create: (request) => {
         const { path } = request.payload
@@ -2787,6 +2807,52 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
         }
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      unarchiveSession: (request) => {
+        const { sessionId } = request.payload
+        archivedSessionIds.splice(0, archivedSessionIds.length, ...archivedSessionIds.filter(id => id !== sessionId))
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      favoriteSession: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const { sessionId } = request.payload
+        if (!favoriteSessionIds.includes(sessionId)) {
+          favoriteSessionIds.push(sessionId)
+          emitHost({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] })
+        }
+        return ok(request, { favoriteSessionIds: [...favoriteSessionIds] })
+      },
+      unfavoriteSession: (request) => {
+        const { sessionId } = request.payload
+        if (favoriteSessionIds.includes(sessionId)) {
+          favoriteSessionIds.splice(0, favoriteSessionIds.length, ...favoriteSessionIds.filter(id => id !== sessionId))
+          emitHost({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] })
+        }
+        return ok(request, { favoriteSessionIds: [...favoriteSessionIds] })
+      },
+      setWorkspaceTags: (request) => {
+        const { workspaceId, tags } = request.payload
+        workspaceTagsById[workspaceId] = [...tags]
+        emitHost({ type: 'host/workspace-tags-changed', workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+        return ok(request, { workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+      },
+      setSessionTags: (request) => {
+        const { sessionId, tags } = request.payload
+        sessionTagsById[sessionId] = [...tags]
+        emitHost({ type: 'host/workspace-tags-changed', workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+        return ok(request, { workspaceTagsById: { ...workspaceTagsById }, sessionTagsById: { ...sessionTagsById } })
+      },
+      removeArchivedSession: (request) => {
+        const { sessionId } = request.payload
+        const wasArchived = archivedSessionIds.includes(sessionId)
+        archivedSessionIds.splice(0, archivedSessionIds.length, ...archivedSessionIds.filter(id => id !== sessionId))
+        favoriteSessionIds.splice(0, favoriteSessionIds.length, ...favoriteSessionIds.filter(id => id !== sessionId))
+        sessions.splice(0, sessions.length, ...sessions.filter(session => session.sessionId !== sessionId))
+        emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        if (wasArchived) emitHost({ type: 'host/session-removed', sessionId })
+        return ok(request, { archivedSessionIds: [...archivedSessionIds], removed: wasArchived })
       },
     },
     agentPresets: {
@@ -3055,6 +3121,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       discoverModels: request => ok(request, {
         models: fixtureModelGroups().flatMap(group => group.models.map(model => ({ id: model.id, name: model.name }))),
       }),
+      testModel: request => ok(request, {
+        inputModalities: ['text', 'image'],
+      }),
     },
     respond(message: ClientResponse): Promise<RpcReceipt> {
       // Same routing discipline as the host: rpcId first, then the payload's
@@ -3119,6 +3188,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'goals/resume': return Promise.resolve(goalRemotes.resume(sessionId, args.ref as FxGoalRef))
         case 'goals/complete': return Promise.resolve(goalRemotes.complete(sessionId, args.ref as FxGoalRef))
         case 'goals/clear': return Promise.resolve(goalRemotes.clear(sessionId, args.ref as FxGoalRef))
+        // The fixture has no dynamic packages, but the shipped Client runner
+        // always synchronizes its inspector directory and reads this inventory.
+        // Keep these read-only endpoints present so fixture mode models the
+        // assembled host contract rather than producing transport failures.
+        case 'dynamicCordisRunner/inventory': return Promise.resolve({ ok: true, value: [] })
+        case 'dynamicCordisRunner/syncInspectManifest': return Promise.resolve({ ok: true, value: null })
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }
@@ -3203,6 +3278,12 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
+      case 'workspace.favoriteSession': return this.api.workspace.favoriteSession(request)
+      case 'workspace.unfavoriteSession': return this.api.workspace.unfavoriteSession(request)
+      case 'workspace.setWorkspaceTags': return this.api.workspace.setWorkspaceTags(request)
+      case 'workspace.setSessionTags': return this.api.workspace.setSessionTags(request)
+      case 'workspace.removeArchivedSession': return this.api.workspace.removeArchivedSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)
@@ -3227,6 +3308,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
+      case 'llm.testModel': return this.api.llm.testModel(request)
     }
   }
 

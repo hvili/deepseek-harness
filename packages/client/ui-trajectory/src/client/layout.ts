@@ -775,6 +775,11 @@ function promptChangeLabel(change: RequestPromptChange): string {
   return 'System Prompt and Tools Updated'
 }
 
+/** Closed-union exhaustiveness fence for assistant response blocks. */
+function assertNever(value: never): never {
+  throw new Error(`unhandled assistant block: ${String(value)}`)
+}
+
 function assistantSourceBlock(block: AssistantBlock): TrajectorySourceBlock {
   switch (block.kind) {
     case 'text': return { type: 'text', content: block.text }
@@ -787,11 +792,13 @@ function assistantSourceBlock(block: AssistantBlock): TrajectorySourceBlock {
     }
     // Attachment refs carry no fetchable bytes, so the record shows the
     // durable metadata instead of an inline preview.
-    case 'image': return {
-      type: 'image',
+    case 'image':
+    case 'file': return {
+      type: block.kind,
       content: stringifySourceValue(block.attachment),
     }
     case 'other': return sourceBlock(block.block)
+    default: return assertNever(block)
   }
 }
 

@@ -36,6 +36,9 @@ import {
 } from '../api/host.schema.ts'
 import {
   workspaceArchiveSessionRequestSchema,
+  workspaceFavoriteSessionRequestSchema, workspaceUnfavoriteSessionRequestSchema,
+  workspaceSetWorkspaceTagsRequestSchema, workspaceSetSessionTagsRequestSchema,
+  workspaceUnarchiveSessionRequestSchema, workspaceRemoveArchivedSessionRequestSchema,
   workspaceCreateRequestSchema,
   workspaceDeleteRequestSchema,
   workspaceInsertBeforeRequestSchema,
@@ -63,7 +66,7 @@ import {
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
-import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema, llmTestModelRequestSchema } from '../api/llm.schema.ts'
 import {
   subagentHistoryRequestSchema,
   subagentInterruptRequestSchema,
@@ -116,6 +119,12 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.insertBefore': { schema: workspaceInsertBeforeRequestSchema, invoke: (api, r) => api.workspace.insertBefore(r) },
   'workspace.insertSessionBefore': { schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r) },
   'workspace.archiveSession': { schema: workspaceArchiveSessionRequestSchema, invoke: (api, r) => api.workspace.archiveSession(r) },
+  'workspace.unarchiveSession': { schema: workspaceUnarchiveSessionRequestSchema, invoke: (api, r) => api.workspace.unarchiveSession(r) },
+  'workspace.favoriteSession': { schema: workspaceFavoriteSessionRequestSchema, invoke: (api, r) => api.workspace.favoriteSession(r) },
+  'workspace.unfavoriteSession': { schema: workspaceUnfavoriteSessionRequestSchema, invoke: (api, r) => api.workspace.unfavoriteSession(r) },
+  'workspace.setWorkspaceTags': { schema: workspaceSetWorkspaceTagsRequestSchema, invoke: (api, r) => api.workspace.setWorkspaceTags(r) },
+  'workspace.setSessionTags': { schema: workspaceSetSessionTagsRequestSchema, invoke: (api, r) => api.workspace.setSessionTags(r) },
+  'workspace.removeArchivedSession': { schema: workspaceRemoveArchivedSessionRequestSchema, invoke: (api, r) => api.workspace.removeArchivedSession(r) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.list': { schema: agentPresetListRequestSchema, invoke: (api, r) => api.agentPresets.list(r) },
   'agentPreset.select': { schema: agentPresetSelectRequestSchema, invoke: (api, r) => api.agentPresets.select(r) },
@@ -140,6 +149,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
+  'llm.testModel': { schema: llmTestModelRequestSchema, invoke: (api, r) => api.llm.testModel(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */
@@ -174,9 +184,8 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  */
 // K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
 // schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
-// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
-  api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
+  api: ApiProxy, method: K, message: ClientRequest & { method: K }, signal: AbortSignal,
 ): Promise<Response> {
   const route = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
@@ -314,7 +323,7 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       if (message.method !== method) {
         return errorResponse(message.rpcId, { code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] } })
       }
-      return handleUnary(api, method, message, req.signal)
+      return handleUnary(api, method, { ...message, method }, req.signal)
     },
   }
 }

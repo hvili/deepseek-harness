@@ -181,6 +181,14 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.coordinator.append(id, events)
   }
 
+  /** Permanently remove one materialized session directory, when present. */
+  override async remove(id: SessionId): Promise<boolean> {
+    const artifact = (await this.listArtifacts()).find(candidate => candidate.header.id === id)
+    if (artifact === undefined) return false
+    await rm(dirname(artifact.path), { recursive: true, force: false })
+    return true
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     return this.coordinator.prepare(id, signal)
   }

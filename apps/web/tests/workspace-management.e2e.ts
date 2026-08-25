@@ -105,12 +105,20 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * the row before its hover-only button becomes visible.
    */
   async function clickHoverAction(row: Locator, name: string): Promise<void> {
-    const button = row.getByRole('button', { name })
     await expect.poll(async () => {
-      await row.hover()
-      return await button.isVisible()
+      try {
+        await row.hover()
+        const button = row.getByRole('button', { name })
+        if (!await button.isVisible()) return false
+        // Keep reveal and click in the retried unit: a workspace projection can
+        // replace the row between those two operations without changing its
+        // semantic identity.
+        await button.click({ timeout: 1_000 })
+        return true
+      } catch {
+        return false
+      }
     }, { timeout: 10_000 }).toBe(true)
-    await button.click()
   }
 
   beforeAll(async () => {
@@ -468,8 +476,9 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * @returns the session row locator, already present.
    */
   async function seededSessionRow() {
-    const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
-    const ungroupedSection = ungroupedRow.locator('..')
+    const ungroupedRow = page.getByText('Ungrouped', { exact: true })
+      .locator('xpath=ancestor::*[@role="treeitem"][1]')
+    const ungroupedSection = ungroupedRow.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
     // Initial-current auto-expansion can race this gesture; converge on
     // expanded rather than assuming which update wins first.
     await expect.poll(async () => {
@@ -553,8 +562,9 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive'))
     // The seeded session lives under Ungrouped (expanded by the hover-card
     // test's gesture; converge again for order independence).
-    const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
-    const ungroupedSection = ungroupedRow.locator('..')
+    const ungroupedRow = page.getByText('Ungrouped', { exact: true })
+      .locator('xpath=ancestor::*[@role="treeitem"][1]')
+    const ungroupedSection = ungroupedRow.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
     await expect.poll(async () => {
       if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
         await page.getByText('Ungrouped', { exact: true }).click()
@@ -594,6 +604,92 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // reappear if selection restore lands on another stray — not this test's
     // concern).
     expect(await page.getByText(rowTitle, { exact: true }).count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
+  it('restores an archived session through Settings and keeps its original grouping after reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive-restore'))
+    // Seed the precondition through the real registry so this recovery path
+    // remains independently runnable; the preceding scenario owns the row
+    // menu gesture that creates the same durable archive state.
+    if (!scaffold.ctx.workspaceRegistry.archivedSessionIds.includes(SessionId(SEED_ID))) {
+      await scaffold.ctx.workspaceRegistry.archiveSession(SessionId(SEED_ID))
+    }
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([SessionId(SEED_ID)])
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Archived conversations', exact: true }).click()
+    await dialog.getByRole('heading', { name: 'Archived conversations', exact: true }).waitFor({ timeout: 10_000 })
+    const archivedRow = dialog.locator('li').filter({ hasText: SEED_ID })
+    await archivedRow.getByRole('button', { name: 'Restore', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.workspaceRegistry.archivedSessionIds, { timeout: 10_000 }).toEqual([])
+    await expect.poll(() => archivedRow.count(), { timeout: 10_000 }).toBe(0)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
+    // The restored session becomes the selected conversation and returns to
+    // the same Ungrouped account it had before archival.
+    await seededSessionRow()
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await seededSessionRow()
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
+  it('persists a session favorite and tags through the row menu, reload, and tag search', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-favorite-tags'))
+    const sessionRow = await seededSessionRow()
+    const rowTitle = await sessionRow.locator('[class*="title"]').innerText()
+
+    // Both controls must use the row's real menu actions rather than direct
+    // registry setup: this proves their RPC replies and global-state frames
+    // redraw the row immediately.
+    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
+    await page.getByRole('menuitem', { name: 'Favorite session' }).click()
+    await expect.poll(
+      () => scaffold.ctx.workspaceRegistry.favoriteSessionIds,
+      { timeout: 10_000 },
+    ).toEqual([SessionId(SEED_ID)])
+    expect(await sessionRow.getByLabel('Favorite').isVisible()).toBe(true)
+
+    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
+    await page.getByRole('menuitem', { name: 'Edit tags' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Edit session tags' })
+    await dialog.getByLabel('Tags (comma-separated)').fill('cross-project, durable')
+    await dialog.getByRole('button', { name: 'Save tags' }).click()
+    await expect.poll(
+      () => scaffold.ctx.workspaceRegistry.sessionTags(SessionId(SEED_ID)),
+      { timeout: 10_000 },
+    ).toEqual(['cross-project', 'durable'])
+    await sessionRow.getByText('cross-project', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
+
+    // A full reload must rebuild both projections from workspace.list, not
+    // leave the row dependent on optimistic component-local state.
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    const restoredRow = await seededSessionRow()
+    expect(await restoredRow.getByLabel('Favorite').isVisible()).toBe(true)
+    expect(await restoredRow.getByText('durable', { exact: true }).isVisible()).toBe(true)
+
+    // Local metadata search spans session tags even where host content search
+    // has no matching transcript text.
+    await page.getByRole('button', { name: 'Search sessions' }).click()
+    await page.getByPlaceholder('Search sessions...').fill('cross-project')
+    const results = page.getByRole('tree', { name: 'Search results' })
+    // The session title can equal its workspace title in an independently-run
+    // fixture, yielding two identical spans inside one semantic result row.
+    // Assert the result owner rather than relying on text strictness.
+    await results.getByRole('treeitem').filter({ hasText: rowTitle }).first()
+      .waitFor({ state: 'visible', timeout: 10_000 })
+    // Search deliberately hides header actions while expanded. Restore the
+    // neutral workspace-browser state for the independently runnable folder
+    // adoption scenario that follows.
+    await page.getByRole('button', { name: 'Clear search' }).click()
+    expect(await page.getByRole('button', { name: 'Add workspace' }).isVisible()).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 

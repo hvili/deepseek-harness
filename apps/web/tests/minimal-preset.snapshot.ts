@@ -7,7 +7,7 @@ import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './scaffold.ts'
+import { assertFixtureInventory, launchWebScaffold, liveShellToolName, type WebScaffold } from './scaffold.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/minimal-preset', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -66,18 +66,29 @@ describe('minimal agent preset', () => {
     const stateDir = join(scaffold.workspaceCwd, 'persistent-state')
     await mkdir(stateDir)
     const signal = new AbortController().signal
+    // The persistent shell keeps one platform process alive, so the state setup
+    // and the readback run in the twin's own dialect through the live tool.
+    const isWin32 = process.platform === 'win32'
     await scaffold.ctx.tools.execute({
       signal,
       callId: CallId('minimal-bash-state-setup'),
-      name: 'bash',
-      arguments: { command: `cd ${JSON.stringify(stateDir)} && export DSH_MINIMAL_STATE=PERSISTED` },
+      name: liveShellToolName,
+      arguments: {
+        command: isWin32
+          ? `Set-Location ${JSON.stringify(stateDir)}; $env:DSH_MINIMAL_STATE = 'PERSISTED'`
+          : `cd ${JSON.stringify(stateDir)} && export DSH_MINIMAL_STATE=PERSISTED`,
+      },
       agent: agentHandle.agent,
     })
     const bash = await scaffold.ctx.tools.execute({
       signal,
       callId: CallId('minimal-bash-state-read'),
-      name: 'bash',
-      arguments: { command: 'printf \'%s:%s\n\' "$DSH_MINIMAL_STATE" "$PWD"' },
+      name: liveShellToolName,
+      arguments: {
+        command: isWin32
+          ? '"$($env:DSH_MINIMAL_STATE):$($PWD.Path)"'
+          : 'printf \'%s:%s\n\' "$DSH_MINIMAL_STATE" "$PWD"',
+      },
       agent: agentHandle.agent,
     })
     const seedPath = join(scaffold.workspaceCwd, 'preset-smoke.txt')
@@ -90,16 +101,21 @@ describe('minimal agent preset', () => {
       agent: agentHandle.agent,
     })
 
+    // The live shell's paths use the host separator; fold them onto the
+    // POSIX spelling so one inline snapshot serves both platforms.
     const text = (result: typeof bash): string => result.content
       .filter(block => block.type === 'text')
       .map(block => block.text)
       .join('')
       .replaceAll(scaffold.workspaceCwd, '{{cwd}}')
+      .replaceAll('\\', '/')
       .trimEnd()
 
     expect({
       prompt: requestHeader.system,
-      tools: requestHeader.tools?.map(tool => tool.name),
+      // The preset mounts the platform's shell tool; fold its name onto the
+      // POSIX twin so the snapshot keeps one spelling.
+      tools: requestHeader.tools?.map(tool => tool.name === liveShellToolName ? 'bash' : tool.name),
       bash: text(bash),
       editor: text(editor),
     }).toMatchInlineSnapshot(`

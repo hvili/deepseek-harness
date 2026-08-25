@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -93,7 +93,7 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
       '    idleSilenceMs: 300',
       '    handoffGraceMs: 300',
       '    scrollbackLines: 20000',
-      '    timeoutMs: 8000',
+      '    timeoutMs: 20000',
       '    disposeGraceMs: 500',
       "- name: '@deepseek-ai/dsh-tool-pwsh-persistent'",
       '  config:',
@@ -137,9 +137,20 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     })
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['pwsh'])
-    await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested')
+    // Directory creation is fixture setup, not the state-persistence behavior
+    // under test. Preparing it outside pwsh also makes a startup failure surface
+    // through the command result instead of a later, misleading realpath ENOENT.
+    await mkdir(join(root, 'nested'))
+    const state = text(await execute('state', '$env:KEEP = "loader"; Set-Location nested'))
+    expect(state).toBe('')
     const observed = text(await execute('observe', 'Write-Output "cwd=$PWD keep=$env:KEEP"'))
-    expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
+    // Windows' temp root can arrive through its 8.3 spelling while pwsh
+    // canonicalizes $PWD to the long path. realpath puts both platforms on
+    // the filesystem's canonical spelling before the exact state assertion.
+    const expectedCwd = await realpath(join(root, 'nested'))
+    const observedPath = process.platform === 'win32' ? observed.toLowerCase() : observed
+    const expectedState = `cwd=${expectedCwd} keep=loader`
+    expect(observedPath).toContain(process.platform === 'win32' ? expectedState.toLowerCase() : expectedState)
     expect(observed).not.toContain('DSH_PERSISTENT_PWSH')
 
     const multiline = text(await execute(
@@ -162,6 +173,12 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
 
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')
-    expect(text(await execute('after-exit', 'Write-Output "$PWD"'))).toBe(root)
+    const restartedCwd = text(await execute('after-exit', 'Write-Output "$PWD"'))
+    if (process.platform === 'win32') {
+      const [actual, expected] = await Promise.all([stat(restartedCwd), stat(root)])
+      expect({ dev: actual.dev, ino: actual.ino }).toEqual({ dev: expected.dev, ino: expected.ino })
+    } else {
+      expect(restartedCwd).toBe(root)
+    }
   }, 60_000)
 })

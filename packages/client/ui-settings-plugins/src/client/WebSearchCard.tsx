@@ -5,7 +5,7 @@
  */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { SecretField, ValueField } from './fields.tsx'
+import { NumericValueField, SecretField, ValueField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
 import type { WebSearchCardFace } from './web-search-card-controller.ts'
 import type {} from './slot-contract.ts'
@@ -60,14 +60,13 @@ export function WebSearchCard(props: WebSearchCardProps) {
         onEdit={(text) => { props.edit('baseURL', text) }}
         onReset={() => { props.resetField('baseURL') }}
       />
-      <ValueField
+      <NumericValueField
         id="plugin-config-web-search-max-uses"
         label={t('webSearchMaxUses')}
         hint={t('webSearchMaxUsesHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
-        numeric
         disabled={disabled}
         {...state.maxUses}
         onEdit={(text) => { props.edit('maxUses', text) }}

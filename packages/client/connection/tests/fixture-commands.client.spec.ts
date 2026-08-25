@@ -45,6 +45,14 @@ describe('createFixtureApi commands/skills', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
   })
 
+  it('serves the empty dynamic Cordis inventory and accepts its inspector manifest', async () => {
+    const { rpc } = createFixtureFaces()
+    await expect(callRemote(rpc, 'dynamicCordisRunner/inventory', { agentId: sid('fx-alpha') })).resolves.toEqual([])
+    await expect(callRemote(rpc, 'dynamicCordisRunner/syncInspectManifest', {
+      agentId: sid('fx-alpha'), providers: [],
+    })).resolves.toBeNull()
+  })
+
   it('executes a known command line: pure admission plus a mux-broadcast lifecycle pair', async () => {
     const { api, rpc } = createFixtureFaces()
     const frames: unknown[] = []

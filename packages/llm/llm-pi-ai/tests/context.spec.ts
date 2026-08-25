@@ -67,6 +67,34 @@ function history(role: 'system' | 'assistant', content: ContentBlock[]): Message
 }
 
 describe('pi-ai request context conversion', () => {
+  it('projects durable files in history, user content, and nested tool results', () => {
+    const file = {
+      type: 'file' as const,
+      attachment: {
+        kind: 'file' as const,
+        attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`),
+        mediaType: 'text/plain',
+        bytes: 4,
+        name: 'notes.txt',
+      },
+      preview: 'file preview',
+    }
+    const callId = CallId('file-result')
+    const context = toPiContext(request([
+      history('system', [file]),
+      user([file]),
+      user([{ type: 'tool-result', toolCallId: callId, content: [file] }]),
+    ]))
+    expect(context.messages).toEqual([
+      { role: 'user', content: 'file preview', timestamp: 0 },
+      { role: 'user', content: 'file preview', timestamp: 0 },
+      {
+        role: 'toolResult', toolCallId: 'file-result', toolName: 'unknown',
+        content: [{ type: 'text', text: 'file preview' }], isError: false, timestamp: 0,
+      },
+    ])
+  })
+
   it('omits absent and empty request-level optional fields', () => {
     const base = { provider: 'openai', model: 'gpt-4.1', messages: [] }
     expect(toPiContext(base)).toEqual({ messages: [] })
@@ -121,6 +149,17 @@ describe('pi-ai request context conversion', () => {
       ]),
       user([
         { type: 'image', attachment: ref },
+        {
+          type: 'file',
+          attachment: {
+            kind: 'file',
+            attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+            mediaType: 'text/plain',
+            bytes: 4,
+            name: 'notes.txt',
+          },
+          preview: 'async file preview',
+        },
         { type: 'text', text: 'caption' },
         { type: 'reasoning', text: 'ignored' },
       ]),
@@ -148,6 +187,7 @@ describe('pi-ai request context conversion', () => {
         content: [
           { type: 'text', text: expect.stringContaining(`Image ${ref.attachmentId}`) as string },
           { type: 'image', data: 'AQ==', mimeType: 'image/png' },
+          { type: 'text', text: 'async file preview' },
           { type: 'text', text: 'caption' },
         ],
         timestamp: 0,

@@ -1,0 +1,24 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+  max-width: min(520px, 100%);
+}
+
+.root[data-align='end'] {
+  align-self: flex-end;
+}
+
+.card {
+  border: 1px solid var(--dsh-border, rgba(128, 128, 128, .35));
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: var(--dsh-surface, rgba(127, 127, 127, .08));
+}
+
+.name { font-weight: 600; overflow-wrap: anywhere; }
+.meta { margin-top: 3px; color: var(--dsh-text-secondary, #707070); font-size: 12px; }
+.status { margin-top: 6px; font-size: 12px; }
+.failed { color: var(--dsh-danger, #b42318); }
+.preview { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }

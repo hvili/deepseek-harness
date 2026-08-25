@@ -1,5 +1,15 @@
 import type { HostDescription, IApiClient, HostFrame, MuxFrame, RpcRequest } from './api.ts'
 
+/**
+ * The session-log on-disk format version this client build understands,
+ * mirrored from `SESSION_FORMAT_VERSION` (`@deepseek-ai/dsh-session`). The
+ * browser bundle cannot import the Node-side session package, so the expected
+ * value is stamped here at compile time and compared against the version the
+ * host reports through `host.describe`. Keep it in lockstep with the backend
+ * constant when the format changes.
+ */
+export const EXPECTED_SCHEMA_VERSION = 0
+
 /** Reconnect/backoff tunables (deployment-varying — no hardcoded tunables; these become the
  *  future `ctx.connection` plugin's Config). All fields optional; defaults below. */
 export interface ConnectionConfig {
@@ -14,6 +24,14 @@ export interface ConnectionConfig {
    *  fires onOpen (misbehaving proxy) must not wedge the connection forever — on timeout the
    *  generation proceeds as connected and the live-gap repair path covers stragglers. */
   streamOpenTimeoutMs?: number
+  /**
+   * The session-log format version this build expects of the host. When the
+   * value `host.describe` reports is present and differs, the connection
+   * fails closed into `'version-mismatch'` instead of attempting to read a
+   * session format this client cannot interpret. Defaults to
+   * {@link EXPECTED_SCHEMA_VERSION}.
+   */
+  expectedSchemaVersion?: number
 }
 
 const CONNECTION_DEFAULTS: Required<ConnectionConfig> = {
@@ -21,6 +39,7 @@ const CONNECTION_DEFAULTS: Required<ConnectionConfig> = {
   backoffFactor: 2,
   backoffMaxMs: 10_000,
   streamOpenTimeoutMs: 3_000,
+  expectedSchemaVersion: EXPECTED_SCHEMA_VERSION,
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -36,8 +55,10 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** Coarse connection state for the UI: 'connected' after each generation's handshake,
- *  'reconnecting' the moment the generation fails (covers the whole backoff+retry span). */
-export type ConnectionState = 'connected' | 'reconnecting'
+ *  'reconnecting' the moment the generation fails (covers the whole backoff+retry span),
+ *  and 'version-mismatch' once the host reports a session format this build cannot read
+ *  (a terminal state — retrying cannot fix a version incompatibility). */
+export type ConnectionState = 'connected' | 'reconnecting' | 'version-mismatch'
 
 /** Frame sink callbacks: the Controller owns the physical streams; business dispatch belongs to
  *  SessionManager. */
@@ -49,6 +70,8 @@ export interface ConnectionSinks {
   /** Coarse state transitions (deduplicated: fires only on change). The initial pre-connect
    *  span reports nothing — the UI treats "no state yet" as connecting, not as an outage. */
   onStateChange?: (state: ConnectionState) => void
+  /** Fired once when the host's reported session format version cannot be read by this build. */
+  onVersionMismatch?: (hostVersion: number, expectedVersion: number) => void
 }
 
 /**
@@ -144,6 +167,18 @@ export class ConnectionController {
         const descriptionResult = description.result
         if (!descriptionResult.ok) {
           throw new Error(`host.describe failed: ${descriptionResult.error.code}: ${descriptionResult.error.message}`)
+        }
+        // Runtime compatibility handshake (fail-closed): a host whose session
+        // format this build cannot read must not be treated as connected —
+        // retrying cannot fix a version incompatibility, so enter the terminal
+        // 'version-mismatch' state and stop the reconnection loop.
+        const hostVersion = descriptionResult.value.schemaVersion
+        if (hostVersion !== undefined && hostVersion !== this.config.expectedSchemaVersion) {
+          this.running = false
+          this.emitState('version-mismatch')
+          this.callSink(() => this.sinks.onVersionMismatch?.(hostVersion, this.config.expectedSchemaVersion))
+          ac.abort()
+          return
         }
         if (ac.signal.aborted) throw new Error('generation aborted during readiness handshake')
         this.attempt = 0

@@ -5,6 +5,8 @@
  * @module @deepseek-ai/dsh-hooks-codex/config
  */
 
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { matcherDiagnostic, type MatcherGroup } from '@deepseek-ai/dsh-hook-protocol'
 
 /** The five Codex hook points this bridge supports. */
@@ -83,4 +85,39 @@ export function parseCodexConfig(raw: unknown): ParsedCodexConfig {
   }
 
   return { config, skipped }
+}
+
+/**
+ * Merge several parsed Codex hook configs into one. Earlier layers run first
+ * (a group list is iterated in order), so passing `[project, user]` applies the
+ * project-layer hooks before the user-layer ones, matching Codex's layer-then-
+ * precedence for matching hooks. Per-event groups concatenate rather than
+ * replace, so a hook defined in both layers still runs under both.
+ * @param layers - parsed configs, most-preferred first.
+ * @returns the merged per-event group list.
+ */
+export function mergeCodexConfigs(...layers: readonly CodexHookConfig[]): CodexHookConfig {
+  const merged: CodexHookConfig = {}
+  for (const layer of layers) {
+    for (const [event, groups] of Object.entries(layer)) {
+      merged[event] = [...merged[event] ?? [], ...groups]
+    }
+  }
+  return merged
+}
+
+/**
+ * Codex-compatible hook file discovery: project-local `.codex/hooks.json`
+ * (resolved from the launch cwd, matching this bridge's process-level load
+ * contract) ahead of the user-level `~/.codex/hooks.json`. The returned order
+ * is the merge order — project first so it runs before (and covers) user.
+ * @param cwd - the directory to resolve the project `.codex/hooks.json` from.
+ * @param home - the user home directory for `~/.codex/hooks.json`.
+ * @returns the candidate hook file paths in load order.
+ */
+export function defaultCodexHookPaths(
+  cwd: string = process.cwd(),
+  home: string = homedir(),
+): string[] {
+  return [join(cwd, '.codex', 'hooks.json'), join(home, '.codex', 'hooks.json')]
 }

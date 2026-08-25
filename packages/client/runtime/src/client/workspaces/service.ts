@@ -11,6 +11,19 @@ import type { SessionsPort, SessionsPortList } from '../contract/sessions-port.t
 import type { IWorkspaces } from '../contract/workspaces.ts'
 import { WorkspaceManager, type WorkspaceListPhase } from './manager.ts'
 
+/**
+ * Observable source of the Host's current working directory (the directory
+ * this install was launched in). The runtime binds it to the owning Workspace
+ * so a launch-in-a-project focuses that project (Codex alignment) without
+ * dragging the connection package into this domain.
+ */
+export interface HostCwdSource {
+  /** The current working directory, or undefined before a connection handshake. */
+  getSnapshot(): string | undefined
+  /** Subscribe to a replacement or loss of the working directory. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Workspace list plus the two-baseline readiness and default-target projection. */
 export interface WorkspaceListState {
   items: readonly WorkspaceView[]
@@ -22,6 +35,10 @@ export interface WorkspaceListState {
    * build their own transient Set.
    */
   archivedSessionIds: readonly SessionId[]
+  /** Optional only for legacy in-memory consumers; runtime snapshots always include it. */
+  favoriteSessionIds?: readonly SessionId[]
+  workspaceTagsById?: Readonly<Record<string, readonly string[]>>
+  sessionTagsById?: Readonly<Record<string, readonly string[]>>
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
   error: RpcError | null
@@ -29,6 +46,14 @@ export interface WorkspaceListState {
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
+  /**
+   * The Workspace bound to the Host's current working directory: the deepest
+   * registration whose canonical path contains the launch directory. When a
+   * session is already open the kept session wins (no hijack); otherwise the
+   * initial selection prefers this project over recency — launching DSH in a
+   * project focuses that project.
+   */
+  cwdWorkspaceId: WorkspaceId | undefined
 }
 
 /** Structured create failure for UI flows that distinguish Host business errors. */
@@ -57,20 +82,32 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
+  /** Optional Host working-directory source for cwd project binding. */
+  private readonly hostCwd: HostCwdSource | undefined
 
   /**
    * @param ctx - client root context.
    * @param api - shared wire client.
    * @param sessions - cross-domain sessions face used for recency and blank-session reuse.
+   * @param hostCwd - optional Host working-directory source; the deepest Workspace
+   * containing it becomes the cwd-bound project that initial selection prefers.
    */
-  constructor(ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
+  constructor(
+    ctx: Context,
+    private readonly api: IApiClient,
+    private readonly sessions: SessionsPort,
+    hostCwd?: HostCwdSource,
+  ) {
+    this.hostCwd = hostCwd
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
-      baselinesReady: false, recentWorkspaceId: undefined,
+      items: [], archivedSessionIds: [], favoriteSessionIds: [], state: 'idle', phase: 'pending', error: null,
+      workspaceTagsById: {}, sessionTagsById: {},
+      baselinesReady: false, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
     })
     this.manager.subscribe(() => { this.project() })
     this.sessions.list.subscribe(() => { this.project() })
+    if (hostCwd !== undefined) hostCwd.subscribe(() => { this.project() })
     ctx.reflect.provide('workspaces', this, undefined)
   }
 
@@ -135,7 +172,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       const workspace = this.list.getSnapshot()
       if (!workspace.baselinesReady) return
       const current = this.sessions.list.getSnapshot().current
-      const target = workspace.recentWorkspaceId
+      const target = workspace.cwdWorkspaceId ?? workspace.recentWorkspaceId
       if (current !== undefined || target === undefined) {
         state = 'done'
         return
@@ -292,6 +329,44 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Restore an archived session to its existing workspace or ungrouped position. */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unarchiveSession(sessionId)
+    if (!result.ok) throw new Error(`session restore failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Add one session to the Host's durable favorites set. */
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.favoriteSession(sessionId)
+    if (!result.ok) throw new Error(`session favorite failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Remove one session from the Host's durable favorites set. */
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unfavoriteSession(sessionId)
+    if (!result.ok) throw new Error(`session unfavorite failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Replace a Workspace's durable tags. */
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void> {
+    const result = await this.manager.setWorkspaceTags(workspaceId, tags)
+    if (!result.ok) throw new Error(`workspace tags failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Replace a Session's durable tags. */
+  async setSessionTags(sessionId: SessionId, tags: string[]): Promise<void> {
+    const result = await this.manager.setSessionTags(sessionId, tags)
+    if (!result.ok) throw new Error(`session tags failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Permanently remove an archived, non-live session. Attachment objects are retained. */
+  async removeArchivedSession(sessionId: SessionId): Promise<boolean> {
+    const result = await this.manager.removeArchivedSession(sessionId)
+    if (!result.ok) throw new Error(`session delete failed: ${result.error.code}: ${result.error.message}`)
+    if (result.value.removed) this.sessions.remove(sessionId)
+    return result.value.removed
+  }
+
   /**
    * Move a session within its Workspace's manual order (DOM-insertBefore-like).
    * @param workspaceId - owning workspace.
@@ -345,13 +420,48 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.list.set({
       items: workspace.items,
       archivedSessionIds: workspace.archivedSessionIds,
+      favoriteSessionIds: workspace.favoriteSessionIds,
+      workspaceTagsById: workspace.workspaceTagsById,
+      sessionTagsById: workspace.sessionTagsById,
       state: workspace.state,
       phase: workspace.phase,
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
+      cwdWorkspaceId: this.hostCwd === undefined
+        ? undefined
+        : cwdBoundWorkspace(workspace.items, this.hostCwd.getSnapshot()),
     })
   }
+}
+
+/**
+ * The deepest Workspace whose canonical path contains the Host working
+ * directory: an exact match wins, otherwise the nearest registered project
+ * root above the launch directory. A sub-directory launch still binds to its
+ * project; unrelated directories bind to nothing. Workspace paths are Host
+ * canonical form (native separators, no trailing slash), so segment-safe
+ * prefix matching on the launch cwd is enough.
+ */
+function cwdBoundWorkspace(
+  workspaces: readonly WorkspaceView[],
+  hostCwd: string | undefined,
+): WorkspaceId | undefined {
+  if (workspaces.length === 0 || hostCwd === undefined || hostCwd === '') return undefined
+  const cwd = hostCwd.replace(/[/\\]+$/, '')
+  let bound: WorkspaceId | undefined
+  let boundDepth = -1
+  for (const workspace of workspaces) {
+    const path = workspace.path.replace(/[/\\]+$/, '')
+    const contained = path === cwd
+      || (cwd.length > path.length && cwd.startsWith(path) && /[/\\]/.test(cwd.charAt(path.length)))
+    if (!contained) continue
+    if (path.length > boundDepth) {
+      bound = workspace.workspaceId
+      boundDepth = path.length
+    }
+  }
+  return bound
 }
 
 /** Stable tie-breaking follows Host Workspace order. */

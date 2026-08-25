@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -45,6 +45,14 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
+
+  afterEach(async () => {
+    // A failed assertion must not leave the modal's pointer-blocking mask over
+    // the shared page and turn unrelated following cases into false failures.
+    for (let attempt = 0; attempt < 3 && await page.getByRole('dialog').count() > 0; attempt++) {
+      await page.keyboard.press('Escape')
+    }
+  })
 
   afterAll(async () => {
     await browser?.close()

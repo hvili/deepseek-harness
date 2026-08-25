@@ -91,4 +91,16 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+  /** Restore a session previously hidden by archiveSession. */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /** Add a session to the durable favorites set. */
+  favoriteSession(sessionId: SessionId): Promise<void>
+  /** Remove a session from the durable favorites set. */
+  unfavoriteSession(sessionId: SessionId): Promise<void>
+  /** Replace a Workspace's durable tags. */
+  setWorkspaceTags(workspaceId: WorkspaceId, tags: string[]): Promise<void>
+  /** Replace a Session's durable tags. */
+  setSessionTags(sessionId: SessionId, tags: string[]): Promise<void>
+  /** Permanently remove an archived, non-live session's log and references. */
+  removeArchivedSession(sessionId: SessionId): Promise<boolean>
 }

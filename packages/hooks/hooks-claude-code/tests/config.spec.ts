@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseClaudeCodeConfig, substituteCommand } from '@deepseek-ai/dsh-hooks-claude-code/src/config.ts'
+import { join } from 'node:path'
+import { parseClaudeCodeConfig, substituteCommand, mergeClaudeConfigs, defaultClaudeHookPaths } from '@deepseek-ai/dsh-hooks-claude-code/src/config.ts'
 
 describe('substituteCommand', () => {
   it('replaces CLAUDE_PLUGIN_ROOT and CLAUDE_PROJECT_DIR (all occurrences)', () => {
@@ -91,5 +92,35 @@ describe('parseClaudeCodeConfig', () => {
     expect(config).toEqual({
       PreToolUse: [{ matcher: 'Bash', hooks: [{ command: 'kept.sh' }] }],
     })
+  })
+})
+
+describe('mergeClaudeConfigs', () => {
+  it('concatenates per-event groups, earlier layers before later ones', () => {
+    const project = parseClaudeCodeConfig({ PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'p.sh' }] }] }).config
+    const user = parseClaudeCodeConfig({ PreToolUse: [{ hooks: [{ type: 'command', command: 'u.sh' }] }], Stop: [{ hooks: [{ type: 'command', command: 's.sh' }] }] }).config
+    const merged = mergeClaudeConfigs(project, user)
+    expect(merged.PreToolUse).toEqual([
+      { matcher: 'Bash', hooks: [{ command: 'p.sh' }] },
+      { hooks: [{ command: 'u.sh' }] },
+    ])
+    // A hook defined in both layers still runs under both (concatenated, not replaced).
+    expect(merged.Stop).toEqual([{ hooks: [{ command: 's.sh' }] }])
+  })
+
+  it('is empty-safe and order-sensitive', () => {
+    const only = parseClaudeCodeConfig({ Stop: [{ hooks: [{ type: 'command', command: 'a.sh' }] }] }).config
+    expect(mergeClaudeConfigs()).toEqual({})
+    expect(mergeClaudeConfigs(only, {})).toEqual(mergeClaudeConfigs({}, only))
+  })
+})
+
+describe('defaultClaudeHookPaths', () => {
+  it('resolves project `.claude/settings.json` (launch cwd) before user `~/.claude/settings.json`', () => {
+    const paths = defaultClaudeHookPaths('/w/proj', '/home/u')
+    expect(paths).toEqual([
+      join('/w/proj', '.claude', 'settings.json'),
+      join('/home/u', '.claude', 'settings.json'),
+    ])
   })
 })

@@ -8,7 +8,10 @@
           baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
           thinking: enabled
           reasoningEffort: low
-          streamIdleTimeoutMs: 150
+          # Five comments span 1.25s before content. The 1s idle bound proves
+          # comments reset stream liveness while leaving scheduling headroom on
+          # a shared hosted runner.
+          streamIdleTimeoutMs: 1000
       - id: agent-spine
         config:
           agents:

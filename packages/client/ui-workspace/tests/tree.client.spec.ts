@@ -55,6 +55,21 @@ describe('deriveGroups', () => {
     expect(groups[1]!.sessions.map(session => session.id)).toEqual([sid('loose')])
   })
 
+  it('keeps visible fork descendants adjacent to their parent with lineage depths', () => {
+    const parent = summary('parent', 1)
+    const child = { ...summary('child', 3), parentId: parent.id }
+    const grandchild = { ...summary('grandchild', 2), parentId: child.id }
+    const orphan = { ...summary('orphan', 4), parentId: sid('missing') }
+    const groups = deriveGroups(
+      list(child, orphan, parent, grandchild),
+      [workspace('project', ['child', 'orphan', 'parent', 'grandchild'])],
+      noArchive,
+      view(['project']),
+    )
+    expect(groups[0]!.sessions.map(session => session.id)).toEqual([orphan.id, parent.id, child.id, grandchild.id])
+    expect(groups[0]!.sessions.map(session => session.lineageDepth)).toEqual([0, 0, 1, 2])
+  })
+
   it('applies stored Ungrouped order and appends new loose Sessions by recency', () => {
     const sessions = list(summary('one', 3), summary('two', 2), summary('new', 4))
     const groups = deriveGroups(
@@ -141,7 +156,7 @@ describe('deriveGroups', () => {
     ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
   })
 
-  it('ignores fork lineage and sorts every ungrouped session as a top-level row', () => {
+  it('retains recency root order while grouping visible ungrouped forks by lineage', () => {
     const parent = summary('parent', 1)
     const oldChild = { ...summary('old-child', 10), parentId: parent.id }
     const newChild = { ...summary('new-child', 20), parentId: parent.id }
@@ -160,8 +175,8 @@ describe('deriveGroups', () => {
 
     expect(groups).toHaveLength(1)
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([
-      newChild.id, tieA.id, tieB.id, oldChild.id,
-      cycleB.id, cycleA.id, orphan.id, self.id, parent.id,
+      orphan.id, parent.id, newChild.id, tieA.id, tieB.id, oldChild.id,
+      cycleB.id, cycleA.id, self.id,
     ])
 
     // Equal timestamps use ids as a deterministic tiebreak in either input order.
@@ -202,6 +217,16 @@ describe('deriveGroups', () => {
     expect(ownedGroups.find(group => group.key === 'project')!.containsCurrent).toBe(true)
     const looseGroups = deriveGroups({ ...list(owned, loose), current: loose.id }, [ws], noArchive, view())
     expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
+  })
+
+  it('marks only the cwd-bound project group (and never the ungrouped bucket)', () => {
+    const sessions = list(summary('owned', 1), summary('loose', 2))
+    const ws = workspace('project', ['owned'])
+    const bound = deriveGroups(sessions, [ws], noArchive, view(), wid('project'))
+    expect(bound.find(group => group.key === 'project')!.boundToCwd).toBe(true)
+    expect(bound.find(group => group.key === UNGROUPED_KEY)!.boundToCwd).toBe(false)
+    const unbound = deriveGroups(sessions, [ws], noArchive, view(), wid('other'))
+    expect(unbound.find(group => group.key === 'project')!.boundToCwd).toBe(false)
   })
 })
 
@@ -270,6 +295,23 @@ describe('deriveSearchResults archive filtering', () => {
 })
 
 describe('deriveSearchResults', () => {
+  it('matches session and owning workspace tags locally', () => {
+    const projectSession = summary('project-tag', 2, '/projects/a')
+    const sessionTag = summary('session-tag', 1, '/projects/b')
+    const sessions = list(projectSession, sessionTag)
+    const workspaces = [workspace('a', ['project-tag'], 'Alpha'), workspace('b', ['session-tag'], 'Beta')]
+    const projectMatches = deriveSearchResults(
+      sessions, workspaces, 'review', noArchive, { items: [], hasMore: false }, 10,
+      { workspaceTagsById: { a: ['review'] }, sessionTagsById: { 'session-tag': ['todo'] } },
+    )
+    expect(projectMatches.items.map(item => item.id)).toEqual(['project-tag'])
+    const sessionMatches = deriveSearchResults(
+      sessions, workspaces, 'todo', noArchive, { items: [], hasMore: false }, 10,
+      { workspaceTagsById: { a: ['review'] }, sessionTagsById: { 'session-tag': ['todo'] } },
+    )
+    expect(sessionMatches.items.map(item => item.id)).toEqual(['session-tag'])
+  })
+
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
     titleHit.displayTitle = 'Needle title'

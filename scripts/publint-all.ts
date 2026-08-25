@@ -49,6 +49,21 @@ type PublintResult =
     failure?: string
   }
 
+/** Deliberate package-shape exceptions, matched narrowly to their exact manifest path and artifact. */
+function isIntentionalPackageShapeMessage(message: Message): boolean {
+  if (message.code === 'EXPORTS_GLOB_NO_MATCHED_FILES') {
+    return message.path.length === 2
+      && message.path[0] === 'exports'
+      && message.path[1] === './src/*'
+  }
+  return message.code === 'FILE_INVALID_FORMAT'
+    && message.path.length === 3
+    && message.path[0] === 'exports'
+    && message.path[1] === './client'
+    && message.path[2] === 'default'
+    && message.args.actualFilePath === './lib/client.js'
+}
+
 function workspacePackages(): PackageTarget[] {
   return globSync('packages/*/*/package.json', { cwd: packagesRoot })
     .sort()
@@ -186,9 +201,10 @@ async function runPublint(target: PackageTarget): Promise<PublintResult> {
       pack: { files },
     })
     const manifest = result.pkg as Record<string, unknown>
-    return result.messages.some(message => message.type === 'error') || closureViolations.length > 0
-      ? { path: target.path, status: 'failed', messages: result.messages, closureViolations, manifest }
-      : { path: target.path, status: 'passed', messages: result.messages, closureViolations, manifest }
+    const messages = result.messages.filter(message => !isIntentionalPackageShapeMessage(message))
+    return messages.some(message => message.type === 'error') || closureViolations.length > 0
+      ? { path: target.path, status: 'failed', messages, closureViolations, manifest }
+      : { path: target.path, status: 'passed', messages, closureViolations, manifest }
   } catch (error: unknown) {
     return {
       path: target.path,

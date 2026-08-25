@@ -35,6 +35,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          # plugins/dsh-turn-rewind is a workspace member (bundle/base
+          # depends on it); pack needs it present at install time.
+          submodules: true
 
       - uses: pnpm/action-setup@v4
         with:
@@ -68,8 +71,26 @@ jobs:
       - name: Build
         run: pnpm run build:official
 
+      - name: Verify build record exists
+        shell: bash
+        run: |
+          if [ ! -f ".dsh-build/client-build-environment.json" ]; then
+            echo "::error::Build step completed but client build record was not created."
+            echo "::error::This usually means the build scripts exited without writing the record."
+            echo "::error::Check the 'Build' step logs above for TypeScript/Vite errors."
+            exit 1
+          fi
+          echo "Build record verified."
+
       - name: Pack release tarballs
         run: pnpm run release:pack --family dsh --out dist/npm
+
+      # Idempotency guard for the publish path: recompute the stage manifest
+      # against the recording host's own pack. A host that cannot reproduce its
+      # own manifest (a drifted tarball set or a stale lib/) — and therefore the
+      # locked-dependency composition it packed — fails here, before it ships.
+      - name: Verify stage manifest (publish-path idempotency)
+        run: pnpm run release:manifest --family dsh --from dist/npm --verify
 
       # The harness packages declare the vendored framework as a peer, and this
       # verification must not depend on the registry already carrying matching
@@ -86,6 +107,15 @@ jobs:
         run: |
           pnpm --dir native/landlock-run run build:ts
           pnpm --dir native/landlock-run/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
+
+      # The turn-rewind plugin is a private, in-repo workspace member (the
+      # plugins/dsh-turn-rewind submodule) with its own version sequence, so
+      # it is not a dsh family member — but dsh-base and the web-app bundle
+      # depend on it. The packed-install check below must resolve it locally
+      # instead of 404ing on the registry, so its tarball joins dist/npm after
+      # the stage-manifest idempotency pass (which only covers family members).
+      - name: Pack the turn-rewind plugin for verification
+        run: pnpm --dir plugins/dsh-turn-rewind pack --pack-destination "$PWD/dist/npm"
 
       - name: Verify packed install
         run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock

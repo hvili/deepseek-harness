@@ -5,10 +5,13 @@ import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  FileAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
   SaveImageAttachment,
+  SaveFileAttachment,
   StoredImageAttachment,
+  StoredFileAttachment,
 } from './types.ts'
 
 export { AttachmentId, ImageVariantId } from './brand.ts'
@@ -22,8 +25,11 @@ export type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
+  FileAttachmentRef,
+  SaveFileAttachment,
   RequestImageAttachment,
   SaveImageAttachment,
+  StoredFileAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -106,6 +112,32 @@ export abstract class AttachmentStore extends Service {
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Persist a generic material attachment. Backends that predate structured
+   * file intake fail explicitly instead of silently treating it as an image.
+   * @param _input - the file attachment material (unsupported by this store).
+   * @returns never resolves; the store rejects with a file-unsupported error.
+   */
+  saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef> {
+    return Promise.reject(new AttachmentError(
+      'This attachment store cannot save generic file attachments.',
+      'UNSUPPORTED_FILE_ATTACHMENT',
+    ))
+  }
+
+  /**
+   * Read a generic material attachment, preserving cancellation semantics.
+   * @param _ref - the file attachment reference (unsupported by this store).
+   * @param _signal - optional cancellation signal (unused by this store).
+   * @returns never resolves; the store rejects with a file-unsupported error.
+   */
+  readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment> {
+    return Promise.reject(new AttachmentError(
+      'This attachment store cannot read generic file attachments.',
+      'UNSUPPORTED_FILE_ATTACHMENT',
+    ))
+  }
 
   /**
    * Generate or read one deterministic model-request version from the stored normalized image.

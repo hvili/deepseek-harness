@@ -238,6 +238,191 @@ describe('LocalPtySession readiness and output', () => {
     expect((await operation.done).waitReason).toBe('stdin_read')
   })
 
+  it('holds an internal bootstrap send for the controlled marker, even without its printable tail', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ timeoutMs: 200 }))
+    await initialize(session, terminal)
+
+    inspector.waiting = true
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      requirePromptMarker: true,
+    })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    terminal.emitData('bootstrap echo')
+    // Neither an exact stdin wait nor the ordinary silence fallback may let
+    // delayed line-editor output escape into the first user command.
+    await vi.advanceTimersByTimeAsync(60)
+    expect(settled).toBe(false)
+
+    terminal.emitData('\x1b]133;D;0\x07')
+    await vi.advanceTimersByTimeAsync(20)
+    expect(settled).toBe(false)
+    // A delayed prompt redraw still belongs to bootstrap and restarts its
+    // silence window rather than escaping into the first user send.
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(await operation.done).toMatchObject({
+      waitReason: 'stdin_read',
+      viewport: 'bootstrap echodsh> ',
+    })
+  })
+
+  it('submits pwsh through the platform console line ending', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({ text: 'Write-Output ready', submit: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual([
+      `Write-Output ready${process.platform === 'win32' ? '\r' : '\n'}`,
+    ])
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    await operation.done
+  })
+
+  it('can deliver pwsh bootstrap text before its submit key', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['install-prompt'])
+    await vi.advanceTimersByTimeAsync(9)
+    expect(terminal.writes).toEqual(['install-prompt'])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(terminal.writes).toEqual([
+      'install-prompt',
+      process.platform === 'win32' ? '\r' : '\n',
+    ])
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    await operation.done
+  })
+
+  it('does not deliver a delayed submit after the session closes', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['install-prompt'])
+    const closing = session.close('test close')
+    await vi.advanceTimersByTimeAsync(10)
+    await closing
+    expect(terminal.writes).toEqual(['install-prompt'])
+    expect((await operation.done).waitReason).toBe('session_exit')
+  })
+
+  it('abandons a split submit when cancellation lands during the first provider write', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ shellDialect: 'pwsh' }))
+    await initialize(session, terminal)
+
+    const writeGate = Promise.withResolvers<undefined>()
+    const firstWriteSettled = Promise.withResolvers<undefined>()
+    const originalWrite = terminal.write.bind(terminal)
+    let writesStarted = 0
+    terminal.write = async (data: string) => {
+      writesStarted += 1
+      if (writesStarted === 1) {
+        await writeGate.promise
+        await originalWrite(data)
+        firstWriteSettled.resolve(undefined)
+        return
+      }
+      await originalWrite(data)
+    }
+    const controller = new AbortController()
+    const operation = session.startSend({
+      text: 'install-prompt',
+      submit: true,
+      separateSubmit: true,
+      signal: controller.signal,
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    // The bootstrap body write is parked inside the provider; cancellation
+    // must own the send before the submit key is ever considered.
+    expect(terminal.writes).toEqual([])
+    controller.abort()
+    writeGate.resolve(undefined)
+    await firstWriteSettled.promise
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminal.writes).toEqual(['install-prompt'])
+
+    terminal.emitData('\x1b]133;D;130\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    await operation.done
+    expect(inspector.groups).toContainEqual([456, 'SIGINT'])
+  })
+
+  it('holds pwsh native startup through an early stdin wait until the idle window', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+
+    const initializing = session.initialize(undefined, true)
+    terminal.emitData('PS /workspace> ')
+    inspector.waiting = true
+    await vi.advanceTimersByTimeAsync(30)
+    let settled = false
+    void initializing.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(20)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(10)
+    await initializing
+    expect(session.motd).toBe('PS /workspace> ')
+  })
+
+  it.skipIf(process.platform === 'win32')('releases a silent pwsh native startup only after the full idle window', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({ handoffGraceMs: 30 }))
+
+    const initializing = session.initialize(undefined, true)
+    let settled = false
+    void initializing.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(70)
+    expect(settled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(10)
+    await initializing
+    expect(session.motd).toBe('')
+  })
+
   it('tracks a pre-write wait exit before exact probing begins', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

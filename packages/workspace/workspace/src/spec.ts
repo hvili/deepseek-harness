@@ -42,7 +42,8 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
 /**
  * Durable registry state. `initialized` distinguishes a valid empty registry
  * from one that still needs the header-only history bootstrap;
- * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
+ * `workspaceIds` is the authoritative display order. `archivedSessionIds` and
+ * `favoriteSessionIds`, `workspaceTagsById`, and `sessionTagsById` are
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
@@ -52,6 +53,9 @@ export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(SessionId)).default([]),
+  favoriteSessionIds: z.array(z.string().transform(SessionId)).default([]),
+  workspaceTagsById: z.record(z.string(), z.array(z.string())).default({}),
+  sessionTagsById: z.record(z.string(), z.array(z.string())).default({}),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -66,10 +70,16 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
+  // This is an additive, defaulted global-state field: old v2 media parses
+  // without a physical-domain migration, so keeping the storage descriptor at
+  // v2 is required for in-place upgrade compatibility.
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: {
+      initialized: false, workspaceIds: [], archivedSessionIds: [], favoriteSessionIds: [],
+      workspaceTagsById: {}, sessionTagsById: {},
+    },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

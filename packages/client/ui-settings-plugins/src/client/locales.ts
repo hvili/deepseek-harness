@@ -11,6 +11,19 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'visionProxyTitle' | 'visionProxyDescription' | 'visionProxyEnabled' | 'visionProxyEnabledHint'
+  | 'visionProxyProvider' | 'visionProxyProviderHint' | 'visionProxyModel' | 'visionProxyModelHint'
+  | 'visionProxyMaxTokens' | 'visionProxyMaxTokensHint'
+  | 'visionProxyDescriptionPrefix' | 'visionProxyDescriptionPrefixHint'
+  | 'visionProxyErrorMode' | 'visionProxyErrorModeHint' | 'visionProxyErrorFail' | 'visionProxyErrorPass'
+  | 'visionProxyTimeoutMs' | 'visionProxyTimeoutMsHint'
+  | 'visionProxyPrivacyConfirm'
+  | 'visionProxyTest' | 'visionProxyTesting' | 'visionProxyTestSuccess' | 'visionProxyTestNoImage'
+  | 'visionProxyTestFailed' | 'visionProxyTestEmpty'
+  | 'archivedTab' | 'archivedTitle' | 'archivedIntro' | 'archivedEmpty' | 'restoreSession'
+  | 'deleteSession' | 'deleteSessionConfirm' | 'deleteSessionsConfirm' | 'deleteSessionHint' | 'deleteSessionFailed'
+  | 'selectAllSessions' | 'selectSession' | 'deleteSelectedSessions' | 'deleteProgress'
+  | 'searchArchivedPlaceholder' | 'retryFailedDeletes'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +64,47 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  visionProxyTitle: 'Vision proxy',
+  visionProxyDescription: 'Describe images before sending the conversation to a text-only model.',
+  visionProxyEnabled: 'Enable image descriptions',
+  visionProxyEnabledHint: 'Uses the configured image-capable model and logs its description for the main model.',
+  visionProxyProvider: 'Vision provider route',
+  visionProxyProviderHint: 'The registered provider route that accepts image input.',
+  visionProxyModel: 'Vision model',
+  visionProxyModelHint: 'The image-capable model used for the auxiliary description call.',
+  visionProxyMaxTokens: 'Description token cap',
+  visionProxyMaxTokensHint: 'Maximum output tokens used for one image-description call.',
+  visionProxyDescriptionPrefix: 'Description prefix',
+  visionProxyDescriptionPrefixHint: 'Text inserted before the generated description in the conversation log.',
+  visionProxyErrorMode: 'On vision failure',
+  visionProxyErrorModeHint: 'How to handle a failed auxiliary description call.',
+  visionProxyErrorFail: 'Fail the message (recommended)',
+  visionProxyErrorPass: 'Pass the original image through',
+  visionProxyTimeoutMs: 'Vision timeout (ms)',
+  visionProxyTimeoutMsHint: 'Maximum time allowed for one auxiliary description call.',
+  visionProxyPrivacyConfirm: 'Enabling the vision proxy sends uploaded images to the configured vision provider for description. Continue?',
+  visionProxyTest: 'Test image input',
+  visionProxyTesting: 'Sending 1px probe…',
+  visionProxyTestSuccess: 'Image input verified — {provider}/{model} accepted the 1px probe.',
+  visionProxyTestNoImage: 'The model {model} on {provider} does not accept image input.',
+  visionProxyTestFailed: 'Image probe failed. Check the provider route, model name, and quota.',
+  visionProxyTestEmpty: 'Enter a provider route and model name before testing.',
+  archivedTab: 'Archived conversations',
+  archivedTitle: 'Archived conversations',
+  archivedIntro: 'Restore a conversation to its previous location, or permanently remove its conversation log. Files remain available to other conversations.',
+  archivedEmpty: 'No archived conversations.',
+  restoreSession: 'Restore',
+  deleteSession: 'Delete permanently',
+  deleteSessionConfirm: 'Permanently delete this archived conversation? This removes its conversation log and cannot be undone. Attached files are kept.',
+  deleteSessionsConfirm: 'Permanently delete {count} archived conversations? Their conversation logs will be removed and cannot be undone. Attached files are kept.',
+  deleteSessionHint: 'This conversation is generating a response. Wait for it to finish before deleting it.',
+  deleteSessionFailed: 'The conversation could not be deleted. It may still be generating a response.',
+  selectAllSessions: 'Select all deletable',
+  selectSession: 'Select {title}',
+  deleteSelectedSessions: 'Delete selected ({count})',
+  deleteProgress: 'Deleting {done}/{total}…',
+  searchArchivedPlaceholder: 'Search by title or ID',
+  retryFailedDeletes: 'Retry failed ({count})',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +146,45 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  visionProxyTitle: '视觉代理',
+  visionProxyDescription: '先把图片转换成文字，再交给纯文本主模型。',
+  visionProxyEnabled: '开启图片描述',
+  visionProxyEnabledHint: '调用配置的视觉模型，并把描述记录后提供给主模型。',
+  visionProxyProvider: '视觉提供方路由',
+  visionProxyProviderHint: '已注册且支持图片输入的提供方路由。',
+  visionProxyModel: '视觉模型',
+  visionProxyModelHint: '用于辅助图片描述的视觉模型。',
+  visionProxyMaxTokens: '描述输出上限',
+  visionProxyMaxTokensHint: '每次图片描述调用最多生成的 token 数。',
+  visionProxyDescriptionPrefix: '描述前缀',
+  visionProxyDescriptionPrefixHint: '插入在生成描述前、会写入对话日志的提示文字。',
+  visionProxyErrorMode: '视觉调用失败时',
+  visionProxyErrorModeHint: '辅助图片描述调用失败时如何处理这条消息。',
+  visionProxyErrorFail: '让消息失败（推荐）',
+  visionProxyErrorPass: '原图直接放行',
+  visionProxyTimeoutMs: '视觉调用超时（毫秒）',
+  visionProxyTimeoutMsHint: '单次辅助图片描述调用允许的最长耗时。',
+  visionProxyPrivacyConfirm: '开启视觉代理后，上传的图片会发送到所配置的视觉模型提供方进行描述。是否继续？',
+  visionProxyTest: '测试图片输入',
+  visionProxyTesting: '正在发送 1px 测试图…',
+  visionProxyTestSuccess: '图片输入链路正常 — {provider}/{model} 已接受 1px 测试图。',
+  visionProxyTestNoImage: '模型 {model}（{provider}）不支持图片输入。',
+  visionProxyTestFailed: '图片链路测试失败。请检查提供方路由、模型名称和额度。',
+  visionProxyTestEmpty: '请先填写提供方路由和模型名称再测试。',
+  archivedTab: '已归档对话',
+  archivedTitle: '已归档对话',
+  archivedIntro: '可恢复对话到原来的位置，或永久删除该对话日志。附件会保留，避免影响其他对话。',
+  archivedEmpty: '没有已归档对话。',
+  restoreSession: '恢复',
+  deleteSession: '永久删除',
+  deleteSessionConfirm: '永久删除这条已归档对话吗？对话日志将被移除且无法恢复；附件会保留。',
+  deleteSessionsConfirm: '永久删除选中的 {count} 条已归档对话吗？对话日志将被移除且无法恢复；附件会保留。',
+  deleteSessionHint: '该对话正在生成回复，请等待完成后再删除。',
+  deleteSessionFailed: '无法删除该对话；它可能仍在生成回复。',
+  selectAllSessions: '全选可删除项',
+  selectSession: '选择 {title}',
+  deleteSelectedSessions: '删除选中项（{count}）',
+  deleteProgress: '删除中 {done}/{total}…',
+  searchArchivedPlaceholder: '按标题或 ID 搜索',
+  retryFailedDeletes: '重试失败项（{count}）',
 }

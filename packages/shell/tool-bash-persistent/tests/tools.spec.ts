@@ -98,6 +98,9 @@ type StubMode =
   | 'incremental-fallback'
   | 'empty-page-after-latest'
   | 'paged-scrollback'
+  | 'newest-page-lags'
+  | 'padded-markers'
+  | 'padded-newest-page-lags'
   | 'exit-after-send'
 
 class StubPtySession implements TerminalBackendSession {
@@ -202,6 +205,14 @@ class StubPtySession implements TerminalBackendSession {
       this.scrollback += output
       return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
     }
+    if (this.mode === 'padded-markers' || this.mode === 'padded-newest-page-lags') {
+      // A Windows ConPTY render pads lines with trailing spaces: the start
+      // marker line carries padding before its newline and the status digits
+      // carry padding after them before theirs.
+      const output = `${start ?? ''} \nhello from stub\n${end ?? ''}0   \n${this.motd}`
+      this.scrollback += output
+      return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
+    }
     const commandOutput = this.mode === 'large'
       ? 'x'.repeat(100)
       : this.mode === 'nonzero' ? '' : 'hello from stub'
@@ -230,6 +241,13 @@ class StubPtySession implements TerminalBackendSession {
     }
     if (this.mode === 'empty-page-after-latest' && (request.offset ?? 0) > 0) {
       return { text: '', totalLines: 2, lineBegin: 1, lineEnd: 1, truncated: false }
+    }
+    if ((this.mode === 'newest-page-lags' || this.mode === 'padded-newest-page-lags') && (request.offset ?? 0) === 0) {
+      // The newest-page read lags the just-written marker lines: offset 0
+      // reports only the prompt while the full scrollback already holds the
+      // finished command.
+      const lines = this.scrollback.split('\n')
+      return { text: lines[lines.length - 1] ?? '', totalLines: lines.length, lineBegin: 0, lineEnd: 1, truncated: false }
     }
     const lines = this.scrollback.split('\n')
     if (this.mode === 'paged-scrollback') {
@@ -423,6 +441,40 @@ describe('tool-bash-persistent', () => {
 
     expect(text(await call(ctx, owner, 'echo "$PWD"'))).toBe('hello from stub')
     expect(stub.sessions).toHaveLength(2)
+  })
+
+  it('cuts a completed end marker out of the prompt-fallback tail', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'newest-page-lags'
+    stub.sessions[0]!.scrollback = ''
+
+    const result = text(await call(ctx, owner, 'lagging page'))
+    expect(result).toBe('hello from stub')
+  })
+
+  it('tolerates ConPTY line padding around the completion markers', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'padded-markers'
+    stub.sessions[0]!.scrollback = ''
+
+    const result = text(await call(ctx, owner, 'padded markers'))
+    expect(result).toBe('hello from stub')
+    expect(result).not.toContain('__DSH_PERSISTENT_BASH_START_')
+    expect(result).not.toContain('__DSH_PERSISTENT_BASH_END_')
+  })
+
+  it('cuts a padded completed end marker out of the prompt-fallback tail', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
+    await call(ctx, owner, 'warm up')
+    stub.sessions[0]!.mode = 'padded-newest-page-lags'
+    stub.sessions[0]!.scrollback = ''
+
+    const result = text(await call(ctx, owner, 'padded lagging page'))
+    expect(result).toBe('hello from stub')
+    expect(result).not.toContain('__DSH_PERSISTENT_BASH_START_')
+    expect(result).not.toContain('__DSH_PERSISTENT_BASH_END_')
   })
 
   it('reports a shell exit when the backend has no code or signal', async () => {

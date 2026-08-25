@@ -84,6 +84,8 @@ export const hostFrameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('host/workspace-removed'), workspaceId: workspaceIdSchema }),
   z.object({ type: z.literal('host/workspace-order-changed'), workspaceIds: z.array(workspaceIdSchema) }),
   z.object({ type: z.literal('host/archived-sessions-changed'), archivedSessionIds: z.array(sessionIdSchema) }),
+  z.object({ type: z.literal('host/favorite-sessions-changed'), favoriteSessionIds: z.array(sessionIdSchema) }),
+  z.object({ type: z.literal('host/workspace-tags-changed'), workspaceTagsById: z.record(z.string(), z.array(z.string())), sessionTagsById: z.record(z.string(), z.array(z.string())) }),
   // args stays wide, the same posture as session/projection's value: the frame
   // arrives from JSON.parse, so every element is already a JSON value, and the
   // structural contract belongs to the owner package's cordis `Events`

@@ -39,3 +39,14 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+# Compiled artifacts accidentally emitted into source dirs (scripts/tests
+# occasionally compile in place); the real output goes to lib/types.
+packages/core/agent-loop/src/*.js
+packages/core/agent-loop/src/*.js.map
+packages/core/agent-loop/src/*.d.ts
+packages/core/agent-loop/src/*.d.ts.map
+vendor/cordis/src/*.d.ts.map
+vendor/cosmokit/src/*.js
+vendor/cosmokit/src/*.js.map
+vendor/cosmokit/src/*.d.ts
+vendor/cosmokit/src/*.d.ts.map

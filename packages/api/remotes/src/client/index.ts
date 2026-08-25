@@ -99,11 +99,13 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Generated Remote namespaces selected by this Client assembly. */
     remote: TypertClientRemote
+    /** All generated Remote methods have been installed and may be called. */
+    apiRemotesReady: true
   }
 }
 
-/** Required service: the typed Client Remote contribution mount. */
-export const inject = ['remote']
+/** Required services: the typed Client Remote mount and its live RPC carrier. */
+export const inject = ['remote', 'connection']
 
 /**
  * Mount the Host capabilities explicitly selected for this Client assembly.
@@ -123,9 +125,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     for (const dispose of disposers.reverse()) await dispose()
     throw error
   }
+  const disposeReady = ctx.provide('apiRemotesReady', true)
   // Unwound in reverse mount order, so a namespace never outlives one mounted
   // after it.
   return async () => {
+    disposeReady()
     for (const dispose of disposers.reverse()) await dispose()
   }
 }

@@ -287,16 +287,24 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
       const { ctx, root, agent } = await harness('danger-full-access', {
         idleSilenceMs: 300,
         handoffGraceMs: 300,
-        timeoutMs: 8_000,
+        timeoutMs: 20_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('dsh> ')
+      // POSIX pwsh is driven by the explicit reader loop, which renders the
+      // controlled prompt instead of the native one; Windows retains the
+      // in-session bootstrap whose MOTD is the native prompt banner.
+      expect(created.motd).toContain(process.platform === 'win32' ? 'PS ' : 'dsh> ')
+      expect(created.motd).not.toContain('function prompt')
 
       const first = ctx.terminals.startSend(agent, created.sessionId, {
         text: '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
-      expect((await first.done).waitReason).toBe('stdin_read')
+      // The POSIX explicit-reader loop warms up its console input on the first
+      // command (a one-time ~1.5s delay before the post-command marker), so the
+      // first send can settle on the idle fallback before the marker lands.
+      // Both reasons mean "the session accepted input and is ready again".
+      expectReadyForNextSend((await first.done).waitReason)
       const second = ctx.terminals.startSend(agent, created.sessionId, {
         text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
         submit: true,
@@ -319,7 +327,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     const { ctx, root, agent } = await harness('danger-full-access', {
       idleSilenceMs: 300,
       handoffGraceMs: 300,
-      timeoutMs: 8_000,
+      timeoutMs: 20_000,
     }, 'pwsh')
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
     // The bootstrap itself must have pinned both encodings: the session byte

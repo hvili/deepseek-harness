@@ -54,6 +54,9 @@
       "path": "../../packages/util/launch-environment"
     },
     {
+      "path": "../../packages/util/build-manifest"
+    },
+    {
       "path": "../../packages/util/home-paths"
     },
     {

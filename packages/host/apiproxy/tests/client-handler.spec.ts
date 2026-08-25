@@ -81,13 +81,19 @@ function scriptedApi(overrides: {
       ...overrides.host,
     },
     workspace: {
-      list: r => ok(r, { items: [], archivedSessionIds: [] }),
+      list: r => ok(r, { items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {} }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       delete: r => ok(r, { deleted: true as const }),
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
+      favoriteSession: r => ok(r, { favoriteSessionIds: [r.payload.sessionId] }),
+      unfavoriteSession: r => ok(r, { favoriteSessionIds: [] }),
+      setWorkspaceTags: r => ok(r, { workspaceTagsById: { [r.payload.workspaceId]: r.payload.tags }, sessionTagsById: {} }),
+      setSessionTags: r => ok(r, { workspaceTagsById: {}, sessionTagsById: { [r.payload.sessionId]: r.payload.tags } }),
+      removeArchivedSession: r => ok(r, { archivedSessionIds: [], removed: true }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {
@@ -126,6 +132,7 @@ function scriptedApi(overrides: {
       providers: r => ok(r, { providers: [] }),
       models: r => ok(r, { groups: [], failures: [] }),
       discoverModels: err,
+      testModel: r => ok(r, { inputModalities: ['text', 'image'] }),
       ...overrides.llm,
     },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
@@ -424,15 +431,29 @@ describe('unary round trip', () => {
 })
 
 describe('workspace domain round trip', () => {
-  it('routes both workspace methods through their handler rows and value schemas', async () => {
+  it('routes workspace methods through their handler rows and value schemas', async () => {
     const c = client(scriptedApi())
     const list = await c.workspace.list({})
-    expect(list.result).toEqual({ ok: true, value: { items: [], archivedSessionIds: [] } })
+    expect(list.result).toEqual({ ok: true, value: {
+      items: [], archivedSessionIds: [], favoriteSessionIds: [], workspaceTagsById: {}, sessionTagsById: {},
+    } })
     const created = await c.workspace.create({ path: '/t' })
     expect(created.result.ok).toBe(true)
     if (created.result.ok) expect(created.result.value.created).toBe(true)
     const archivedResponse = await c.workspace.archiveSession({ sessionId: 's-arch' as never })
     expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
+    await expect(c.workspace.unarchiveSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { archivedSessionIds: [] } } })
+    await expect(c.workspace.favoriteSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { favoriteSessionIds: ['s-arch'] } } })
+    await expect(c.workspace.unfavoriteSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { favoriteSessionIds: [] } } })
+    await expect(c.workspace.setWorkspaceTags({ workspaceId: 'w1' as never, tags: ['active'] }))
+      .resolves.toMatchObject({ result: { ok: true, value: { workspaceTagsById: { w1: ['active'] } } } })
+    const tags = await c.workspace.setSessionTags({ sessionId: 's-arch' as never, tags: ['review'] })
+    expect(tags.result).toEqual({ ok: true, value: { workspaceTagsById: {}, sessionTagsById: { 's-arch': ['review'] } } })
+    await expect(c.workspace.removeArchivedSession({ sessionId: 's-arch' as never }))
+      .resolves.toMatchObject({ result: { ok: true, value: { archivedSessionIds: [], removed: true } } })
   })
 
   it('rejects a pathless create payload at the handler schema', async () => {
@@ -753,6 +774,7 @@ describe('config unary surface', () => {
         providers: record('llm.providers', r => ok(r, { providers: [providerRow] })),
         models: record('llm.models', r => ok(r, { groups: [group], failures: [] })),
         discoverModels: record('llm.discoverModels', r => ok(r, { models: [{ id: 'acme-large', contextWindow: 65536 }] })),
+        testModel: record('llm.testModel', r => ok(r, { inputModalities: ['text', 'image'] })),
       },
     })
     const c = client(api)
@@ -785,11 +807,13 @@ describe('config unary surface', () => {
       apiKey: 'probe-key',
     })
     expect(discovered.result).toEqual({ ok: true, value: { models: [{ id: 'acme-large', contextWindow: 65536 }] } })
+    const tested = await c.llm.testModel({ provider: 'acme-gateway', model: 'acme-large' })
+    expect(tested.result).toEqual({ ok: true, value: { inputModalities: ['text', 'image'] } })
 
     expect(seen.map(call => call.method)).toEqual([
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',
-      'llm.providers', 'llm.models', 'llm.discoverModels',
+      'llm.providers', 'llm.models', 'llm.discoverModels', 'llm.testModel',
     ])
     expect(seen[2]?.payload).toEqual({ ns: 'llm-deepseek', patch: { baseURL: 'https://next' } })
     expect(seen[4]?.payload)

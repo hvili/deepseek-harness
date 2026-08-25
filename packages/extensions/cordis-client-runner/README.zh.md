@@ -18,6 +18,8 @@
 
 装载按 `(id, rev)` 对 live 态收敛：装载这一页已在运行的那个 revision 会**直接从 live 态回答**而不重装（所以被重播的 run 不会看起来没人回答），更新的 revision 顶替旧的，同一 revision 在 retract 之后再装则重新装载。同一定义的操作串行执行。
 
+页面本地的 inspect registry 会在 provider effect 卸载前停止新的发布并取消仍在运行的查询。页面清理后才完成的 manifest 同步会被有意忽略，而不会报告为 carrier 失败。
+
 激活时什么都不装，刷新之后也不恢复 —— 一页只在有人回答了一次 run 请求、或有人在这一页主动要求时，才运行动态包。
 
 ## run 界面读什么、调什么

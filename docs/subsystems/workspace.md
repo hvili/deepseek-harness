@@ -204,6 +204,57 @@ delete(id: WorkspaceId): Promise<boolean>
 insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>
 
 /**
+ * Add one existing session to the durable favorites set.
+ * @param sessionId - the session to favorite.
+ * @returns resolves once the favorite is persisted.
+ */
+favoriteSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Remove one session from the durable favorites set.
+ * @param sessionId - the session to unfavorite.
+ * @returns resolves once the favorite is persisted.
+ */
+unfavoriteSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Durable tags attached to one registered workspace.
+ * @param workspaceId - the workspace to read tags for.
+ * @returns the workspace's tags.
+ */
+workspaceTags(workspaceId: WorkspaceId): readonly string[]
+
+/**
+ * Durable tags attached to one known session.
+ * @param sessionId - the session to read tags for.
+ * @returns the session's tags.
+ */
+sessionTags(sessionId: SessionId): readonly string[]
+
+/**
+ * Replace one registered workspace's tag set with normalized user input.
+ * @param workspaceId - the workspace to retag.
+ * @param tags - the normalized tag list.
+ * @returns resolves once the tags are persisted.
+ */
+setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void>
+
+/**
+ * Replace one known session's tag set with normalized user input.
+ * @param sessionId - the session to retag.
+ * @param tags - the normalized tag list.
+ * @returns resolves once the tags are persisted.
+ */
+setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void>
+
+/**
+ * Whether this process has permanently deleted the session's durable record.
+ * @param sessionId - The session identity to check.
+ * @returns whether the session's durable record was permanently removed.
+ */
+isPermanentlyRemoved(sessionId: SessionId): boolean
+
+/**
  * Archive one session durably. The session must exist (live or in session
  * persistence); its workspace accounting — or lack of one — is irrelevant.
  * An already archived id resolves without writing.
@@ -211,6 +262,23 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
  * @returns resolution after durability.
  */
 archiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Restore an archived session to its previous grouping position.
+ * @param sessionId - The archived session to unarchive.
+ */
+unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Permanently remove an archived idle session's durable log and all workspace
+ * references. A live in-memory copy may remain until the host restarts, but
+ * it is detached from every workspace and cannot be resumed once its log is
+ * gone. Attachments intentionally remain in their independent store: another
+ * session may still reference the same object.
+ * @param sessionId - The archived session to remove durably.
+ * @returns whether a durable session record was removed.
+ */
+removeArchivedSession(sessionId: SessionId): Promise<boolean>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

@@ -1,6 +1,6 @@
 // Web e2e contract for a conversation grown through the real composer rather
 // than pre-seeded history. Twelve deterministic replay turns exercise repeated
-// send/settle/render cycles, including two real bash executions and one long,
+// send/settle/render cycles, including two real shell executions and one long,
 // multi-chunk final turn. Assertions stay semantic: no host timing, heap, or
 // mounted-row cardinality is treated as a correctness contract.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -14,6 +14,7 @@ import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
   launchWebScaffold,
+  liveShellToolName,
   watchConsole,
   webSnapshotMode,
   type WebScaffold,
@@ -107,8 +108,14 @@ function toolStream(spec: TurnSpec): StreamChunk[] {
   if (spec.callId === undefined || spec.toolResultMarker === undefined) {
     throw new Error(`turn ${String(spec.index)} has no tool identity`)
   }
+  // printf is POSIX-only; Write-Output is the PowerShell spelling producing
+  // the same marker line. The stream keeps the recorded 'bash' name — the
+  // scaffold's replay tool-name map renames it to the live shell on win32,
+  // the same path a committed fixture takes.
   const args = JSON.stringify({
-    command: `printf '${spec.toolResultMarker}\\n'`,
+    command: liveShellToolName === 'bash'
+      ? `printf '${spec.toolResultMarker}\\n'`
+      : `Write-Output '${spec.toolResultMarker}'`,
     description: spec.toolResultMarker,
   })
   return [
@@ -302,15 +309,18 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
       expect(calls).toHaveLength(1)
       expect(results).toHaveLength(1)
+      // The dispatched call carries the live shell's name (the replay map
+      // renamed the recorded 'bash' on win32).
       expect(calls[0]?.data).toMatchObject({
         turn: spec.index,
         callId: spec.callId,
-        name: 'bash',
+        name: liveShellToolName,
       })
       expect(results[0]?.data.turn).toBe(spec.index)
       expect(results[0]?.data.message.source.callId).toBe(spec.callId)
       expect(results[0]?.data.message.content[0].isError).toBe(false)
-      expect(toolResultText(results[0]!)).toBe(`${spec.toolResultMarker}\n`)
+      // PowerShell emits CRLF line endings; fold them to the POSIX spelling.
+      expect(toolResultText(results[0]!).replace(/\r\n/g, '\n')).toBe(`${spec.toolResultMarker}\n`)
 
       const toolRow = page.locator(`[data-chat-call-id="${spec.callId}"]`)
       await expect.poll(() => toolRow.count(), { timeout: 10_000 }).toBe(1)

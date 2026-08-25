@@ -87,10 +87,11 @@ export interface SessionProjectionsBlock {
   values: Partial<SessionProjectionMap>
 }
 
-/** Browser-submitted prompt content; the host promotes image bytes to durable references. */
+/** Browser-submitted prompt content; the host promotes attachment bytes to durable references. */
 export type PromptContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
+  | { type: 'file'; mediaType: string; data: string; name?: string }
 
 /** Complete model selection for one session. */
 export interface ModelSelection {
@@ -342,7 +343,7 @@ export interface SessionsApi {
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**
-   * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
+   * Sends text and temporary attachment bytes to an ordinary session Agent after durable host admission.
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use

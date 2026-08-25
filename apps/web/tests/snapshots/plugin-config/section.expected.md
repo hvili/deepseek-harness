@@ -4,6 +4,9 @@
     - button "通用设置":
       - img
       - text: 通用设置
+    - button "诊断":
+      - img
+      - text: 诊断
     - button "模型":
       - img
       - text: 模型
@@ -13,6 +16,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "已归档对话":
+      - img
+      - text: 已归档对话
   - button "打开配置文件"
   - button "关闭":
     - img
@@ -35,4 +41,8 @@
       - listitem:
         - 'button "展开设置: 网页搜索"':
           - text: 网页搜索 DeepSeek 搜索提供方。
+          - img
+      - listitem:
+        - 'button "展开设置: 视觉代理"':
+          - text: 视觉代理 先把图片转换成文字，再交给纯文本主模型。
           - img

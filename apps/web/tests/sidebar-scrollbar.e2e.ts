@@ -356,7 +356,9 @@ async function pointAt(page: Page, where: 'list' | 'away'): Promise<void> {
  * @param page - the page under test.
  */
 async function expandSeededSessions(page: Page): Promise<void> {
-  const bucket = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
+  // The toggle is the treeitem row; the label's wrapper depth is
+  // layout-owned, so role+name addressing is the stable handle.
+  const bucket = page.getByRole('treeitem', { name: /^Ungrouped/ }).first()
   await bucket.waitFor({ timeout: 15_000 })
   const rows = page.locator('[role="tree"][aria-label="Sessions"] [role="treeitem"]')
   const deadline = Date.now() + 30_000

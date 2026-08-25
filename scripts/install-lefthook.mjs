@@ -409,7 +409,19 @@ async function acquireInstallLock(commonDirectory) {
       }
       return () => releaseInstallLock(lockPath, ownedRecord, ownedStat)
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error
+      const code = errorCode(error)
+      // Windows can report EPERM, rather than EEXIST, while another process
+      // still owns or has only just closed the lock file. Treat that narrow
+      // platform result as transient contention; every later successful open
+      // still goes through the inode/record ownership checks below.
+      if (code === 'EPERM' && process.platform === 'win32') {
+        if (Date.now() >= deadline) {
+          throw new Error(`timed out waiting for Lefthook installer lock ${lockPath}`)
+        }
+        await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
+        continue
+      }
+      if (code !== 'EEXIST') throw error
       const existingStat = installLockStat(lockPath)
       if (existingStat === undefined) continue
       if (!existingStat.isFile() || existingStat.isSymbolicLink()) {

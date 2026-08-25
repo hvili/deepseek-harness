@@ -17,7 +17,7 @@ import {
 } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { SessionInspection, SessionLocation } from './index.ts'
+import type { SessionInspection, SessionLocation, SessionPersistenceSnapshot } from './index.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
 import type { SessionPreparationReservation } from './preparations.ts'
@@ -78,6 +78,44 @@ export function sessionFormatVersionRefusal(id: string, version: number): string
   return version > SESSION_FORMAT_VERSION
     ? `session "${id}" uses log format v${version}, but this harness reads only v${SESSION_FORMAT_VERSION}: the log was written by a newer harness — upgrade the harness to open it`
     : `session "${id}" uses log format v${version}, older than the supported v${SESSION_FORMAT_VERSION}, and this build ships no upgrade path for it`
+}
+
+/** The slice of a persistence backend an upgrade-boundary preflight needs. */
+export interface FormatPreflightSource {
+  /** Enumerate materialized sessions and their immutable headers. */
+  listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
+}
+
+/**
+ * Startup fail-closed preflight: enumerate persisted sessions and reject the
+ * boot when any stored log was written by a harness NEWER than this build. A
+ * newer-format session cannot be faithfully interpreted, and the load-time
+ * repair path must never misread a log only a newer harness can open — so a
+ * version downgrade is refused loudly at the startup boundary instead of
+ * silently continuing. Logs OLDER than the supported format are not fatal
+ * here: the coordinator refuses each individually when opened, so a legacy
+ * session cannot lock the whole harness out of its other data.
+ * @param persistence - the mounted persistence backend to audit.
+ * @param readerLabel - reader label for the error text (defaults to `this harness`).
+ * @returns nothing once no persisted session is newer than this build reads.
+ * @throws an Error naming the count and offending format version.
+ */
+export async function assertStoredFormatNotNewer(
+  persistence: FormatPreflightSource,
+  readerLabel = 'this harness',
+): Promise<void> {
+  const snapshots = await persistence.listSnapshots()
+  const newer = snapshots.filter(snapshot => snapshot.header.version > SESSION_FORMAT_VERSION)
+  if (newer.length === 0) return
+  const firstNewer = newer[0]
+  /* v8 ignore next -- newer.length > 0 guarantees index zero exists. */
+  if (firstNewer === undefined) return
+  const label = newer.length === 1
+    ? '1 persisted session requires'
+    : `${newer.length} persisted sessions require`
+  throw new Error(
+    `${label} log format v${firstNewer.header.version}, but ${readerLabel} reads only v${SESSION_FORMAT_VERSION}: these logs were written by a newer harness — upgrade the harness before continuing`,
+  )
 }
 
 /** Coordinator policy supplied by a concrete persistence backend. */

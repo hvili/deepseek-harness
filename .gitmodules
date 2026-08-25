@@ -1,0 +1,3 @@
+[submodule "plugins/dsh-turn-rewind"]
+	path = plugins/dsh-turn-rewind
+	url = https://github.com/hvili/dsh-turn-rewind.git

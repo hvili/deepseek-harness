@@ -456,6 +456,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
+        signature: 'saveFile(_input: SaveFileAttachment): Promise<FileAttachmentRef>',
+        description: 'Persist a generic material attachment. Backends that predate structured file intake fail explicitly instead of silently treating it as an image.',
+        parameters: [{ name: '_input', description: 'the file attachment material (unsupported by this store).' }],
+        returns: 'never resolves; the store rejects with a file-unsupported error.',
+      },
+      {
+        signature: 'readFile(_ref: FileAttachmentRef, _signal?: AbortSignal): Promise<StoredFileAttachment>',
+        description: 'Read a generic material attachment, preserving cancellation semantics.',
+        parameters: [{ name: '_ref', description: 'the file attachment reference (unsupported by this store).' }, { name: '_signal', description: 'optional cancellation signal (unused by this store).' }],
+        returns: 'never resolves; the store rejects with a file-unsupported error.',
+      },
+      {
         signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
         description: 'Generate or read one deterministic model-request version from the stored normalized image.',
         parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
@@ -1135,6 +1147,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'restoreWizard',
+    summary: 'Cordis service exposing the real wizard over `ctx.sandbox` (read-only preview) and `ctx.approval` (operator confirmation before mutation).',
+    description: 'Cordis service exposing the real wizard over `ctx.sandbox` (read-only preview) and `ctx.approval` (operator confirmation before mutation).',
+    methods: [
+      {
+        signature: 'readonly seam: PreviewSeam',
+        description: 'The wired preview seam: `confine` delegates to the real `ctx.sandbox`, and `spawn` executes the confined argv. A data property (not a getter) so tests can substitute a fake seam while exercising the approval wiring above it.',
+        parameters: [],
+      },
+      {
+        signature: 'list(backupRoot: string): Promise<BackupSummary[]>',
+        description: 'List stored backups newest-first, for the wizard\'s select step.',
+        parameters: [{ name: 'backupRoot', description: 'directory holding the backup set.' }],
+        returns: 'the backup summaries, newest first.',
+      },
+      {
+        signature: 'preview(options: RestoreWizardRunOptions): Promise<RestorePlanPreview>',
+        description: 'Preview under read-only sandbox confinement (no mutation, no approval).',
+        parameters: [{ name: 'options', description: 'wizard run options.' }],
+        returns: 'the read-only restore plan preview.',
+      },
+      {
+        signature: 'restore(options: RestoreWizardRunOptions): Promise<RestoreDecision>',
+        description: 'Preview → ask `ctx.approval` → transactionally restore (full loop).',
+        parameters: [{ name: 'options', description: 'wizard run options.' }],
+        returns: 'the final restore decision.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -1208,6 +1250,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>',
         description: 'Durably persist a batch of events. Honors the append-only and contiguous- seq contracts: the first event\'s `seq` MUST equal the stored next-seq (after `load` has durably closed any interrupted turn). Rejects non-JSON- serializable `event.data` with an error naming the offending event type.',
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
+      },
+      {
+        signature: 'remove(_id: SessionId): Promise<boolean>',
+        description: 'Permanently remove one materialized session\'s durable log and header. Callers must first ensure that no live Session owns this identity.',
+        parameters: [{ name: '_id', description: 'Stored session identity to remove.' }],
+        returns: 'whether a stored session was removed.',
       },
       {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
@@ -2348,10 +2396,63 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete committed workspace order.',
       },
       {
+        signature: 'favoriteSession(sessionId: SessionId): Promise<void>',
+        description: 'Add one existing session to the durable favorites set.',
+        parameters: [{ name: 'sessionId', description: 'the session to favorite.' }],
+        returns: 'resolves once the favorite is persisted.',
+      },
+      {
+        signature: 'unfavoriteSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from the durable favorites set.',
+        parameters: [{ name: 'sessionId', description: 'the session to unfavorite.' }],
+        returns: 'resolves once the favorite is persisted.',
+      },
+      {
+        signature: 'workspaceTags(workspaceId: WorkspaceId): readonly string[]',
+        description: 'Durable tags attached to one registered workspace.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace to read tags for.' }],
+        returns: 'the workspace\'s tags.',
+      },
+      {
+        signature: 'sessionTags(sessionId: SessionId): readonly string[]',
+        description: 'Durable tags attached to one known session.',
+        parameters: [{ name: 'sessionId', description: 'the session to read tags for.' }],
+        returns: 'the session\'s tags.',
+      },
+      {
+        signature: 'setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void>',
+        description: 'Replace one registered workspace\'s tag set with normalized user input.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace to retag.' }, { name: 'tags', description: 'the normalized tag list.' }],
+        returns: 'resolves once the tags are persisted.',
+      },
+      {
+        signature: 'setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void>',
+        description: 'Replace one known session\'s tag set with normalized user input.',
+        parameters: [{ name: 'sessionId', description: 'the session to retag.' }, { name: 'tags', description: 'the normalized tag list.' }],
+        returns: 'resolves once the tags are persisted.',
+      },
+      {
+        signature: 'isPermanentlyRemoved(sessionId: SessionId): boolean',
+        description: 'Whether this process has permanently deleted the session\'s durable record.',
+        parameters: [{ name: 'sessionId', description: 'The session identity to check.' }],
+        returns: 'whether the session\'s durable record was permanently removed.',
+      },
+      {
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Restore an archived session to its previous grouping position.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to unarchive.' }],
+      },
+      {
+        signature: 'removeArchivedSession(sessionId: SessionId): Promise<boolean>',
+        description: 'Permanently remove an archived idle session\'s durable log and all workspace references. A live in-memory copy may remain until the host restarts, but it is detached from every workspace and cannot be resumed once its log is gone. Attachments intentionally remain in their independent store: another session may still reference the same object.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to remove durably.' }],
+        returns: 'whether a durable session record was removed.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -3002,6 +3103,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
   {
+    name: 'BackupSummary',
+    declaration: 'export interface BackupSummary {\n    readonly backupDir: string;\n    readonly backupId: string;\n    readonly createdAt: number;\n    readonly sessionFormatVersion: number;\n    readonly harnessVersion: string;\n    readonly entryCount: number;\n    readonly totalBytes: number;\n}',
+  },
+  {
     name: 'BashEnvContributor',
     declaration: 'export interface BashEnvContributor {\n    name: string;\n    variables: Readonly<Record<DshEnvironmentKey, BashEnvVariable>>;\n    resolve(execution: ToolExecution): Readonly<Partial<Record<DshEnvironmentKey, string>>>;\n}',
   },
@@ -3115,7 +3220,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContentBlockMap',
-    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
+    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'file\': FileBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
   },
   {
     name: 'ContentBlockType',
@@ -3338,8 +3443,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
   {
+    name: 'FileAttachmentRef',
+    declaration: 'export interface FileAttachmentRef {\n    kind: \'file\';\n    attachmentId: AttachmentId;\n    mediaType: string;\n    bytes: number;\n    name?: string;\n}',
+  },
+  {
+    name: 'FileBlock',
+    declaration: 'export interface FileBlock {\n    type: \'file\';\n    attachment: FileAttachmentRef;\n    preview?: string;\n    extraction?: FileExtraction;\n}',
+  },
+  {
     name: 'FileDiff',
     declaration: 'export interface FileDiff {\n    path: string;\n    oldText: string | null;\n    newText: string;\n}',
+  },
+  {
+    name: 'FileExtraction',
+    declaration: 'export type FileExtraction = {\n    status: \'ready\';\n    extractedChars: number;\n    truncated: boolean;\n} | {\n    status: \'failed\';\n    code: FileExtractionFailureCode;\n    message: string;\n};',
+  },
+  {
+    name: 'FileExtractionFailureCode',
+    declaration: 'export type FileExtractionFailureCode = \'PDF_TEXT_EXTRACTION_UNAVAILABLE\' | \'UNSUPPORTED_FILE_TYPE\' | \'MALFORMED_OFFICE_DOCUMENT\' | \'INVALID_TEXT_ENCODING\';',
   },
   {
     name: 'FileLocation',
@@ -3850,6 +3971,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
+    name: 'PreviewSeam',
+    declaration: 'export interface PreviewSeam {\n    confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv;\n    spawn(argv: readonly string[]): Promise<string>;\n}',
+  },
+  {
     name: 'ProjectionChangeListener',
     declaration: 'export type ProjectionChangeListener = (session: Session, key: Extract<keyof SessionProjectionMap, string>, value: unknown, seq: number) => void;',
   },
@@ -3962,8 +4087,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResolvedSubagentStartRequest extends SubagentStartRequest {\n    readonly descriptor: SubagentDescriptorData;\n}',
   },
   {
+    name: 'RestoreDecision',
+    declaration: 'export type RestoreDecision = {\n    readonly outcome: \'declined\';\n} | {\n    readonly outcome: \'nothing-to-do\';\n} | {\n    readonly outcome: \'restored\';\n    readonly impact: RestoreImpact;\n    readonly restored: number;\n    readonly skippedIdentical: number;\n    readonly pruned: number;\n};',
+  },
+  {
     name: 'RestoredSessionOptions',
     declaration: 'export interface RestoredSessionOptions {\n    readonly seed: SessionEvent[];\n    readonly meta: SessionHeader;\n    readonly seedSource: \'persistence\';\n}',
+  },
+  {
+    name: 'RestoreImpact',
+    declaration: 'export interface RestoreImpact {\n    readonly toRestore: readonly string[];\n    readonly identical: readonly string[];\n    readonly orphans: readonly string[];\n}',
+  },
+  {
+    name: 'RestorePlanPreview',
+    declaration: 'export interface RestorePlanPreview {\n    readonly verified: boolean;\n    readonly impact: RestoreImpact | null;\n    readonly mismatch?: string;\n}',
+  },
+  {
+    name: 'RestoreWizardRunOptions',
+    declaration: 'export interface RestoreWizardRunOptions {\n    readonly backupDir: string;\n    readonly restoreRoot: string;\n    readonly rollbackRoot: string;\n    readonly sessionFormatVersion: number;\n    readonly harnessVersion?: string;\n    readonly pruneOrphans?: boolean;\n    readonly agent: Agent;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'ResumeAgentOptions',
@@ -3979,7 +4120,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'session-active\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \' /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',
@@ -4016,6 +4157,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxPolicyRequest',
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
+  },
+  {
+    name: 'SaveFileAttachment',
+    declaration: 'export interface SaveFileAttachment {\n    data: Uint8Array;\n    mediaType: string;\n    name?: string;\n}',
   },
   {
     name: 'SaveImageAttachment',
@@ -4452,6 +4597,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'StorageForms',
     declaration: 'export interface StorageForms {\n}',
+  },
+  {
+    name: 'StoredFileAttachment',
+    declaration: 'export interface StoredFileAttachment {\n    ref: FileAttachmentRef;\n    data: Uint8Array;\n}',
   },
   {
     name: 'StoredImageAttachment',

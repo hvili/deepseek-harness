@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import {
   CallId,
   createUserMessage,
+  fileBlockText,
+  contentHasImage,
+  requestImageHandleText,
   OFFLOADED_IMAGE_TEXT,
   offloadRequestImages,
   offloadRequestImagesWithPolicy,
@@ -24,6 +27,57 @@ function image(bytes: number): ContentBlock {
     },
   }
 }
+
+it('models a durable file source without embedding host paths or raw bytes', () => {
+  const block = {
+    type: 'file',
+    attachment: { kind: 'file', attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'application/pdf', bytes: 42, name: 'brief.pdf' },
+    preview: 'Extracted preview',
+  } satisfies ContentBlock
+  expect(block.attachment.attachmentId).not.toContain('/')
+  expect(block.preview).toBe('Extracted preview')
+  expect(fileBlockText(block)).toBe('Extracted preview')
+  expect(fileBlockText({ ...block, preview: '' })).toContain('brief.pdf')
+  const { name: _name, ...unnamedAttachment } = block.attachment
+  const { preview: _preview, ...withoutPreview } = block
+  expect(fileBlockText({ ...withoutPreview, attachment: unnamedAttachment }))
+    .toContain('unnamed file')
+})
+
+it('formats a stable request image handle', () => {
+  expect(requestImageHandleText({
+    variantId: ImageVariantId('sha256:variant'),
+    attachment: {
+      attachmentId: AttachmentId('sha256:abc123'),
+      mediaType: 'image/png',
+      bytes: 1,
+      width: 640,
+      height: 480,
+    },
+    data: Uint8Array.of(1),
+    mediaType: 'image/png',
+    bytes: 1,
+    width: 640,
+    height: 480,
+    depth: 'uchar',
+    space: 'srgb',
+    hasAlpha: true,
+  })).toBe('Image sha256:abc123; request image 640x480px.')
+})
+
+it('detects images recursively without treating other nested blocks as images', () => {
+  expect(contentHasImage([{ type: 'text', text: 'plain' }])).toBe(false)
+  expect(contentHasImage([{
+    type: 'tool-result',
+    toolCallId: CallId('text-only'),
+    content: [{ type: 'text', text: 'nested plain' }],
+  }])).toBe(false)
+  expect(contentHasImage([{
+    type: 'tool-result',
+    toolCallId: CallId('nested-image'),
+    content: [image(3)],
+  }])).toBe(true)
+})
 
 describe('offloadRequestImages', () => {
   it('preserves every image when no payload bound is configured', () => {

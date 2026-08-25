@@ -30,6 +30,8 @@ export interface SessionNode {
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   updatedAt: number
+  /** Fork depth inside this project group; roots and orphaned sessions use zero. */
+  lineageDepth?: number
 }
 
 /** Session order selected by the Workspace browser. */
@@ -50,6 +52,8 @@ export interface GroupNode {
   expanded: boolean
   /** The group contains the selected session (active folder tint; supplied here so the renderer never scans). */
   containsCurrent: boolean
+  /** The group is the cwd-bound project (Host launched in this directory); the renderer marks it. */
+  boundToCwd: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
 }
@@ -88,7 +92,13 @@ interface Group {
   cwd: string | undefined
   createdAt: number | undefined
   label: string
-  sessions: SessionSummary[]
+  sessions: GroupSession[]
+}
+
+/** Session ordered next to its visible fork parent, with a renderer indentation depth. */
+interface GroupSession {
+  summary: SessionSummary
+  depth: number
 }
 
 /**
@@ -130,7 +140,33 @@ function sessionTitle(session: SessionSummary): string {
   return session.blank ? 'New Session' : session.displayTitle
 }
 
-/** Build one group without projecting session lineage into presentation. */
+/** Keep a group-local fork child adjacent to its parent without dropping orphaned or cyclic sessions. */
+function orderLineage(sessions: readonly SessionSummary[]): GroupSession[] {
+  const byId = new Map(sessions.map(session => [session.id, session]))
+  const children = new Map<SessionId, SessionSummary[]>()
+  const roots: SessionSummary[] = []
+  for (const session of sessions) {
+    if (session.parentId !== undefined && byId.has(session.parentId)) {
+      const siblings = children.get(session.parentId) ?? []
+      siblings.push(session)
+      children.set(session.parentId, siblings)
+    } else roots.push(session)
+  }
+  const ordered: GroupSession[] = []
+  const visited = new Set<SessionId>()
+  const append = (session: SessionSummary, depth: number): void => {
+    if (visited.has(session.id)) return
+    visited.add(session.id)
+    ordered.push({ summary: session, depth })
+    for (const child of children.get(session.id) ?? []) append(child, depth + 1)
+  }
+  for (const root of roots) append(root, 0)
+  // A cycle has no root. Keep every member reachable as a visible root.
+  for (const session of sessions) append(session, 0)
+  return ordered
+}
+
+/** Build one group with project-local fork lineage in presentation order. */
 function buildGroup(
   key: string,
   workspaceId: WorkspaceId | undefined,
@@ -144,7 +180,7 @@ function buildGroup(
   // Real Workspace order comes from sessionIds. Ungrouped falls back to
   // recency until the browser supplies its persisted local order.
   if (order === 'recency') sessions.sort(byRecency)
-  return { key, workspaceId, cwd, createdAt, label, sessions }
+  return { key, workspaceId, cwd, createdAt, label, sessions: orderLineage(sessions) }
 }
 
 /** Apply a stored Ungrouped order and append newly loose Sessions by recency. */
@@ -212,7 +248,7 @@ function groupByWorkspace(
 }
 
 function sessionNode(
-  s: SessionSummary,
+  { summary: s, depth }: GroupSession,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
 ): SessionNode {
   return {
@@ -223,6 +259,7 @@ function sessionNode(
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,
     updatedAt: s.updatedAt,
+    lineageDepth: depth,
     ...(s.pendingInteraction === undefined ? {} : { pendingInteraction: s.pendingInteraction }),
   }
 }
@@ -239,6 +276,7 @@ function sessionNode(
  * @param workspaces - real workspaces in stable Host order.
  * @param archivedSessionIds - registry-global archive set.
  * @param view - local expansion arrays.
+ * @param cwdWorkspaceId - optional Host cwd-bound project; its group is marked for the renderer.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -246,6 +284,7 @@ export function deriveGroups(
   workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
   view: TreeView,
+  cwdWorkspaceId?: WorkspaceId,
 ): GroupNode[] {
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
@@ -266,6 +305,7 @@ export function deriveGroups(
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
+      boundToCwd: cwdWorkspaceId !== undefined && g.workspaceId === cwdWorkspaceId,
       sessions: expanded ? g.sessions.map(session => sessionNode(session, descendants)) : [],
     })
   }
@@ -294,7 +334,7 @@ export function deriveFlat(
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants))
+  return rows.map(summary => sessionNode({ summary, depth: 0 }, descendants))
 }
 
 /** Relative-time bucket of a session row's trailing label. */
@@ -316,6 +356,7 @@ export interface RelativeTime {
  * @param archivedSessionIds - registry-global archive set (members never match).
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param tags - durable workspace and session tag maps used for local matching.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(
@@ -325,20 +366,29 @@ export function deriveSearchResults(
   archivedSessionIds: readonly SessionId[],
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  tags: {
+    workspaceTagsById: Readonly<Record<string, readonly string[]>>
+    sessionTagsById: Readonly<Record<string, readonly string[]>>
+  } = { workspaceTagsById: {}, sessionTagsById: {} },
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
 
-  const workspaceBySession = new Map<SessionId, string>()
+  const workspaceBySession = new Map<SessionId, { title: string; tags: readonly string[] }>()
   for (const workspace of workspaces) {
     for (const sessionId of workspace.sessionIds) {
-      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.title)
+      if (!workspaceBySession.has(sessionId)) {
+        workspaceBySession.set(sessionId, {
+          title: workspace.title,
+          tags: tags.workspaceTagsById[workspace.workspaceId] ?? [],
+        })
+      }
     }
   }
   const labelOf = (summary: SessionSummary): string =>
-    workspaceBySession.get(summary.id) ?? workspaceLabel(summary.cwd)
+    workspaceBySession.get(summary.id)?.title ?? workspaceLabel(summary.cwd)
   const contentBySession = new Map<SessionId, SessionSearchResultItem>()
   for (const item of content.items) {
     if (!contentBySession.has(item.sessionId)) contentBySession.set(item.sessionId, item)
@@ -353,6 +403,8 @@ export function deriveSearchResults(
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
+      || workspaceBySession.get(summary.id)?.tags.some(tag => tag.toLowerCase().includes(q)) === true
+      || tags.sessionTagsById[summary.id]?.some(tag => tag.toLowerCase().includes(q)) === true
     ) {
       local.push(summary)
     }

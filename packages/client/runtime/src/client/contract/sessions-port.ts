@@ -42,6 +42,13 @@ export interface SessionsPort {
    * @param id - session id (must exist in the list store).
    */
   open(id: SessionId): void
+  /**
+   * Remove a session from the local projection after the Host permanently
+   * deleted its durable record. The Host must no longer return this id on a
+   * later baseline.
+   * @param id - permanently deleted session id.
+   */
+  remove(id: SessionId): void
   /** Clear the current selection into the no-session view state. */
   clear(): void
 }

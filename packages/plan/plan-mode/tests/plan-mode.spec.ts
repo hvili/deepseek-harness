@@ -11,7 +11,9 @@ import UserQuestionService, {
 } from '@deepseek-ai/dsh-user-questions'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { CodeRuntime, type CodeRunRequest, type CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import PlanModeController, { EXIT_PLAN_MODE, foldPlanMode, resolveConfig } from '../src/index.ts'
+import PlanModeController, {
+  EXIT_PLAN_MODE, foldApprovedPlan, foldPlanMode, resolveConfig,
+} from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
 
 const TEST_PLAN_SECTION = 'Test plan mode instructions.'
@@ -839,6 +841,17 @@ describe('exit_plan_mode', () => {
     // step's end, so the plan policy covers any remaining call of the SAME batch.
     expect(foldPlanMode(agent.session.events)).toBe(true)
     expect(ctx.planMode.get(agent)).toEqual({ active: true, pending: false })
+    const approved = agent.session.events.findLast(event => event.type === 'plan/approved')
+    expect(approved?.type === 'plan/approved' && approved.data).toEqual({
+      heading: 'The plan',
+      plan: '# The plan\n\ndo things',
+    })
+    expect(foldApprovedPlan(agent.session.events)).toEqual({
+      heading: 'The plan',
+      plan: '# The plan\n\ndo things',
+      seq: approved?.seq,
+    })
+    expect(foldApprovedPlan(agent.session.events, 0)).toBeUndefined()
     await boundary(ctx, agent, 'step-start')
     expect(foldPlanMode(agent.session.events)).toBe(false)
     expect(asked).toHaveLength(1)

@@ -78,7 +78,7 @@ function mountFrame() {
   }) as never
   const workspaceState: WorkspaceListState = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
+    baselinesReady: baselinesReady.current, recentWorkspaceId: undefined, cwdWorkspaceId: undefined,
   }
   const element = () => (
     <AppFrame

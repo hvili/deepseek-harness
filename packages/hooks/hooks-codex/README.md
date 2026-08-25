@@ -19,7 +19,7 @@ A native cordis plugin could do everything this bridge does, more powerfully; th
 ```ts
 import type { Config } from '@deepseek-ai/dsh-hooks-codex'
 const config: Config = {
-  configPath: '/path/to/.codex/hooks.json', // required
+  configPath: '/path/to/.codex/hooks.json', // optional: discover Codex's standard files when omitted
   model: 'deepseek-v4',                      // optional: stamped on every payload (Codex includes `model`)
   defaultTimeoutMs: 600_000,                 // optional: per-hook timeout when a hook sets none
   stderrSummaryMaxChars: 500,                // optional: char cap on the hook/result event's persisted stderr summary
@@ -30,11 +30,16 @@ In a `cordis.yml`:
 
 ```yaml
 - dsh-hooks-codex:
-    configPath: ./.codex/hooks.json
     model: deepseek-v4
 ```
 
-The config is parsed **once** at load. `configPath` is **process-level** — a relative path resolves against the process launch cwd at load time, not per-session (`TODO(per-session-hook-config)`). A read/parse failure is contained (logs + registers nothing); an invalid regex matcher on an event that consumes matchers is one such failure and reports its pattern and event. Only sync `type: 'command'` hooks run — a non-command or `async: true` hook is parsed-and-skipped with a warning. A hook accepts `timeout` or the `timeoutSec` alias; one that sets neither runs under the protocol's reference default (`DEFAULT_HOOK_TIMEOUT_MS` from `dsh-hook-protocol`, 10 minutes). Events outside the five bridge-supported points are dropped at parse.
+The config is parsed **once** at load. `configPath` is **process-level** — a relative path resolves against the process launch cwd at load time, not per-session (`TODO(per-session-hook-config)`).
+
+**With `configPath` omitted**, the bridge auto-discovers Codex's standard locations and merges them — `<cwd>/.codex/hooks.json` (project, launch cwd) first, then `~/.codex/hooks.json` (user) — with project hooks running before (and covering) user hooks. A discovered file that is simply absent is skipped quietly, so a normal checkout with no hook config registers nothing and stays inert. This is how the bridge ships by default in the base bundle: an existing Codex hook config takes effect with zero setup.
+
+**With an explicit `configPath`**, that single file is authoritative and must exist and parse — a failure means "no hooks registered" (the previous behavior). In auto-discovery, a file that is present but fails to parse is warned and skipped so one broken layer never blanks the hooks a user did configure.
+
+A read/parse failure is contained (logs + registers nothing); an invalid regex matcher on an event that consumes matchers is one such failure and reports its pattern and event. Only sync `type: 'command'` hooks run — a non-command or `async: true` hook is parsed-and-skipped with a warning. A hook accepts `timeout` or the `timeoutSec` alias; one that sets neither runs under the protocol's reference default (`DEFAULT_HOOK_TIMEOUT_MS` from `dsh-hook-protocol`, 10 minutes). Events outside the five bridge-supported points are dropped at parse.
 
 The hooks themselves run in the agent's session workspace: for the agent-scoped points the bridge passes the session's `cwd` as the hook process's working directory, so a hook operates in the user's project tree, not the server launch dir.
 
@@ -97,4 +102,4 @@ A blocked prompt sends no request and invalidates nothing. Denial, feedback, and
 - **`PostToolUse` is partial:** blocking feedback and JSON `additionalContext` work, but `{"continue": false}` is not enforced, non-shell tool arguments are reduced to `{ command }`, and structured tool output is flattened to text in `tool_response`.
 - **`Stop` is partial:** blocking forces another model turn, but `stop_hook_active` is always `false`, `last_assistant_message` is always `null`, and `{"continue": false}` is not enforced. An unconditionally blocking hook therefore force-continues every step unless it self-limits (`TODO(stop-loop-guard)`).
 - **Common payload and output fields are partial:** every mapped event reports the statically configured `model` and `permission_mode: "default"` instead of current Codex runtime values. `systemMessage` is logged + warned but not surfaced, and `{"continue": false}` is recorded but does not apply Codex's event-specific stop behavior (`TODO(hook-continue-false)`).
-- **Config loading and execution are partial:** one process-level `configPath` is parsed at load; Codex's active user, project, session, system/managed, and plugin layers, trust controls, and inline `config.toml` hook form are not implemented (`TODO(per-session-hook-config)`). Only synchronous `command` handlers run, current metadata such as `statusMessage` and `commandWindows` is ignored, and matching handlers run serially rather than with Codex's concurrent launch semantics.
+- **Config loading and execution are partial:** one process-level load merges the project `<cwd>/.codex/hooks.json` and user `~/.codex/hooks.json` layers (or a single explicit `configPath`); Codex's session, system/managed, and plugin layers, trust controls, and inline `config.toml` hook form are not implemented (`TODO(per-session-hook-config)`). Only synchronous `command` handlers run, current metadata such as `statusMessage` and `commandWindows` is ignored, and matching handlers run serially rather than with Codex's concurrent launch semantics.

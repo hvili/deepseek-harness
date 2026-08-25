@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-22-persistent-shell-fallback-marker-leak.md
+2026-08-22-persistent-shell-fallback-marker-leak.md: 9c4fff1083d013e3b6b2d37d3eb7d294e23be62c
+2026-08-22-persistent-shell-fallback-marker-leak.zh.md: 82b4548f6da785d46be4ba9e1d4ecd153ecc94eb

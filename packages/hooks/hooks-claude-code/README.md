@@ -11,7 +11,7 @@ A native cordis plugin could do everything this bridge does — more powerfully,
 ```ts
 import type { Config } from '@deepseek-ai/dsh-hooks-claude-code'
 const config: Config = {
-  configPath: '/path/to/hooks.json', // required: a hooks.json or a settings file with a `hooks` key
+  configPath: '/path/to/hooks.json', // optional: a hooks.json or a settings file with a `hooks` key; omitted ⇒ auto-discovery
   pluginRoot: '/path/to/plugin',     // optional: replaces ${CLAUDE_PLUGIN_ROOT} in command strings
   projectDir: '/path/to/project',    // optional: replaces ${CLAUDE_PROJECT_DIR} AND sets the hook env var; defaults to the session cwd when omitted
   defaultTimeoutMs: 600_000,         // optional: per-hook timeout when a hook sets none (CC default)
@@ -19,16 +19,18 @@ const config: Config = {
 }
 ```
 
+With no `configPath`, the bridge auto-discovers Claude Code's standard layered settings files at load: `<cwd>/.claude/settings.json` (project, resolved from the process launch cwd) then `~/.claude/settings.json` (user). The `hooks` key each file carries is merged (project hooks run before user hooks; a hook defined in both runs under both). A discovered file that is simply absent is skipped quietly, so a machine with no Claude Code settings stays silent; a present-but-invalid layer is warned and skipped rather than blanking the hooks the user did configure. An explicit `configPath` remains authoritative: it must exist and parse, and a failure means "no hooks registered" (the previous behavior).
+
 In a `cordis.yml`:
 
 ```yaml
 - dsh-hooks-claude-code:
-    configPath: ./.claude/hooks.json
+    configPath: ./.claude/hooks.json # optional: omit to auto-discover `.claude/settings.json`
     pluginRoot: ./.claude/plugins/my-plugin
     projectDir: .
 ```
 
-The config is parsed **once** at load. `configPath` is **process-level**: a relative path resolves against the process's launch cwd at load time, so a single config applies to the whole process — there is no per-session (`session/new.cwd`) config discovery yet (`TODO(per-session-hook-config)`). A read/parse failure is contained — including an invalid regex matcher on an event that consumes matchers, reported with its pattern and event — and the bridge logs a warning and registers nothing rather than crashing boot (a typo'd path must not take the agent down). Only shell-form `type: 'command'` hooks run; an `http`/`mcp_tool`/`prompt`/`agent` hook is parsed-and-skipped with a warning. A hook with no per-hook `timeout` runs under the protocol's reference default (`DEFAULT_HOOK_TIMEOUT_MS` from `dsh-hook-protocol`, 10 minutes — the CC default).
+The config is parsed **once** at load. An explicit `configPath` (or a discovered project file) resolves relative paths against the process's launch cwd at load time, so a single config applies to the whole process — there is no per-session (`session/new.cwd`) config discovery yet (`TODO(per-session-hook-config)`). A read/parse failure is contained — including an invalid regex matcher on an event that consumes matchers, reported with its pattern and event — and the bridge logs a warning and registers nothing rather than crashing boot (a typo'd path must not take the agent down). Only shell-form `type: 'command'` hooks run; an `http`/`mcp_tool`/`prompt`/`agent` hook is parsed-and-skipped with a warning. A hook with no per-hook `timeout` runs under the protocol's reference default (`DEFAULT_HOOK_TIMEOUT_MS` from `dsh-hook-protocol`, 10 minutes — the CC default).
 
 The hooks **themselves** run in the agent's session workspace: for the agent-scoped points the bridge passes the session's `cwd` (the `session/new.cwd`) as the hook process's working directory, so a hook's `pwd`/relative-path/marker operates in the user's project tree, not the server launch dir.
 
@@ -94,4 +96,4 @@ A blocked prompt sends no request and invalidates nothing. Denial, feedback, and
 - **`SubagentStart` and `SubagentStop` are partial:** both report a constant `agent_type` of `general-purpose` and use the child session id where Claude Code reports the parent session. Start context is best-effort and can only reach a live in-process child, while stop is observe-only and cannot block the subagent or feed it context. Start omits `transcript_path`; stop also omits `agent_transcript_path`, `last_assistant_message`, `background_tasks`, and `session_crons` and always reports `stop_hook_active: false`.
 - **`Stop` is partial:** blocking forces another model turn, but `stop_hook_active` is always `false`, `last_assistant_message`, `background_tasks`, and `session_crons` are omitted, and the consecutive-block cap is not implemented (`TODO(stop-loop-guard)`). An unconditionally blocking hook therefore force-continues every step unless it self-limits.
 - **Common payload and output fields are partial:** mapped event payloads omit `prompt_id`, `transcript_path`, `permission_mode`, and `effort` where Claude Code would provide them. `systemMessage` is logged + warned but not surfaced; `{"continue": false}` is recorded but does not halt the run; `suppressOutput`, `stopReason`, and `terminalSequence` are not applied (`TODO(hook-continue-false)`).
-- **Handler and config support is partial:** only shell-form command handlers run. `http`, `mcp_tool`, `prompt`, and `agent` handlers are skipped; command-handler options such as `args`, `async`, `asyncRewake`, `shell`, `if`, `once`, and `statusMessage` are not honored. Matching handlers run serially and are not deduplicated, whereas Claude Code runs them in parallel and deduplicates identical handlers. One process-level `configPath` is parsed once at load; Claude Code's layered project, user, plugin, and policy discovery and live reload are not implemented (`TODO(per-session-hook-config)`).
+- **Handler and config support is partial:** only shell-form command handlers run. `http`, `mcp_tool`, `prompt`, and `agent` handlers are skipped; command-handler options such as `args`, `async`, `asyncRewake`, `shell`, `if`, `once`, and `statusMessage` are not honored. Matching handlers run serially and are not deduplicated, whereas Claude Code runs them in parallel and deduplicates identical handlers. The bridge auto-discovers the project and user `.claude/settings.json` `hooks` keys once at load, but Claude Code's full layered project, user, plugin, and policy discovery, live reload, and per-session (`session/new.cwd`) project discovery are not implemented (`TODO(per-session-hook-config)`).

@@ -25,6 +25,8 @@ export interface AssistantMarkdownProps {
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
+  /** Render durable generic files through the attachment slot. */
+  renderMessageFiles?: ChatNodeOwnerProps['renderMessageFiles']
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
@@ -33,7 +35,7 @@ export interface AssistantMarkdownProps {
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages, mentions, t,
+  blocks, streaming, interrupted, renderMessageImages, renderMessageFiles, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -89,6 +91,16 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         )
         break
       }
+      case 'file':
+        rendered.push(<Fragment key={i}>{renderMessageFiles?.({
+          files: [{
+            attachment: block.attachment,
+            ...block.preview === undefined ? {} : { preview: block.preview },
+            ...block.extraction === undefined ? {} : { extraction: block.extraction },
+          }],
+          align: 'start',
+        })}</Fragment>)
+        break
       // Grouped into tool rows by ChatView; hasVisible above skips an empty shell.
       case 'tool-call':
         break

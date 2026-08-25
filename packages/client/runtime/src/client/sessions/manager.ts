@@ -582,6 +582,7 @@ export class SessionManager {
   ): Promise<RpcResult<{ sessionId: SessionId }>> {
     try {
       const source = this.summaries.find(s => s.sessionId === opts.sessionId)
+      const sourceAddress = this.navigationAddress(opts.sessionId)
       const { result } = await this.api.sessions.fork({
         sessionId: opts.sessionId,
         ...opts.atSeq === undefined ? {} : { atSeq: opts.atSeq },
@@ -590,6 +591,15 @@ export class SessionManager {
         ? result.value.sessionId
         : workspaceAttachSessionId(result.error)
       if (childId !== undefined) {
+        // A catalog-addressed child is viewed through its workspace-owning
+        // ancestor. Branching out of that child leaves the finished ancestor
+        // behind, so preserve the same finished-but-unviewed reminder that a
+        // normal running→idle edge would publish. This cannot ride a status
+        // edge reliably: a fast fork can publish and settle between list
+        // frames, while the ordinary fork itself is selected immediately.
+        if (result.ok && sourceAddress !== undefined) {
+          this.completedNotifications.add(sourceAddress.parentSessionId)
+        }
         this.recordMutation({ kind: 'upsert', summary: {
           sessionId: childId, updatedAt: Date.now(), running: false, blank: false,
           parentSessionId: opts.sessionId,

@@ -68,6 +68,7 @@ async function harness(withRegistry: boolean): Promise<{ ctx: Context; session: 
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   if (withRegistry) await ctx.plugin(SessionProjectionRegistry)
+  ctx.provide('workspaceRegistry', { isPermanentlyRemoved: () => false } as never)
   const session = ctx.sessions.create()
   // The gateway reads both the session and durable inbox baseline.
   ctx.agents.register({ id: session.id, session, inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }), status: 'idle', ctx } as Agent)

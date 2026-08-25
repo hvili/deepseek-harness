@@ -330,6 +330,30 @@ describe('host frame routing', () => {
 })
 
 describe('subagent catalogs', () => {
+  it('keeps the owning ancestor completed when an addressed child forks into an ordinary session', async () => {
+    const forkId = 'fk-fork' as SessionId
+    const api = new FakeApiClient()
+    api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
+    api.onSubagentList = () => Promise.resolve(ok({
+      entries: [{
+        kind: 'child', id: S2, mode: 'continuable', label: 'worker',
+        activity: 'inactive', hasChildren: false,
+      }] as never[],
+      parentAvailable: true,
+    }))
+    api.onFork = () => Promise.resolve(ok({ sessionId: forkId }))
+    const manager = new SessionManager(api, fakeRemote())
+    await manager.refreshList()
+    await manager.refreshSubagents(S1)
+    manager.selectSubagent({ parentSessionId: S1, childSessionId: S2, mode: 'continuable' })
+
+    await expect(manager.fork({ sessionId: S2 })).resolves.toMatchObject({ ok: true })
+    expect(manager.getListSnapshot().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: S1, completed: true }),
+      expect.objectContaining({ sessionId: forkId, completed: false }),
+    ]))
+  })
+
   it('keeps a catalog-discovered child address across ordinary selection and status frames', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [

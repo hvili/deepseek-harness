@@ -12,9 +12,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
@@ -52,6 +52,7 @@ import {
   type SessionLogExportReady,
   type SessionLogCompressionLevel,
 } from './session-export.ts'
+import { intakeFileText } from './file-intake.ts'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -110,9 +111,13 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import { expectVisionProbeFinish, onePixelPng } from './vision-probe.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
+
+/** Settings section read by image admission before the agent pre-step runs. */
+const VISION_PROXY_SETTINGS_NAMESPACE = settingsNamespace('vision-proxy')
 
 /** Provider work budget: at most 100 calls and 2,000 inspected hits. */
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
@@ -122,20 +127,128 @@ const COLD_SUMMARY_BATCH_SIZE = 16
 /** Default maximum artifact size eligible for one cold blankness read. */
 export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 
+/** Default timeout for the llm.testModel 1px image probe. */
+const VISION_PROBE_TIMEOUT_MS = 60_000
+
+/** Maximum output tokens for the llm.testModel image probe. */
+const VISION_PROBE_MAX_TOKENS = 32
+
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
+
+/** Decode the browser payload while rejecting non-canonical base64 forms. */
+function decodeBase64(data: string): Uint8Array {
+  const decoded = Buffer.from(data, 'base64')
+  if (data.length === 0 || decoded.toString('base64') !== data) {
+    throw new AttachmentError('Image upload is not canonical base64.', 'INVALID_IMAGE_BASE64')
+  }
+  return new Uint8Array(decoded)
+}
+
+/** Copy durable tag maps into JSON-safe wire snapshots. */
+function workspaceTagsSnapshot(ctx: Context): { workspaceTagsById: Record<string, string[]>; sessionTagsById: Record<string, string[]> } {
+  const registry = (ctx as unknown as {
+    workspaceRegistry?: {
+      workspaceTagsById?: Readonly<Record<string, readonly string[]>>
+      sessionTagsById?: Readonly<Record<string, readonly string[]>>
+    }
+  }).workspaceRegistry
+  return {
+    workspaceTagsById: registry?.workspaceTagsById === undefined
+      ? {}
+      : Object.fromEntries(Object.entries(registry.workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+    sessionTagsById: registry?.sessionTagsById === undefined
+      ? {}
+      : Object.fromEntries(Object.entries(registry.sessionTagsById).map(([id, tags]) => [id, [...tags]])),
+  }
+}
+
+/** Exact ordered comparison for a JSON tag map. */
+function sameTagMaps(left: Record<string, readonly string[]>, right: Record<string, readonly string[]>): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every(key => Object.hasOwn(right, key)
+      && left[key]?.length === right[key]?.length
+      && left[key]?.every((tag, index) => tag === right[key]?.[index]))
+}
+
+/**
+ * Send one 1x1 transparent image through the exact adapter path a real image
+ * attachment uses. Saving the probe through the durable attachment service
+ * exercises decode, persistence, read-back, and provider serialization in one
+ * round trip; the same bytes are content-addressed, so repeated tests reuse
+ * the object instead of accumulating copies.
+ */
+async function runVisionProbe(ctx: Context, provider: string, model: string, timeoutMs: number): Promise<void> {
+  const attachment = await ctx.attachments.saveImage({
+    data: onePixelPng(),
+    mediaType: 'image/png',
+    name: 'vision-proxy-test.png',
+  })
+  const message = createUserMessage({
+    content: [
+      { type: 'text', text: 'Reply with exactly "ok" to confirm the image-input path.' },
+      { type: 'image', attachment },
+    ],
+    source: { kind: 'plugin', plugin: 'apiproxy' },
+  })
+  const signal = AbortSignal.timeout(timeoutMs)
+  try {
+    await expectVisionProbeFinish(ctx.llm.stream({
+      provider,
+      model,
+      messages: [message],
+      maxTokens: VISION_PROBE_MAX_TOKENS,
+      signal,
+    }))
+    if (signal.aborted) throw new Error(`vision probe timed out after ${timeoutMs}ms`)
+  } catch (error: unknown) {
+    if (signal.aborted) throw new Error(`vision probe timed out after ${timeoutMs}ms`)
+    throw error
+  }
+}
 
 /** Validate one prompt as a batch before publishing any durable image object. */
 async function durablePromptContent(ctx: Context, content: readonly PromptContentPart[]): Promise<ContentBlock[]> {
   if (content.every(part => part.type === 'text')) {
     return content.map(part => ({ type: 'text', text: part.text }))
   }
-  const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
-  let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+  type PreparedPart = Extract<PromptContentPart, { type: 'text' }>
+    | { part: Exclude<PromptContentPart, { type: 'text' }>; data: Uint8Array }
+  const prepared: PreparedPart[] = content.map(part => part.type === 'text'
+    ? part
+    : { part, data: decodeBase64(part.data) })
+  const images = prepared.filter((item): item is { part: Extract<PromptContentPart, { type: 'image' }>; data: Uint8Array } =>
+    'part' in item && item.part.type === 'image')
+  const refs = images.length === 0 ? [] : await ctx.attachments.saveImages(images.map(image => ({
+    data: image.data,
+    mediaType: image.part.mediaType,
+    ...image.part.name === undefined ? {} : { name: image.part.name },
+  })))
+  const blocks: ContentBlock[] = []
+  let imageIndex = 0
+  for (const item of prepared) {
+    if (!('part' in item)) {
+      blocks.push({ type: 'text', text: item.text })
+      continue
+    }
+    if (item.part.type === 'file') {
+      const attachment = await ctx.attachments.saveFile({
+        data: item.data,
+        mediaType: item.part.mediaType,
+        ...item.part.name === undefined ? {} : { name: item.part.name },
+      })
+      const intake = intakeFileText(attachment, item.data)
+      blocks.push({ type: 'file', attachment, ...intake })
+      continue
+    }
+    const attachment = refs[imageIndex++]
+    /* v8 ignore next -- each prepared image supplied exactly one saveImages input and therefore one ordered ref. */
+    if (attachment === undefined) throw new Error('attachment batch result did not preserve input cardinality')
+    blocks.push({ type: 'image', attachment })
+  }
+  return blocks
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -592,6 +705,14 @@ export interface ApiProxyDefaults {
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
+  /** The installation's build-manifest version, injected by the launcher; absent when a test mounts the proxy directly. */
+  version?: string
+  /** Short git commit this build came from, when the manifest was stamped; absent otherwise. */
+  commit?: string
+  /** Release-pipeline build hash, when the manifest was stamped; absent otherwise. */
+  buildHash?: string
+  /** Session-log on-disk format version, when the manifest was stamped; absent otherwise. */
+  schemaVersion?: number
   /** Native open-with-default-application; injectable for carrier tests. */
   openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native text-editor handoff; injectable for settings-document tests. */
@@ -1595,11 +1716,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // session's history was produced under that composition, and
           // rebuilding it differently would replay tool calls the model can no
           // longer make.
-          return (await ctx.agents.resume({
+          const handle = await ctx.agents.resume({
             resumeSessionId: sessionId,
             agentOptions: agentOptions(),
             setup: (await composeAgent(storedPreset)).setup,
-          })).agent
+          })
+          return handle.agent
         }
 
         try {
@@ -1608,7 +1730,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
         const composition = await composeAgent(presetId)
-        return (await ctx.agents.create({
+        const handle = await ctx.agents.create({
           sessionId,
           agentOptions: agentOptions(),
           meta: {
@@ -1616,7 +1738,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
           },
           setup: composition.setup,
-        })).agent
+        })
+        return handle.agent
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
@@ -1673,7 +1796,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = ctx.sessions.list().map(summarizeAttached)
+    const items = ctx.sessions.list()
+      .filter(session => !ctx.workspaceRegistry.isPermanentlyRemoved(session.id))
+      .map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1777,6 +1902,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   function routeServed(provider: string): boolean {
     const llm = ctx.get('llm')
     return llm === undefined || llm.listProviders().some(entry => entry.id === provider)
+  }
+
+  function messagesHaveImage(messages: readonly { content: readonly ContentBlock[] }[]): boolean {
+    return messages.some(message => contentHasImage(message.content))
+  }
+
+  /**
+   * Image admission happens before `agent/pre-step`, so an enabled proxy must
+   * explicitly opt text-only sessions into the image upload path. Requiring
+   * the auxiliary provider route to be live avoids accepting images that can
+   * never be transformed when the configured vision route is absent.
+   */
+  function visionProxyAllowsImages(agent?: Agent): boolean {
+    const settings = ctx.get('settings')
+    if (settings === undefined) return false
+    // The pre-step hook can transform a newly claimed image, but it cannot
+    // rewrite image blocks that are already in the durable session surface.
+    // Refuse that case here instead of admitting a request the text adapter
+    // will reject later.
+    if (agent !== undefined && messagesHaveImage(agent.session.deriveMessages())) return false
+    const value = settings.get(VISION_PROXY_SETTINGS_NAMESPACE)
+    if (typeof value !== 'object' || value === null) return false
+    const section = value as { enabled?: unknown; visionProvider?: unknown }
+    return section.enabled === true
+      && typeof section.visionProvider === 'string'
+      && section.visionProvider.length > 0
+      && routeServed(section.visionProvider)
   }
 
   /**
@@ -2385,7 +2537,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+              if (modelInfo.inputModalities !== undefined
+                && !modelInfo.inputModalities.includes('image')
+                && !visionProxyAllowsImages(agent)) {
                 return err(request, {
                   code: 'attachment-error',
                   message: `Model "${current.model}" does not support image input.`,
@@ -2704,6 +2858,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return Promise.resolve(ok(request, {
           items: ctx.workspaceRegistry.list().map(workspaceView),
           archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+          favoriteSessionIds: [...ctx.workspaceRegistry.favoriteSessionIds],
+          ...workspaceTagsSnapshot(ctx),
         }))
       },
 
@@ -2818,24 +2974,81 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
       },
+
+      async unarchiveSession(request) {
+        await ctx.workspaceRegistry.unarchiveSession(request.payload.sessionId)
+        return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+
+      async favoriteSession(request) {
+        const { sessionId } = request.payload
+        try { await ctx.workspaceRegistry.favoriteSession(sessionId) } catch (error: unknown) {
+          if (!(error instanceof WorkspaceUnknownSessionError)) throw error
+          return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+        }
+        return ok(request, { favoriteSessionIds: [...ctx.workspaceRegistry.favoriteSessionIds] })
+      },
+
+      async unfavoriteSession(request) {
+        await ctx.workspaceRegistry.unfavoriteSession(request.payload.sessionId)
+        return ok(request, { favoriteSessionIds: [...ctx.workspaceRegistry.favoriteSessionIds] })
+      },
+
+      async setWorkspaceTags(request) {
+        const { workspaceId, tags } = request.payload
+        try {
+          await ctx.workspaceRegistry.setWorkspaceTags(brandWorkspaceId(workspaceId), tags)
+        } catch (error: unknown) {
+          if (error instanceof WorkspaceOrderInvalidError) return workspaceNotFound(request, workspaceId)
+          throw error
+        }
+        return ok(request, workspaceTagsSnapshot(ctx))
+      },
+
+      async setSessionTags(request) {
+        const { sessionId, tags } = request.payload
+        try {
+          await ctx.workspaceRegistry.setSessionTags(sessionId, tags)
+        } catch (error: unknown) {
+          if (!(error instanceof WorkspaceUnknownSessionError)) throw error
+          return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+        }
+        return ok(request, workspaceTagsSnapshot(ctx))
+      },
+
+      async removeArchivedSession(request) {
+        const { sessionId } = request.payload
+        const live = ctx.agents.get(sessionId)
+        if (live?.status === 'running') {
+          return err(request, {
+            code: 'session-active',
+            message: `cannot permanently remove running session '${sessionId}'`,
+            details: { sessionId },
+          })
+        }
+        const removed = await ctx.workspaceRegistry.removeArchivedSession(sessionId)
+        return ok(request, { removed, archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
     },
 
     host: {
       describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
         const selection = defaults.defaultModelSelection()
         return Promise.resolve(ok(request, {
-          version: '0.0.1',
+          version: defaults.version ?? '0.0.0',
           // Same source as session.create's fallback: the UI's default project
           // must match where an unspecified-cwd session actually lands.
           cwd: defaults.cwd,
+          home: homedir(),
           // Read live for the same reason: this is what the NEXT session will
           // start from, so a saved default has to be what it reports.
           provider: selection.provider,
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
-          home: homedir(),
           canOpenPath: canOpenPaths(),
+          ...(defaults.commit === undefined ? {} : { commit: defaults.commit }),
+          ...(defaults.buildHash === undefined ? {} : { buildHash: defaults.buildHash }),
+          ...(defaults.schemaVersion === undefined ? {} : { schemaVersion: defaults.schemaVersion }),
         }))
       },
 
@@ -3322,6 +3535,34 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
       },
+
+      async testModel(request) {
+        const { provider, model } = request.payload
+        const probeVision = request.payload.probeVision
+        const timeoutMs = request.payload.timeoutMs
+        if (!ctx.llm.listProviders().some(entry => entry.id === provider)) {
+          return err(request, {
+            code: 'model-unavailable',
+            message: `provider "${provider}" is not registered`,
+            details: { provider, model },
+          })
+        }
+        try {
+          const info = await ctx.llm.resolveModelInfo(provider, model)
+          if (probeVision === true && (info.inputModalities === undefined || info.inputModalities.includes('image'))) {
+            await runVisionProbe(ctx, provider, model, timeoutMs ?? VISION_PROBE_TIMEOUT_MS)
+          }
+          return ok(request, {
+            ...info.inputModalities === undefined ? {} : { inputModalities: [...info.inputModalities] },
+          })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'model-unavailable',
+            message: error instanceof Error ? error.message : String(error),
+            details: { provider, model },
+          })
+        }
+      },
     },
 
     events: {
@@ -3440,6 +3681,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // stream opens against the current set; workspace.list re-baselines
         // reconnecting clients, so only later changes need frames.
         let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
+        let favoriteSessionIds = ctx.workspaceRegistry.favoriteSessionIds
+        let workspaceTagsById = workspaceTagsSnapshot(ctx).workspaceTagsById
+        let sessionTagsById = workspaceTagsSnapshot(ctx).sessionTagsById
         const disposers = [
           ctx.on('session/created', (session: Session) => {
             queue.push(frame({
@@ -3491,6 +3735,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 queue.push(frame({
                   type: 'host/archived-sessions-changed',
                   archivedSessionIds: [...state.archivedSessionIds],
+                }))
+              }
+              if (state.favoriteSessionIds.length !== favoriteSessionIds.length
+                || state.favoriteSessionIds.some((id, index) => id !== favoriteSessionIds[index])) {
+                favoriteSessionIds = state.favoriteSessionIds
+                queue.push(frame({ type: 'host/favorite-sessions-changed', favoriteSessionIds: [...favoriteSessionIds] }))
+              }
+              if (!sameTagMaps(state.workspaceTagsById, workspaceTagsById)
+                || !sameTagMaps(state.sessionTagsById, sessionTagsById)) {
+                workspaceTagsById = state.workspaceTagsById
+                sessionTagsById = state.sessionTagsById
+                queue.push(frame({
+                  type: 'host/workspace-tags-changed',
+                  workspaceTagsById: Object.fromEntries(Object.entries(workspaceTagsById).map(([id, tags]) => [id, [...tags]])),
+                  sessionTagsById: Object.fromEntries(Object.entries(sessionTagsById).map(([id, tags]) => [id, [...tags]])),
                 }))
               }
               return

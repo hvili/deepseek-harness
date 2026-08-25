@@ -111,3 +111,50 @@
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
 }
+
+.testRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.testButton {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.testButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.testButton:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.testStatus {
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.testStatusSuccess {
+  color: var(--dsw-alias-label-success);
+}
+
+.testStatusError {
+  color: var(--dsw-alias-label-error);
+}

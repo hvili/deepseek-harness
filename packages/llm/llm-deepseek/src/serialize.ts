@@ -6,7 +6,7 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, fileBlockText, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -99,8 +99,7 @@ function resolveThinking(options: GenerateOptions, defaults: RequestDefaults): R
 /** Join the text blocks of a message (used for user/tool-result content). */
 function flattenText(blocks: ContentBlock[]): string {
   return blocks
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
+    .map(block => block.type === 'text' ? block.text : block.type === 'file' ? fileBlockText(block) : '')
     .join('')
 }
 
@@ -173,6 +172,9 @@ async function contentParts(
       case 'image':
         nextImage.value += 1
         parts.push(...await imageParts(block, images, { message, image: nextImage.value }, parts.length > 0))
+        break
+      case 'file':
+        parts.push({ type: 'text', text: fileBlockText(block) })
         break
       case 'tool-result':
         parts.push(...await contentParts(block.content, images, message, nextImage))

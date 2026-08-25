@@ -4,7 +4,7 @@
  * @module dsh-llm-pi-ai/context
  */
 
-import { CallId, contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { CallId, contentHasImage, fileBlockText, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
@@ -20,8 +20,7 @@ import { DEFAULT_REQUEST_IMAGE_MAX_BYTES, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET } f
 /** Join the text blocks of a harness message. */
 function flattenText(message: Message): string {
   return message.content
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
+    .map(block => block.type === 'text' ? block.text : block.type === 'file' ? fileBlockText(block) : '')
     .join('')
 }
 
@@ -30,7 +29,8 @@ function flattenText(message: Message): string {
 function toolResultText(blocks: readonly ContentBlock[]): string {
   return blocks.map(block => block.type === 'text'
     ? block.text
-    : block.type === 'tool-result' ? toolResultText(block.content) : '').join('')
+    : block.type === 'file' ? fileBlockText(block)
+      : block.type === 'tool-result' ? toolResultText(block.content) : '').join('')
 }
 
 /** Reject image roles that pi-ai cannot replay before request-size offloading can replace them. */
@@ -65,6 +65,9 @@ async function userContent(
         })
         break
       }
+      case 'file':
+        content.push({ type: 'text', text: fileBlockText(block) })
+        break
       case 'tool-result':
         {
           const nested = await userContent(block.content, requestImages)

@@ -50,6 +50,12 @@ export interface RpcMethodMap {
   'workspace.insertBefore': WorkspaceApi['insertBefore']
   'workspace.insertSessionBefore': WorkspaceApi['insertSessionBefore']
   'workspace.archiveSession': WorkspaceApi['archiveSession']
+  'workspace.unarchiveSession': WorkspaceApi['unarchiveSession']
+  'workspace.favoriteSession': WorkspaceApi['favoriteSession']
+  'workspace.unfavoriteSession': WorkspaceApi['unfavoriteSession']
+  'workspace.setWorkspaceTags': WorkspaceApi['setWorkspaceTags']
+  'workspace.setSessionTags': WorkspaceApi['setSessionTags']
+  'workspace.removeArchivedSession': WorkspaceApi['removeArchivedSession']
   'skill.list': SkillsApi['list']
   'agentPreset.list': AgentPresetsApi['list']
   'agentPreset.select': AgentPresetsApi['select']
@@ -74,6 +80,7 @@ export interface RpcMethodMap {
   'llm.providers': LlmApi['providers']
   'llm.models': LlmApi['models']
   'llm.discoverModels': LlmApi['discoverModels']
+  'llm.testModel': LlmApi['testModel']
 }
 
 /** Business request payload of method K (reaches through the RpcRequest narrow form to payload). */

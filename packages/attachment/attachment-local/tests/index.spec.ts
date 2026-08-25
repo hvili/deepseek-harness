@@ -10,6 +10,7 @@ import LocalAttachmentStore, {
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
   DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
   DEFAULT_MAX_IMAGE_BYTES,
+  DEFAULT_MAX_FILE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -24,6 +25,7 @@ describe('local attachment service', () => {
     expect(DEFAULT_MAX_MESSAGE_IMAGE_BYTES).toBe(200 * 1024 * 1024)
     expect(DEFAULT_MAX_IMAGE_PIXELS).toBe(64_000_000)
     expect(DEFAULT_MAX_IMAGE_DIMENSION).toBe(8192)
+    expect(service.maxFileBytes).toBe(DEFAULT_MAX_FILE_BYTES)
     expect(service.imageLimits).toEqual({
       maxImageBytes: DEFAULT_MAX_IMAGE_BYTES,
       maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -57,6 +59,20 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('enforces generic file limits through the service boundary', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-file-attachment-service-'))
+    try {
+      const data = Uint8Array.from(Buffer.from('%PDF-1.7', 'utf8'))
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxFileBytes: data.byteLength })
+      const ref = await service.saveFile({ data, mediaType: 'application/pdf', name: 'brief.pdf' })
+      await expect(service.readFile(ref)).resolves.toEqual({ ref, data })
+      await expect(service.saveFile({ data: Uint8Array.of(...data, 0), mediaType: 'application/pdf' }))
+        .rejects.toMatchObject({ code: 'FILE_TOO_LARGE' })
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }
@@ -117,8 +133,7 @@ describe('local attachment service', () => {
         { data: valid, mediaType: 'image/png' },
         { data: valid, mediaType: 'image/png' },
       ])).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
-      expect(existsSync(service.root)).toBe(false)
-    } finally {
+      expect(existsSync(service.root)).toBe(false)    } finally {
       await rm(dshHome, { recursive: true, force: true })
     }
   })

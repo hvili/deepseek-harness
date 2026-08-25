@@ -520,6 +520,22 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `plan/*`
 
+<a id="planapproved--log-only"></a>
+
+#### `plan/approved` — log-only
+
+```ts persistence-catalog
+/**
+ * A plan was reviewed and approved through `exit_plan_mode` — log-only,
+ * non-surface, last-wins. It marks the exact approved plan so resume,
+ * fork, and review surfaces can reconstruct the approval without parsing
+ * tool results.
+ */
+'plan/approved': { heading: string; plan: string }
+```
+
+来源：[`packages/plan/plan-mode/src/index.ts:60`](../packages/plan/plan-mode/src/index.ts)
+
 <a id="planmode--log-only"></a>
 
 #### `plan/mode` — log-only

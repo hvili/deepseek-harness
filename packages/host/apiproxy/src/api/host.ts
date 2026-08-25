@@ -52,6 +52,9 @@ export interface HostApi {
     attachedSessions: number
     home: string
     canOpenPath: boolean
+    commit?: string
+    buildHash?: string
+    schemaVersion?: number
   }>>
 
   /**

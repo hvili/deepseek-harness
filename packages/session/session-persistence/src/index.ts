@@ -48,9 +48,11 @@ export {
   PersistenceCoordinator,
   SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
+  assertStoredFormatNotNewer,
   sessionFormatVersionRefusal,
 } from './coordinator.ts'
 export type {
+  FormatPreflightSource,
   PersistenceBackend,
   PersistenceCoordinatorOptions,
   StoredPrefix,
@@ -141,6 +143,16 @@ export abstract class SessionPersistence extends Service {
    * @param events - the contiguous batch to persist, in seq order.
    */
   abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+  /**
+   * Permanently remove one materialized session's durable log and header.
+   * Callers must first ensure that no live Session owns this identity.
+   * @param _id - Stored session identity to remove.
+   * @returns whether a stored session was removed.
+   */
+  remove(_id: SessionId): Promise<boolean> {
+    return Promise.reject(new Error('this session persistence backend does not support permanent removal'))
+  }
 
   /**
    * Prepare the exact unpublished Session used by resume. Implementations may

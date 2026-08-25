@@ -167,6 +167,12 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
+  'packages/interaction/restore-wizard': { kind: 'none', reason: 'The wizard drives sandbox-confined restore previews and approval flows; provider requests are assembled by the restored session services.' },
+  'packages/util/build-manifest': { kind: 'none', reason: 'Reports build-time artifact identity through one context key; nothing here reaches a model request.' },
+  'packages/util/restore-coordinator': { kind: 'none', reason: 'Coordinates durable restore transactions over the backup primitives; nothing here reaches a model request.' },
+  'packages/util/session-backup': { kind: 'none', reason: 'Durable directory snapshot/verify/restore primitives; nothing here reaches a model request.' },
+  'packages/util/upgrade-coordinator': { kind: 'none', reason: 'Guards persisted session-format versions across launches; nothing here reaches a model request.' },
+  'packages/vision/vision-proxy': { kind: 'indirect', reason: 'Replaces images with provider descriptions before the ordinary model step; request assembly and the provider adapter own the model-visible request.' },
 }
 
 interface Failure {

@@ -40,6 +40,7 @@ const LIVE_TOOL_FIRST = 'CHAT_SCROLL_TOOL_STREAM_FIRST'
 const LIVE_TOOL_DONE = 'CHAT_SCROLL_TOOL_STREAM_DONE'
 const TOOL_READY_FILE = '.chat-scroll-tool-ready'
 const TOOL_RELEASE_FILE = '.chat-scroll-tool-release'
+const SHELL_TOOL_NAME = process.platform === 'win32' ? 'pwsh' : 'bash'
 const INPUTS_SESSION_ID = 'chat-scroll-inputs-e2e'
 const FLING_SESSION_ID = 'chat-scroll-fling-e2e'
 const LIVE_FLING_PROMPT = 'CHAT_SCROLL_FLING_USER Keep streaming while I fling back through older output.'
@@ -112,12 +113,18 @@ function textStream(first: string, done: string, deltaCount: number): StreamChun
 }
 
 function toolStream(): StreamChunk[] {
-  const command = [
-    `: > ${TOOL_READY_FILE}`,
-    `while [ ! -f ${TOOL_RELEASE_FILE} ]; do sleep 0.02; done`,
-    'line=1',
-    `while [ "$line" -le 64 ]; do printf '${LIVE_TOOL_RESULT} line %02d\\n' "$line"; line=$((line + 1)); done`,
-  ].join('; ')
+  const command = process.platform === 'win32'
+    ? [
+      `New-Item -ItemType File -Force -Path '${TOOL_READY_FILE}' | Out-Null`,
+      `while (-not (Test-Path '${TOOL_RELEASE_FILE}')) { Start-Sleep -Milliseconds 20 }`,
+      `1..64 | ForEach-Object { Write-Output ('${LIVE_TOOL_RESULT} line {0:D2}' -f $_) }`,
+    ].join('; ')
+    : [
+      `: > ${TOOL_READY_FILE}`,
+      `while [ ! -f ${TOOL_RELEASE_FILE} ]; do sleep 0.02; done`,
+      'line=1',
+      `while [ "$line" -le 64 ]; do printf '${LIVE_TOOL_RESULT} line %02d\\n' "$line"; line=$((line + 1)); done`,
+    ].join('; ')
   const args = JSON.stringify({ command, description: LIVE_TOOL_RESULT })
   return [
     { type: 'block-start', index: 0, blockType: 'tool-call' },
@@ -125,13 +132,13 @@ function toolStream(): StreamChunk[] {
       type: 'tool-call-delta',
       index: 0,
       id: LIVE_TOOL_CALL_ID,
-      name: 'bash',
+      name: SHELL_TOOL_NAME,
       argumentsDelta: args,
     },
     {
       type: 'block-end',
       index: 0,
-      block: { type: 'tool-call', id: LIVE_TOOL_CALL_ID, name: 'bash', arguments: args },
+      block: { type: 'tool-call', id: LIVE_TOOL_CALL_ID, name: SHELL_TOOL_NAME, arguments: args },
     },
     { type: 'usage', usage: { inputTokens: 256, outputTokens: 48 } },
     { type: 'finish', reason: { kind: 'tool-calls' } },
@@ -467,7 +474,10 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
-      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
+      // Keep the stream alive while a hosted runner scrolls and starts the
+      // held history request. With 120 deltas the stream can finish before the
+      // anchor is sampled, defeating the concurrency contract this case owns.
+      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 360))],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
       await openSeed(
@@ -766,6 +776,10 @@ describe('web e2e: long Chat scroll contract', () => {
       await backToBottom.waitFor({ timeout: 10_000 })
       await expect.poll(async () => (await scrollGeometry(world.page)).distanceFromBottom, { timeout: 10_000 })
         .toBeGreaterThan(100)
+      // PageUp transfers focus to the composer on this Chromium build. Return
+      // it to the transcript's own paging control before asserting End; an End
+      // in a textarea is a caret command, not transcript navigation.
+      await backToBottom.focus()
       await world.page.keyboard.press('End')
       await expectBottom(world.page)
       await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
