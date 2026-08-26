@@ -149,7 +149,8 @@
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs",
     "product:diagnostics": "tsx scripts/product-diagnostics.ts",
-    "product:verify": "tsx scripts/product-diagnostics.ts --verify"
+    "product:verify": "tsx scripts/product-diagnostics.ts --verify",
+    "product:web-recovery": "npm run build:official && tsx scripts/product-web-recovery.ts"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",

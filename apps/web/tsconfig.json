@@ -100,7 +100,10 @@
     "tests/composer-tab-geometry.e2e.ts",
     "tests/complex-history.perf.ts",
     "tests/pwsh-terminal.e2e.ts",
-    "tests/workflow-run.e2e.ts"
+    "tests/workflow-run.e2e.ts",
+    // Host-only recovery gate; its process/copy support must not enter the
+    // browser/client project graph.
+    "tests/web-recovery.e2e.ts"
   ],
   "references": [
     {

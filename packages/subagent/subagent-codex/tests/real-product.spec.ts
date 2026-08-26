@@ -27,6 +27,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
+import type { CodexThreadStartWal } from '../src/thread-state.ts'
 import {
   startResponsesFixture,
   type ResponsesBehavior,
@@ -641,7 +642,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     const references = secondStored.events.filter(event => event.type === 'codex/thread-reference')
     const accepted = secondStored.events.filter(event => event.type === 'codex/thread-start-wal')
       .map(event => event.data)
-      .filter((data): data is { state: 'accepted'; threadId: string } => (
+      .filter((data): data is CodexThreadStartWal & { state: 'accepted'; threadId: string } => (
         typeof data === 'object'
         && data !== null
         && (data as { state?: unknown }).state === 'accepted'

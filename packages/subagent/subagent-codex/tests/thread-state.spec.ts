@@ -274,11 +274,11 @@ describe('Codex persistent thread state', () => {
         persisted.push({ type: 'codex/thread-reference', seq: persisted.length, time: 0, data: reference })
       },
     }
-    await retryJournal.appendReference(recovered)
+    await retryJournal.appendReference(recovered!)
     expect(recoverCodexThreadStartWal(persisted as never)).toEqual(recovered)
 
     const resumedApp = await initializedClient()
-    const resumed = new CodexPersistentThreadClient(resumedApp.client).resume(recovered)
+    const resumed = new CodexPersistentThreadClient(resumedApp.client).resume(recovered!)
     const resumeRequest = await resumedApp.peer.request('thread/resume')
     expect(resumeRequest.params).toEqual({ threadId: 'accepted-thread' })
     resumedApp.peer.respond(resumeRequest, { thread: { id: 'accepted-thread', ephemeral: false } })
