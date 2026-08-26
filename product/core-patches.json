@@ -7,7 +7,7 @@
   "auditRange": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e..356faa8535c943c0bdebebd1f546724cd5f1b261",
   "runtimeBaseline": "cf14720d2eb7e5e0d3b330806cece532331c1404",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 88,
+  "nonMergeCommitCount": 89,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1355,6 +1355,19 @@
       "verification": "Run the event-content preservation regression, focused recovery tests, target lint, export JSDoc, official build, two-process recovery, source checksum, cleanup, and product identity gates.",
       "upstreamStatus": "review-on-next-sync",
       "deletionCondition": "Delete with the copied-data recovery gate after equivalent official coverage preserves event content and passes the same restart and cleanup evidence."
+    },
+    {
+      "commit": "63f5b55c1fe00473d2eb458d70674d6879f6cec4",
+      "subject": "fix(product): allow attachment-free recovery datasets",
+      "affectedAreas": [
+        "scripts/product-web-recovery-support.ts",
+        "scripts/product-web-recovery.spec.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The copied-data recovery gate must accept real Sessions with no durable image reference while keeping malformed, non-content-addressed, missing, or corrupt referenced attachments fail-closed; the deterministic fixture continues to require full attachment recovery.",
+      "verification": "Run attachment-free multi-frame zstd recovery, malformed-reference rejection, focused recovery tests, target lint, typecheck, official build, deterministic attachment recovery, actual-source copied-data recovery, source checksum, cleanup, and product identity gates.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete with the copied-data recovery gate after equivalent official coverage distinguishes unavailable attachment evidence from attachment failure and passes both attachment-present and attachment-free restart recovery."
     }
   ]
 }
