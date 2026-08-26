@@ -12,7 +12,7 @@ Status: implemented
 
 增强发行版使用三层所有权。`Harness-src` 在 `product/main` 上跟随官方 RC/Release 标签，只保留当前公共插件扩展点无法承载的改动。`D:\DeepSeek\plugins` 是独立的 Git 与 pnpm 工作区，承载产品插件和组合 Profile Bundle。包内 Codex app-server 保持为可选引擎；关闭 provider 时，DeepSeek 原生组合不发生变化。
 
-初始范围内的每个非合并下游提交都记录在 `product/core-patches.json` 中，分类为临时核心补丁、迁移到增强层、上游候选，或必须删除/重新证明的改动。每项都记录验证方式、上游状态和删除条件。`sync/<version>` 分支每次只吸收一个官方 RC/Release 标签；产品身份检查和受影响回归检查通过前，同步结果不得进入 `product/main`。
+初始范围内的每个非合并下游提交都记录在 `product/core-patches.json` 中，分类为临时核心补丁、迁移到增强层、上游候选，或必须删除／重新证明的改动。清单还记录可恢复产品基线之后的每个运行时／构建提交，并把 `cf14720d2e` 标识为独立的 `runtimeBaseline` 条目。`product:verify` 从 Git 推导这些提交，拒绝缺失、重复、已删除和未经审计的条目，并排除只更新治理元数据的提交，因此审计提交不会引用自身。每项都记录验证方式、上游状态和删除条件。`sync/<version>` 分支每次只吸收一个官方 RC/Release 标签；产品身份检查和受影响回归检查通过前，同步结果不得进入 `product/main`。
 
 诊断命令同时报告官方合并基线、产品提交、增强层提交、DSH 版本、Codex 运行时版本和补丁数量。升级列车只记录这些值，不自动推送、发布、部署或重启服务。
 

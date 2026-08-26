@@ -18,14 +18,16 @@ The recoverable starting point is tag `dsh-enhanced-baseline-2026-08-25` at `356
 
 ## Core patch inventory
 
-[`core-patches.json`](core-patches.json) contains every non-merge commit in the initial downstream range. Each entry records affected areas, one disposition, verification, upstream status, and a deletion condition. The allowed dispositions are:
+[`core-patches.json`](core-patches.json) records the 77 non-merge commits in the initial downstream range and every runtime or build commit after the recoverable product baseline. The recorded `runtimeBaseline` identifies `cf14720d2e` as a separate audited runtime patch; each entry records affected areas, one disposition, verification, upstream status, and a deletion condition. The allowed dispositions are:
 
 - `minimal-core-patch`: remains temporarily in `Harness-src` because current public seams cannot host it.
 - `migrate-to-enhancement-layer`: moves to `D:\DeepSeek\plugins` before removal from the product branch.
 - `upstream-candidate`: becomes an isolated contribution useful to official DSH.
 - `retire-or-reprove`: is deleted unless a release-train comparison reproduces a concrete need.
 
-No new runtime or build patch may enter `product/main` without being added to the inventory in a follow-up audit commit or replacing an existing entry. Governance-only metadata is validated directly by `product:verify`. Every official sync must remove, merge, or re-prove at least one retained entry.
+`product:verify` derives the live inventory from Git at `HEAD` and rejects missing initial entries, duplicate entries, deleted entries, and runtime or build commits without an audit entry. Commits that change only product governance metadata, its paired documentation, diagnostic script/tests, or supporting notes are excluded from that derived runtime/build set, so an audit commit cannot recursively audit itself. A new runtime or build patch must be added in a follow-up audit commit or replace an existing entry. Every official sync must remove, merge, or re-prove at least one retained entry.
+
+After this change is merged, refresh the single external plan file `D:\DeepSeek\P0执行规划.md` with the exact merge commit as its `HEAD`; do not create a second plan file or record the pre-merge worktree commit.
 
 ## Official RC/Release train
 
