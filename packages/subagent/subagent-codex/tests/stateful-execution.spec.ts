@@ -1,8 +1,11 @@
-/** Stateful execution notification ordering at the package-local client edge. */
+/** Stateful execution terminal coordination at the package-local client edge. */
 
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+} from '@deepseek-ai/dsh-subprocess'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CodexStatefulExecution, type CodexThreadJournal } from '../src/stateful-execution.ts'
 
@@ -45,37 +48,129 @@ class AppServerPeer {
   }
 }
 
-function child(stdout: PassThrough, stdin: PassThrough): SubprocessHandle {
+class TestChild {
+  readonly pid = 1
+  readonly stderr = undefined
+  readonly collected = {}
+  readonly done: Promise<SubprocessOutcome>
+  private readonly doneState = Promise.withResolvers<SubprocessOutcome>()
+  private readonly treeState = Promise.withResolvers<undefined>()
+  private doneSettled = false
+  private treeSettled = false
+  terminated = false
+
+  constructor(
+    readonly stdout: PassThrough,
+    readonly stdin: PassThrough,
+  ) {
+    this.done = this.doneState.promise
+  }
+
+  terminate(): void {
+    this.terminated = true
+    this.stopTree()
+    this.resolveDone({ exitCode: 0, signal: null })
+  }
+
+  async waitForExit(): Promise<boolean> {
+    await this.treeState.promise
+    return true
+  }
+
+  exit(outcome: SubprocessOutcome): void {
+    this.stopTree()
+    this.resolveDone(outcome)
+  }
+
+  fail(error: Error): void {
+    this.stopTree()
+    if (this.doneSettled) return
+    this.doneSettled = true
+    this.doneState.reject(error)
+  }
+
+  private stopTree(): void {
+    if (this.treeSettled) return
+    this.treeSettled = true
+    this.treeState.resolve(undefined)
+  }
+
+  private resolveDone(outcome: SubprocessOutcome): void {
+    if (this.doneSettled) return
+    this.doneSettled = true
+    this.doneState.resolve(outcome)
+  }
+}
+
+function memoryJournal(): CodexThreadJournal {
+  const events: SessionEvent[] = []
   return {
-    pid: 0,
-    stdin,
-    stdout,
-    done: Promise.resolve({ exitCode: 0, signal: null }),
-  } as unknown as SubprocessHandle
+    load: async () => events,
+    appendWal: async (data) => {
+      events.push({ type: 'codex/thread-start-wal', seq: events.length, time: 0, data })
+    },
+    appendReference: async (data) => {
+      events.push({ type: 'codex/thread-reference', seq: events.length, time: 0, data })
+    },
+  }
+}
+
+function executionFixture(): {
+  readonly execution: CodexStatefulExecution
+  readonly peer: AppServerPeer
+  readonly child: TestChild
+} {
+  const fromServer = new PassThrough()
+  const toServer = new PassThrough()
+  const peer = new AppServerPeer(toServer, fromServer)
+  const child = new TestChild(fromServer, toServer)
+  const execution = new CodexStatefulExecution({
+    cwd: 'D:/workspace',
+    env: {},
+    disposeGraceMs: 1,
+    spawn: () => child as unknown as SubprocessHandle,
+    journal: memoryJournal(),
+  })
+  return { execution, peer, child }
+}
+
+async function settleWithin<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('stateful execute did not settle')), 500)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+async function prepareTurn(
+  execution: CodexStatefulExecution,
+  peer: AppServerPeer,
+  signal?: AbortSignal,
+): Promise<{ readonly running: Promise<unknown> }> {
+  const running = execution.execute(['Return the final answer.'], signal)
+  const initialize = await peer.request('initialize')
+  peer.send([{ id: initialize.id, result: {} }])
+  const startThread = await peer.request('thread/start')
+  peer.send([{ id: startThread.id, result: { thread: { id: 'thread-1', ephemeral: false } } }])
+  const startTurn = await peer.request('turn/start')
+  peer.send([{ id: startTurn.id, result: { turn: { id: 'turn-1' } } }])
+  return { running }
+}
+
+async function expectTreeStopped(child: TestChild): Promise<void> {
+  await expect(child.waitForExit()).resolves.toBe(true)
+  expect(child.terminated).toBe(true)
 }
 
 describe('CodexStatefulExecution', () => {
   it('replays terminal notifications that arrive in the same batch as turn/start response', async () => {
-    const fromServer = new PassThrough()
-    const toServer = new PassThrough()
-    const peer = new AppServerPeer(toServer, fromServer)
-    const events: SessionEvent[] = []
-    const journal: CodexThreadJournal = {
-      load: async () => events,
-      appendWal: async (data) => {
-        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: 0, data })
-      },
-      appendReference: async (data) => {
-        events.push({ type: 'codex/thread-reference', seq: events.length, time: 0, data })
-      },
-    }
-    const execution = new CodexStatefulExecution({
-      cwd: 'D:/workspace',
-      env: {},
-      disposeGraceMs: 1,
-      spawn: () => child(fromServer, toServer),
-      journal,
-    })
+    const { execution, peer, child } = executionFixture()
     const running = execution.execute(['Return the batched final answer.'])
 
     const initialize = await peer.request('initialize')
@@ -99,9 +194,90 @@ describe('CodexStatefulExecution', () => {
       },
     ])
 
-    await expect(running).resolves.toEqual({
+    await expect(settleWithin(running)).resolves.toEqual({
       reference: { version: 1, threadId: 'thread-1' },
       text: 'BATCHED_FINAL',
     })
+    await expectTreeStopped(child)
+  })
+
+  it('rejects when the app-server exits after turn/start without turn/completed', async () => {
+    const { execution, peer, child } = executionFixture()
+    const { running } = await prepareTurn(execution, peer)
+    child.exit({ exitCode: 17, signal: null })
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: stateful Codex app-server exited before turn completion',
+    )
+    await expectTreeStopped(child)
+  })
+
+  it('rejects safely when the child completion promise fails', async () => {
+    const { execution, peer, child } = executionFixture()
+    const { running } = await prepareTurn(execution, peer)
+    child.fail(new Error('SECRET stderr path D:/private/token'))
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: stateful Codex app-server exited before turn completion',
+    )
+    await expectTreeStopped(child)
+  })
+
+  it('settles promptly on abort even when the interrupt request fails', async () => {
+    const controller = new AbortController()
+    const { execution, peer, child } = executionFixture()
+    const running = execution.execute(['Return the final answer.'], controller.signal)
+    const initialize = await peer.request('initialize')
+    peer.send([{ id: initialize.id, result: {} }])
+    const startThread = await peer.request('thread/start')
+    peer.send([{ id: startThread.id, result: { thread: { id: 'thread-1', ephemeral: false } } }])
+    const startTurn = await peer.request('turn/start')
+    peer.send([{ id: startTurn.id, result: { turn: { id: 'turn-1' } } }])
+
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const settled = settleWithin(running)
+    controller.abort()
+    const interrupt = await peer.request('turn/interrupt')
+    peer.send([{ id: interrupt.id, error: { code: -32000, message: 'SECRET interrupt failure' } }])
+    await expect(settled).rejects.toThrow(
+      'subagent-codex: stateful Codex execution was aborted',
+    )
+    await expectTreeStopped(child)
+  })
+
+  it('rejects when the JSON-RPC input stream ends before a terminal notification', async () => {
+    const { execution, peer, child } = executionFixture()
+    const { running } = await prepareTurn(execution, peer)
+    child.stdout.end()
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: stateful Codex protocol failed',
+    )
+    await expectTreeStopped(child)
+  })
+
+  it('rejects when the JSON-RPC output transport fails', async () => {
+    const { execution, peer, child } = executionFixture()
+    const { running } = await prepareTurn(execution, peer)
+    child.stdin.destroy(new Error('SECRET transport failure'))
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: stateful Codex protocol failed',
+    )
+    await expectTreeStopped(child)
+  })
+
+  it('rejects malformed turn/completed notifications and stops the process tree', async () => {
+    const { execution, peer, child } = executionFixture()
+    const { running } = await prepareTurn(execution, peer)
+    peer.send([{
+      method: 'turn/completed',
+      params: { threadId: 'thread-1', turn: { id: 'turn-1' } },
+    }])
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: stateful Codex turn failed',
+    )
+    await expectTreeStopped(child)
   })
 })

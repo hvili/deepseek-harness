@@ -77,6 +77,78 @@ function requiredId(value: unknown, label: string): string {
   return value
 }
 
+type StatefulFailureStage =
+  | 'aborted'
+  | 'initialize'
+  | 'journal'
+  | 'thread'
+  | 'turn-start'
+  | 'turn'
+  | 'protocol'
+  | 'process'
+  | 'interrupt'
+  | 'teardown'
+
+const STATEFUL_FAILURE_MESSAGES: Record<StatefulFailureStage, string> = {
+  aborted: 'subagent-codex: stateful Codex execution was aborted',
+  initialize: 'subagent-codex: stateful Codex initialization failed',
+  journal: 'subagent-codex: stateful Codex Session journal failed',
+  thread: 'subagent-codex: stateful Codex thread setup failed',
+  'turn-start': 'subagent-codex: stateful Codex turn start failed',
+  turn: 'subagent-codex: stateful Codex turn failed',
+  protocol: 'subagent-codex: stateful Codex protocol failed',
+  process: 'subagent-codex: stateful Codex app-server exited before turn completion',
+  interrupt: 'subagent-codex: stateful Codex interrupt request failed',
+  teardown: 'subagent-codex: stateful Codex process teardown failed',
+}
+
+class CodexStatefulExecutionError extends Error {
+  constructor(
+    readonly stage: StatefulFailureStage,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'CodexStatefulExecutionError'
+  }
+}
+
+function statefulFailure(stage: StatefulFailureStage, _cause?: unknown): CodexStatefulExecutionError {
+  return new CodexStatefulExecutionError(stage, STATEFUL_FAILURE_MESSAGES[stage])
+}
+
+function persistedStateFailure(cause: unknown): CodexStatefulExecutionError {
+  const message = cause instanceof Error ? cause.message : ''
+  if (message.includes('requires reconciliation')) {
+    return new CodexStatefulExecutionError(
+      'thread',
+      'subagent-codex: persisted Codex thread start requires reconciliation',
+    )
+  }
+  if (message.includes('unsupported') || message.includes('version')) {
+    return new CodexStatefulExecutionError(
+      'thread',
+      'subagent-codex: persisted Codex thread state is unsupported',
+    )
+  }
+  if (message.includes('conflict')) {
+    return new CodexStatefulExecutionError(
+      'thread',
+      'subagent-codex: persisted Codex thread state conflicts',
+    )
+  }
+  return statefulFailure('thread', cause)
+}
+
+function normalizeStatefulFailure(
+  error: unknown,
+  stage: StatefulFailureStage,
+  signal?: AbortSignal,
+): Error {
+  if (signal?.aborted) return statefulFailure('aborted', error)
+  if (error instanceof CodexStatefulExecutionError) return error
+  return statefulFailure(stage, error)
+}
+
 /**
  * Executes one turn in a durable Codex thread. A fresh app-server process is
  * always disposed before this method resolves or rejects; native Codex state
@@ -92,101 +164,211 @@ export class CodexStatefulExecution {
    * @returns the persisted external reference and selected final answer.
    */
   async execute(input: readonly string[], signal?: AbortSignal): Promise<CodexStatefulTurn> {
-    const child = this.spec.spawn({
-      argv: codexAppServerArgv(),
-      cwd: this.spec.cwd,
-      env: this.spec.env,
-      graceMs: this.spec.disposeGraceMs,
-      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
-    })
-    const client = new CodexAppServerClient(
-      child.stdout as NonNullable<SubprocessHandle['stdout']>,
-      child.stdin as NonNullable<SubprocessHandle['stdin']>,
-    )
-    let threadId: string | undefined
-    let turnId: string | undefined
-    let finalAnswer: string | undefined
-    const completed = Promise.withResolvers<void>()
-    const earlyNotifications: Array<{ method: string; params: Record<string, unknown> }> = []
-    const processNotification = (method: string, params: Record<string, unknown>): void => {
-      if (threadId === undefined || turnId === undefined) {
-        if (method === 'item/completed' || method === 'turn/completed') {
-          earlyNotifications.push({ method, params })
-        }
-        return
-      }
+    let inputBlocks: ReturnType<typeof textInput> = []
+    let child: SubprocessHandle | undefined
+    let client: CodexAppServerClient | undefined
+    let removeWireObservers = (): void => {}
+    let cleanupFailure: unknown
+    let executionFailure: unknown
+    let executionFailed = false
+    let result: CodexStatefulTurn | undefined
+
+    try {
+      signal?.throwIfAborted()
+      inputBlocks = textInput(input)
       try {
-        if (method === 'item/completed' && params.threadId === threadId && params.turnId === turnId) {
-          const item = object(params.item, 'stateful item')
-          if (item.type === 'agentMessage' && (item.phase === 'final_answer' || item.phase === null)) {
-            if (typeof item.text !== 'string') throw new Error('subagent-codex: invalid stateful agent message')
-            if (item.phase === 'final_answer' || finalAnswer === undefined) finalAnswer = item.text
+        child = this.spec.spawn({
+          argv: codexAppServerArgv(),
+          cwd: this.spec.cwd,
+          env: this.spec.env,
+          graceMs: this.spec.disposeGraceMs,
+          signal,
+          stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+        })
+      } catch (error: unknown) {
+        throw statefulFailure('initialize', error)
+      }
+
+      const inputStream = child.stdout as NonNullable<SubprocessHandle['stdout']>
+      const outputStream = child.stdin as NonNullable<SubprocessHandle['stdin']>
+      client = new CodexAppServerClient(inputStream, outputStream)
+      const terminalFailure = Promise.withResolvers<never>()
+      const terminalCompletion = Promise.withResolvers<void>()
+      let terminalSettled = false
+      let threadId: string | undefined
+      let turnId: string | undefined
+      let finalAnswer: string | undefined
+      const earlyNotifications: Array<{ method: string; params: Record<string, unknown> }> = []
+      const fail = (error: CodexStatefulExecutionError): void => {
+        if (terminalSettled) return
+        terminalSettled = true
+        terminalFailure.reject(error)
+      }
+      const complete = (): void => {
+        if (terminalSettled) return
+        terminalSettled = true
+        terminalCompletion.resolve()
+      }
+      void terminalFailure.promise.catch(() => {})
+      const waitFor = async <T>(pending: Promise<T>): Promise<T> => (
+        await Promise.race([pending, terminalFailure.promise])
+      )
+      const processNotification = (method: string, params: Record<string, unknown>): void => {
+        if (terminalSettled) return
+        if (threadId === undefined || turnId === undefined) {
+          if (method === 'item/completed' || method === 'turn/completed') {
+            earlyNotifications.push({ method, params })
           }
           return
         }
-        if (method === 'turn/completed' && params.threadId === threadId) {
-          const turn = object(params.turn, 'stateful completed turn')
-          if (turn.id !== turnId) return
-          if (turn.status !== 'completed') {
-            completed.reject(new Error(`subagent-codex: stateful Codex turn ended with ${String(turn.status)}`))
-          } else {
-            completed.resolve()
+        try {
+          if (method === 'item/completed' && params.threadId === threadId && params.turnId === turnId) {
+            const item = object(params.item, 'stateful item')
+            if (item.type === 'agentMessage' && (item.phase === 'final_answer' || item.phase === null)) {
+              if (typeof item.text !== 'string') throw statefulFailure('protocol')
+              if (item.phase === 'final_answer' || finalAnswer === undefined) finalAnswer = item.text
+            }
+            return
           }
+          if (method !== 'turn/completed') return
+          if (params.threadId !== threadId) throw statefulFailure('protocol')
+          const turn = object(params.turn, 'stateful completed turn')
+          if (turn.id !== turnId || turn.status !== 'completed') throw statefulFailure('turn')
+          complete()
+        } catch (error: unknown) {
+          fail(error instanceof CodexStatefulExecutionError ? error : statefulFailure('protocol', error))
         }
-      } catch (error) {
-        completed.reject(error)
       }
-    }
-    client.onRequest(method => Promise.reject(
-      new Error(`subagent-codex: unsupported stateful app-server request ${method}`),
-    ))
-    client.onNotification(processNotification)
-    const interrupt = (): void => {
-      if (threadId !== undefined && turnId !== undefined) {
-        client.request('turn/interrupt', { threadId, turnId }).catch(() => {})
+      client.onRequest(() => Promise.reject(
+        new Error('subagent-codex: unsupported stateful app-server request'),
+      ))
+      client.onNotification(processNotification)
+      const onInputEnd = (): void => { fail(statefulFailure('protocol')) }
+      const onInputError = (error: Error): void => { fail(statefulFailure('protocol', error)) }
+      const onOutputError = (error: Error): void => { fail(statefulFailure('protocol', error)) }
+      const onChildDone = (): void => { fail(statefulFailure('process')) }
+      const childDone = child.done.then(onChildDone, (error) => { fail(statefulFailure('process', error)) })
+      void childDone.catch(() => {})
+      inputStream.on('end', onInputEnd)
+      inputStream.on('close', onInputEnd)
+      inputStream.on('error', onInputError)
+      outputStream.on('error', onOutputError)
+      removeWireObservers = (): void => {
+        inputStream.off('end', onInputEnd)
+        inputStream.off('close', onInputEnd)
+        inputStream.off('error', onInputError)
+        outputStream.off('error', onOutputError)
       }
-    }
-    signal?.addEventListener('abort', interrupt, { once: true })
-    try {
-      signal?.throwIfAborted()
-      client.start()
-      await client.initialize({ name: 'dsh-stateful-codex', title: 'DSH Stateful Codex', version: '1' }, {}, signal)
-      const persistent = new CodexPersistentThreadClient(client)
-      const events = await this.spec.journal.load(signal)
-      const stored = recoverCodexThreadStartWal(events)
-      let reference: CodexThreadReference
-      if (stored !== undefined) {
-        if (!events.some(event => event.type === 'codex/thread-reference')) {
-          await this.spec.journal.appendReference(stored, signal)
+      const interrupt = (): void => {
+        if (terminalSettled) return
+        if (threadId !== undefined && turnId !== undefined) {
+          const activeClient = client
+          if (activeClient === undefined) {
+            fail(statefulFailure('interrupt'))
+            return
+          }
+          let pending: Promise<unknown>
+          try {
+            pending = activeClient.request('turn/interrupt', { threadId, turnId })
+          } catch (error: unknown) {
+            pending = Promise.reject(error)
+          }
+          void pending.catch((error: unknown) => {
+            if (!terminalSettled) fail(statefulFailure('interrupt', error))
+          })
         }
-        reference = await persistent.resume(stored, signal)
-      } else {
-        reference = await startCodexThreadWithWal(
-          persistent,
-          this.spec.cwd,
-          this.spec.journal,
-          this.spec.threadOptions,
+        fail(statefulFailure('aborted'))
+      }
+      signal?.addEventListener('abort', interrupt, { once: true })
+      const removeAbortListener = (): void => { signal?.removeEventListener('abort', interrupt) }
+      removeWireObservers = (): void => {
+        removeAbortListener()
+        inputStream.off('end', onInputEnd)
+        inputStream.off('close', onInputEnd)
+        inputStream.off('error', onInputError)
+        outputStream.off('error', onOutputError)
+      }
+      if (signal?.aborted) interrupt()
+
+      let stage: StatefulFailureStage = 'initialize'
+      try {
+        signal?.throwIfAborted()
+        client.start()
+        await waitFor(client.initialize(
+          { name: 'dsh-stateful-codex', title: 'DSH Stateful Codex', version: '1' },
+          {},
           signal,
-        )
+        ))
+        stage = 'journal'
+        const persistent = new CodexPersistentThreadClient(client)
+        const events = await waitFor(this.spec.journal.load(signal))
+        let stored: CodexThreadReference | undefined
+        try {
+          stored = recoverCodexThreadStartWal(events)
+        } catch (error: unknown) {
+          throw persistedStateFailure(error)
+        }
+        let reference: CodexThreadReference
+        stage = 'thread'
+        if (stored !== undefined) {
+          if (!events.some(event => event.type === 'codex/thread-reference')) {
+            await waitFor(this.spec.journal.appendReference(stored, signal))
+          }
+          reference = await waitFor(persistent.resume(stored, signal))
+        } else {
+          reference = await waitFor(startCodexThreadWithWal(
+            persistent,
+            this.spec.cwd,
+            this.spec.journal,
+            this.spec.threadOptions,
+            signal,
+          ))
+        }
+        stage = 'turn-start'
+        const response = object(await waitFor(client.request('turn/start', {
+          threadId: reference.threadId,
+          input: inputBlocks,
+        }, signal)), 'stateful turn/start response')
+        const nextTurnId = requiredId(object(response.turn, 'stateful turn/start turn').id, 'stateful turn/start turn id')
+        threadId = reference.threadId
+        turnId = nextTurnId
+        for (const notification of earlyNotifications.splice(0)) {
+          processNotification(notification.method, notification.params)
+        }
+        stage = 'turn'
+        await Promise.race([terminalCompletion.promise, terminalFailure.promise])
+        if (finalAnswer === undefined || finalAnswer.trim().length === 0) {
+          throw statefulFailure('turn')
+        }
+        result = { reference, text: finalAnswer }
+      } catch (error: unknown) {
+        throw normalizeStatefulFailure(error, stage, signal)
       }
-      const response = object(await client.request('turn/start', {
-        threadId: reference.threadId,
-        input: textInput(input),
-      }, signal), 'stateful turn/start response')
-      turnId = requiredId(object(response.turn, 'stateful turn/start turn').id, 'stateful turn/start turn id')
-      threadId = reference.threadId
-      for (const notification of earlyNotifications.splice(0)) {
-        processNotification(notification.method, notification.params)
-      }
-      await completed.promise
-      if (finalAnswer === undefined || finalAnswer.trim().length === 0) {
-        throw new Error('subagent-codex: stateful Codex turn completed without a final answer')
-      }
-      return { reference, text: finalAnswer }
+    } catch (error: unknown) {
+      executionFailed = true
+      executionFailure = normalizeStatefulFailure(error, 'initialize', signal)
     } finally {
-      signal?.removeEventListener('abort', interrupt)
-      client.close()
-      await disposeCodexAppServerChild(child)
+      try {
+        client?.close()
+      } catch (error: unknown) {
+        cleanupFailure ??= error
+      }
+      if (child !== undefined) {
+        try {
+          await disposeCodexAppServerChild(child)
+        } catch (error: unknown) {
+          cleanupFailure ??= error
+        }
+      }
+      try {
+        removeWireObservers()
+      } catch (error: unknown) {
+        cleanupFailure ??= error
+      }
     }
+
+    if (executionFailed) throw executionFailure
+    if (cleanupFailure !== undefined) throw statefulFailure('teardown', cleanupFailure)
+    return result as CodexStatefulTurn
   }
 }
