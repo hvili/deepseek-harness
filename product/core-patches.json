@@ -4,7 +4,7 @@
   "productBranch": "product/main",
   "productBaseline": "356faa8535c943c0bdebebd1f546724cd5f1b261",
   "officialBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
-  "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
+  "auditRange": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e..356faa8535c943c0bdebebd1f546724cd5f1b261",
   "runtimeBaseline": "cf14720d2eb7e5e0d3b330806cece532331c1404",
   "initialRangeCommitCount": 77,
   "nonMergeCommitCount": 86,

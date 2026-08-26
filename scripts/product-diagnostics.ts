@@ -37,7 +37,7 @@ export interface ProductDiagnostics {
 }
 
 const REQUIRED_RUNTIME_BASELINE = 'cf14720d2eb7e5e0d3b330806cece532331c1404'
-const REQUIRED_AUDIT_RANGE = 'origin/master..dsh-enhanced-baseline-2026-08-25'
+const REQUIRED_AUDIT_RANGE = 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e..356faa8535c943c0bdebebd1f546724cd5f1b261'
 const REQUIRED_INITIAL_RANGE_COMMIT_COUNT = 77
 const PRODUCT_DIAGNOSTICS_PATH = /^scripts\/product-diagnostics(?:\.spec)?\.ts$/u
 const DOCUMENTATION_PATH = /(?:^|\/)README(?:\.zh)?\.md$|(?:^|\/)README\.i18n\.yaml$|(?:^|\/)docs(?:\/|$)|(?:^|\/)\.i18n\.yaml$/u
