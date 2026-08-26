@@ -256,7 +256,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'codex/thread-reference': CodexThreadReference
 ```
 
-来源：[`packages/subagent/subagent-codex/src/thread-state.ts:36`](../packages/subagent/subagent-codex/src/thread-state.ts)
+来源：[`packages/subagent/subagent-codex/src/thread-state.ts:55`](../packages/subagent/subagent-codex/src/thread-state.ts)
 
 <a id="codexthread-start-wal--log-only"></a>
 

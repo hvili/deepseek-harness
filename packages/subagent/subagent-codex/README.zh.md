@@ -20,13 +20,19 @@
 
 本提供方不声明任何可选的启动时能力，并报告 `inheritsParentContext: false`。Codex 会接收独立文本任务和父会话 cwd，但不会接收父会话的对话、角色设定、工具筛选器、深度策略或结构化输出约定。临时 Codex 线程 ID 与轮次 ID 仅在此次运行内部可见，绝不会持久化到父会话。
 
-## 持久线程基础层
+## 持久线程基础层与显式 stateful seam
 
-`thread-state.ts` 为未来的有状态 Codex 消费方单独提供底层状态模型。它只创建 `ephemeral: false` 的线程，把不透明 id 校验为 `CodexThreadId`，在 DSH 自有的 append-only Session 日志中恰好保存一条必需的 `codex/thread-reference` 事件，并在全新的持久化挂载后用 `thread/resume` 重新打开同一 id。恢复响应仍必须描述相同的非临时线程；重复、畸形或不受支持的引用会失败关闭。该记录只是外部执行引用：DSH 不复制 Codex 项目数据库、历史或设置。
+`thread-state.ts` 为显式的有状态 Codex 消费方提供窄状态模型。它只创建 `ephemeral: false` 的线程，把不透明 id 校验为 `CodexThreadId`，在 DSH 自有的 append-only Session 日志中恰好保存一条必需的 `codex/thread-reference` 事件，并在全新的持久化挂载后用 `thread/resume` 重新打开同一 id。恢复响应仍必须描述相同的非临时线程；重复、畸形、含未知字段或不受支持的引用会失败关闭。该记录只是外部执行引用：DSH 不复制 Codex 项目数据库、历史或设置。
 
-现有 Profile provider 不消费这层基础设施。它的一次性行为、临时线程所有权、无人值守审批和默认关闭的产品路径保持不变。
+[`DshSessionCodexThreadJournal`](src/session-journal.ts) 是生产 DSH Session 适配器。所有者先通过选定的 [`SessionPersistence`](../../session/session-persistence/README.zh.md) 后端加载或 prepare 完整、已验证的 Session，再用该 Session 与 `ctx.sessions` 构造 journal。`load()` 读取不可变的 Session 事件快照；`appendWal()` 与 `appendReference()` 调用 `Session.append()`，只有在 `SessionStore.flush()` 确认真实持久化 listener 成功完成后才 resolve。最终引用对同一个 thread id 幂等；冲突 id 会拒绝；未知字段与未来版本会在 append 前拒绝。它不写 Session header metadata，也不复制 Codex 存储。
 
-`CodexStatefulExecution` 是显式的底层适配器。它的 Session 所有者会耐久写入 `prepared` 和 `accepted(threadId)` 的 `codex/thread-start-wal`，再写入唯一的 `codex/thread-reference`，然后才启动 turn。accepted 记录可补全为最终引用；只有 prepared 的记录失败关闭，因为 Codex 0.147.0 既没有调用方幂等键，也没有补偿性线程删除方法。这是“已观察 id 至少一次”而非 exactly-once。每次适配器调用都会在完成、取消或失败后等待 package-local app-server 进程树退出。UI、item 流、用量、diff、review 和审批桥接仍不属于它。
+JSONL 与 SQLite 可以在一次挂载中共同消费同一个 DSH Session seam：Session 所有者选择一种 `SessionPersistence` 实现，而 journal 只使用共同的 `SessionStore.flush()` 契约。它不会双写，也不会让两个物理后端共同成为一份日志的写入者。这是生产持久化 seam，不是新的 provider 或 UI 能力。
+
+[`CodexStatefulExecution`](src/stateful-execution.ts) 是显式的底层 turn 适配器。它的 Session 所有者会耐久写入 `prepared` 和 `accepted(threadId)` 的 `codex/thread-start-wal`，再写入唯一的 `codex/thread-reference`，然后才启动 turn。如果 Codex 已创建线程但 accepted 耐久失败，持久事件中只留下 `prepared`，恢复会失败关闭并要求 reconciliation；适配器不会创建第二个线程。如果 `accepted` 已耐久而最终 reference 写入失败，恢复会返回同一个 thread id，journal 补写唯一缺失的 reference，适配器 resume 同一线程。存在最终 reference 后，后续执行只能 resume；冲突、重复、未知字段和未来版本状态会失败关闭。
+
+Codex 0.147.0 既没有调用方幂等键，也没有补偿性线程删除方法。因此协议只对已观察 id 提供至少一次处理，不承诺 thread 创建 exactly-once。有状态执行会协调已完成 turn、本地取消、child 结算、JSON-RPC 输入关闭／错误、传输失败和畸形终态通知；每种结果都会关闭 wire 并等待完整进程树停稳。公开错误使用固定安全消息，不暴露原始 stderr、路径、命令、凭据或上游错误文本。UI、item 流、用量、diff、review 和审批桥接仍不属于它。
+
+现有 Profile provider 不消费这条 stateful seam。`apply()` 只注册现有的一次性 provider；导入或构造有状态类不会注册 provider，也不会启动进程。它的一次性行为、临时线程所有权、无人值守审批和默认关闭的产品路径保持不变，DeepSeek 原生 Session、工具、附件和恢复组装也不变。
 
 ## 配置
 
@@ -102,9 +108,9 @@ dsh --profile <name>
 
 ## 产品兼容性与证据
 
-生产环境的协议层有意只实现这一单次执行约定所需的 app-server 方法。运行时依赖与六个 optional-dependency alias 均锁定到 `@openai/codex@0.147.0` / `codex-cli 0.147.0`。普通安装会按当前操作系统与 CPU 选择一个载荷。对于当前 darwin-arm64 载荷，`npm pack --dry-run --json @openai/codex@0.147.0-darwin-arm64` 报告压缩包为 111,199,052 字节、解包后为 274,777,843 字节。该包包含原生 `codex`、`codex-code-mode-host`、`rg` 与 `zsh` 资源；其他平台可能不同，这些数值只用于披露而不是安装阈值。
+一次性 Provider 的协议层有意只实现该契约所需的 app-server 方法；显式 stateful 适配器只增加上文所述稳定的 `thread/start`、`thread/resume`、`turn/start` 和终态通知用法。运行时依赖与六个 optional-dependency alias 均锁定到 `@openai/codex@0.147.0` / `codex-cli 0.147.0`。普通安装会按当前操作系统与 CPU 选择一个载荷。对于当前 darwin-arm64 载荷，`npm pack --dry-run --json @openai/codex@0.147.0-darwin-arm64` 报告压缩包为 111,199,052 字节、解包后为 274,777,843 字节。该包包含原生 `codex`、`codex-code-mode-host`、`rg` 与 `zsh` 资源；其他平台可能不同，这些数值只用于披露而不是安装阈值。
 
-共享包的稳定 schema 指纹与这些提供方测试会固定全部十六种 error-info variant、HTTP status 所在位置、六个生命周期阶段、进程结果、终止原因映射、unknown 回退、脱敏、权限顺序、取消、并发与清理聚合。无密钥真实产品测试会驱动包内 wrapper 连接回环 Responses fixture，并观测包内 argv、确切的 Bearer 密钥、原始任务、逐字节完全一致的最终回答、线程级 `never` 对环境中 `on-request` 的覆盖、自动评审启动、不产生文件副作用的无人值守拒绝、真实 `internalServerError`、测试拥有临时存储中的显式危险绕过写入、携带安全退出事实的进程／协议失败，以及 wrapper／原生进程完全停稳。同一层级还会证明两个命名实例保留彼此独立的环境与原生模式。
+共享包的稳定 schema 指纹与这些提供方测试会固定全部十六种 error-info variant、HTTP status 所在位置、六个生命周期阶段、进程结果、终止原因映射、unknown 回退、脱敏、权限顺序、取消、并发与清理聚合。无密钥真实产品测试会驱动包内 wrapper 连接回环 Responses fixture，并观测包内 argv、确切的 Bearer 密钥、原始任务、逐字节完全一致的最终回答、线程级 `never` 对环境中 `on-request` 的覆盖、自动评审启动、不产生文件副作用的无人值守拒绝、真实 `internalServerError`、测试拥有临时存储中的显式危险绕过写入、携带安全退出事实的进程／协议失败，以及 wrapper／原生进程完全停稳。同一层级还会证明两个命名实例保留彼此独立的环境与原生模式。另有真实 0.147.0 重启测试在两个 app-server 进程之间使用测试自有 CODEX_HOME 和 DSH JSONL Session，验证一条持久 reference、一个被 resume 的上游 thread id，并等待两个进程树停稳。
 
 如果安装时省略 optional dependencies、当前平台不受支持，或所选载荷缺失，第一次委派会在 `initialize` 阶段以安全 `unknown` 类别和已观测到的进程结果失败。原始 wrapper 文本只保留在 Host stderr；提供方既不会探测宿主 CLI，也不会用它重试。独立 wrapper fixture 会另行证明原生载荷失败与不存在宿主回退。
 
@@ -141,6 +147,9 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 ## 已知限制与后续工作
 
 - **每次运行均新建一个进程、一个线程和一个轮次**：不支持续接、恢复、池化、进度流或产品会话持久化。
+- **有状态续接是显式的底层能力**：它不会注册为 Profile provider，不会在导入／构造时启动进程，也不会添加 UI、用量、diff、review、审批或 item 流界面。
+- **有状态恢复失败关闭**：只有 prepared 的耐久启动要求 reconciliation；accepted 启动可以用同一个 thread id 修复；冲突、重复、未知字段或未来版本引用会停止执行。
+- **不保证 thread 创建 exactly-once**：Codex 0.147.0 没有调用方幂等键或补偿性删除，因此上游已接受但 DSH 耐久写入失败时，适配器无法保证 exactly-once。
 - **静态选择实例**：Profile 配置项固定提供方名称与工具绑定；调用无法动态选择提供方，而且每个公开工具都需要唯一的 `toolName`。
 - **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录、信任项目或改写 Codex 设置；配置与身份验证失败会公开其生命周期阶段与安全的 `unknown` 回退，而不会增加单独的公开分类体系。
 - **委派时必须存在原生平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次运行时失败；不会回退到宿主 CLI。

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-25",
+  "generatedAt": "2026-08-26",
   "productBranch": "product/main",
   "productBaseline": "356faa8535c943c0bdebebd1f546724cd5f1b261",
   "officialBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
   "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 80,
+  "nonMergeCommitCount": 82,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1227,6 +1227,32 @@
       "verification": "Run batched response/notification regression coverage, real package-local stateful service failure, resume, cancellation/process-quiescence, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
       "upstreamStatus": "product-specific-not-submitted",
       "deletionCondition": "Delete with the stateful Codex adapter after an official engine extension boundary provides the same ordered persistent-turn lifecycle and the dual-path regression suite passes."
+    },
+    {
+      "commit": "2eb96b4a15c8e1a62fe3ce43be23e7c0187ddd23",
+      "subject": "fix(codex): coordinate stateful execution terminals",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/subagent/subagent-codex"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The stateful Codex adapter must settle on every local, child, transport, protocol, and turn terminal and wait for the complete package-local process tree until DSH exposes an equivalent stable engine extension boundary.",
+      "verification": "Run terminal-coordination, cancellation/process-quiescence, malformed-protocol, real package-local stateful service failure, one-shot provider regression, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
+      "upstreamStatus": "product-specific-not-submitted",
+      "deletionCondition": "Delete with the stateful Codex adapter after an official engine extension boundary provides the same bounded terminal coordination, safe errors, process-tree ownership, and dual-path regression coverage."
+    },
+    {
+      "commit": "06c294d57817cb1a8b855504e6de0f39e4b50d99",
+      "subject": "feat(codex): persist stateful thread journal",
+      "affectedAreas": [
+        ".agents/notes",
+        "packages/subagent/subagent-codex"
+      ],
+      "classification": "minimal-core-patch",
+      "reason": "The stateful Codex adapter needs a DSH Session append-and-flush journal and fail-closed WAL recovery until DSH exposes an equivalent stable external-reference seam.",
+      "verification": "Run durable JSONL journal, prepared-only and accepted-with-reference-repair fault injection, real package-local two-process resume with temporary CODEX_HOME, one-shot provider regression, schema fingerprint, typecheck, constraints, lint, persistence-catalog, and product identity gates.",
+      "upstreamStatus": "product-specific-not-submitted",
+      "deletionCondition": "Move this journal out of Harness-src after an official engine extension boundary provides the same DSH Session durability, conflict validation, recovery repair, process ownership, and dual-path regression coverage."
     }
   ]
 }
