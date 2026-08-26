@@ -7,7 +7,7 @@
   "auditRange": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e..356faa8535c943c0bdebebd1f546724cd5f1b261",
   "runtimeBaseline": "cf14720d2eb7e5e0d3b330806cece532331c1404",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 89,
+  "nonMergeCommitCount": 90,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1368,6 +1368,19 @@
       "verification": "Run attachment-free multi-frame zstd recovery, malformed-reference rejection, focused recovery tests, target lint, typecheck, official build, deterministic attachment recovery, actual-source copied-data recovery, source checksum, cleanup, and product identity gates.",
       "upstreamStatus": "review-on-next-sync",
       "deletionCondition": "Delete with the copied-data recovery gate after equivalent official coverage distinguishes unavailable attachment evidence from attachment failure and passes both attachment-present and attachment-free restart recovery."
+    },
+    {
+      "commit": "90510d766a36c475a7fe795ecca1cdf952f71f20",
+      "subject": "fix(product): isolate actual recovery projections",
+      "affectedAreas": [
+        "scripts/product-web-recovery-support.ts",
+        "scripts/product-web-recovery.spec.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The actual-data recovery gate must copy only admitted DSH records into a disjoint private world, represent the user Workspace with an isolated empty cwd, paginate long histories, and report the exact checksum/projection scope without following Profile or repository Junctions.",
+      "verification": "Run focused recovery tests, target lint, typecheck, deterministic attachment recovery, actual zstd source recovery across two Host processes, complete history pagination, selected-record checksum stability, disjoint temporary-root cleanup, port release, process-tree quiescence, and product identity gates.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete with the copied-data recovery gate after equivalent official coverage isolates real source paths, supports long histories and linked Profiles, and passes the same projection-scope and cleanup evidence."
     }
   ]
 }
