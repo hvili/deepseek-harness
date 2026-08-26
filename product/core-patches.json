@@ -7,7 +7,7 @@
   "auditRange": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e..356faa8535c943c0bdebebd1f546724cd5f1b261",
   "runtimeBaseline": "cf14720d2eb7e5e0d3b330806cece532331c1404",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 86,
+  "nonMergeCommitCount": 88,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1323,6 +1323,38 @@
       "verification": "Run the stateful Codex package tests, lint, typecheck, process-quiescence, and product identity gates on sync/<version> and compare the result with and without the commit.",
       "upstreamStatus": "review-on-next-sync",
       "deletionCondition": "Delete when the stateful Codex lint and regression gates pass on the synchronized official release without this commit."
+    },
+    {
+      "commit": "935f9917f1447932cbe3ecf2b38981babf08d106",
+      "subject": "test(web): add non-destructive recovery gate",
+      "affectedAreas": [
+        "apps/web/tests/web-recovery.e2e.ts",
+        "apps/web/tsconfig.json",
+        "package.json",
+        "packages/subagent/subagent-codex/tests",
+        "scripts/product-web-recovery-support.ts",
+        "scripts/product-web-recovery.spec.ts",
+        "scripts/product-web-recovery.ts",
+        "tsconfig.host.json"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The commit adds product-owned release validation and build wiring for copied-data Web/Host restart recovery; it must be rechecked as the official release train gains equivalent gates.",
+      "verification": "Run the focused recovery unit tests, target lint, export JSDoc, typecheck, official build, Chromium smoke, two-process recovery, source checksum, port release, process-tree quiescence, cleanup, and product identity gates.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete when a synchronized official RC/Release provides equivalent non-destructive copied-data Web/Host restart recovery coverage and the product release train passes without this downstream gate."
+    },
+    {
+      "commit": "e3bbe36f8195664445c5f49b120192f0ccaa8783",
+      "subject": "fix(product): preserve recovery event content",
+      "affectedAreas": [
+        "scripts/product-web-recovery-support.ts",
+        "scripts/product-web-recovery.spec.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The recovery gate must rebase only the Session header cwd, preserve durable event rows byte-for-byte, and satisfy the repository's typed lint contract.",
+      "verification": "Run the event-content preservation regression, focused recovery tests, target lint, export JSDoc, official build, two-process recovery, source checksum, cleanup, and product identity gates.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete with the copied-data recovery gate after equivalent official coverage preserves event content and passes the same restart and cleanup evidence."
     }
   ]
 }
