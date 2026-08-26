@@ -7,7 +7,7 @@
   "auditRange": "origin/master..dsh-enhanced-baseline-2026-08-25",
   "runtimeBaseline": "cf14720d2eb7e5e0d3b330806cece532331c1404",
   "initialRangeCommitCount": 77,
-  "nonMergeCommitCount": 85,
+  "nonMergeCommitCount": 86,
   "classifications": {
     "minimal-core-patch": "Keep temporarily in Harness-src.",
     "migrate-to-enhancement-layer": "Move behind the external plugin/Profile Bundle layer.",
@@ -1180,6 +1180,22 @@
       "verification": "Run the owning gate on sync/<version> and compare the failure with and without the commit.",
       "upstreamStatus": "review-on-next-sync",
       "deletionCondition": "Delete when the owning gate passes on the synchronized official release without the commit; otherwise reclassify with concrete failure evidence."
+    },
+    {
+      "commit": "fd28f02f06293adf90f927bfeb64a4328b0e2526",
+      "subject": "chore(product): establish the enhanced release train",
+      "affectedAreas": [
+        ".agents/notes",
+        "package.json",
+        "product",
+        "scripts/product-diagnostics.spec.ts",
+        "scripts/product-diagnostics.ts"
+      ],
+      "classification": "retire-or-reprove",
+      "reason": "The release-train governance commit also changes the root package manifest, so it remains explicitly audited as a build-tooling patch instead of receiving a blanket governance-only exemption.",
+      "verification": "Run product diagnostics tests, manifest-change coverage regression, workspace constraints, and product identity gates.",
+      "upstreamStatus": "review-on-next-sync",
+      "deletionCondition": "Delete after equivalent official release governance exists or after the product diagnostics commands move out of the root package manifest and the coverage gate passes without this commit."
     },
     {
       "commit": "7111e56de83fb360ef8f5da2fd15c3f01e0d76be",

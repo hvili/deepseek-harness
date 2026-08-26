@@ -125,7 +125,7 @@ function isGovernancePath(path: string): boolean {
 
 function isGovernanceOnlyCommit(paths: readonly string[]): boolean {
   const hasGovernanceMetadata = paths.some(path => path.startsWith('product/') || PRODUCT_DIAGNOSTICS_PATH.test(path))
-  return hasGovernanceMetadata && paths.every(path => isGovernancePath(path) || path === 'package.json')
+  return hasGovernanceMetadata && paths.every(isGovernancePath)
 }
 
 function isRuntimeOrBuildPath(path: string): boolean {

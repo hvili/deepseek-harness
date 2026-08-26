@@ -38,12 +38,12 @@ function fixture(): { root: string; productBaseline: string; runtimeBaseline: st
   git(root, ['config', 'user.name', 'Product Diagnostics Tests'])
   git(root, ['config', 'commit.gpgsign', 'false'])
   write(root, 'seed.txt', 'seed\n')
-  const productBaseline = commit(root, ['seed.txt'], 'seed product baseline')
+  write(root, 'package.json', '{"name":"fixture"}\n')
+  const productBaseline = commit(root, ['seed.txt', 'package.json'], 'seed product baseline')
 
   write(root, 'product/core-patches.json', '{}\n')
   write(root, 'scripts/product-diagnostics.ts', 'export {}\n')
-  write(root, 'package.json', '{"name":"fixture"}\n')
-  commit(root, ['product/core-patches.json', 'scripts/product-diagnostics.ts', 'package.json'], 'governance metadata')
+  commit(root, ['product/core-patches.json', 'scripts/product-diagnostics.ts'], 'governance metadata')
 
   write(root, 'packages/example/src/index.ts', 'export const runtime = true\n')
   const runtimeBaseline = commit(root, ['packages/example/src/index.ts'], 'runtime patch')
@@ -116,6 +116,26 @@ describe('product diagnostics', () => {
     expect(coverage.runtimeBuildCommits).toEqual([runtimeBaseline, buildCommit])
     expect(coverage.governanceOnlyCommits).toHaveLength(2)
     expect(coverage.postBaselineCommits).toHaveLength(5)
+  })
+
+  it('does not let a manifest change hide behind governance metadata', { timeout: 20_000 }, () => {
+    const { root, productBaseline, runtimeBaseline } = fixture()
+    write(root, 'product/core-patches.json', '{"governance":"updated"}\n')
+    write(root, 'package.json', '{"name":"fixture","dependencies":{"runtime":"1.0.0"}}\n')
+    const manifestCommit = commit(root, ['product/core-patches.json', 'package.json'], 'mixed manifest and governance change')
+    const coverage = collectPatchCoverage(root, {
+      schemaVersion: 1,
+      productBaseline,
+      officialBase: 'official-base',
+      auditRange: `${productBaseline}..${productBaseline}`,
+      runtimeBaseline,
+      initialRangeCommitCount: 0,
+      nonMergeCommitCount: 0,
+      entries: [],
+    })
+
+    expect(coverage.runtimeBuildCommits).toContain(manifestCommit)
+    expect(coverage.governanceOnlyCommits).not.toContain(manifestCommit)
   })
 
   it('rejects a missing initial audit entry', () => {
