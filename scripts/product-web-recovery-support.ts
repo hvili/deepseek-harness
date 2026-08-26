@@ -15,7 +15,8 @@ import {
   copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile,
 } from 'node:fs/promises'
 import { createServer, createConnection } from 'node:net'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { SESSION_FORMAT_VERSION, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
@@ -29,6 +30,7 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const BUILT_DSH_BIN = join(REPO_ROOT, 'apps', 'cli', 'lib', 'bin.js')
 const WEB_DIST_INDEX = join(REPO_ROOT, 'apps', 'web', 'dist', 'index.html')
 const ARTIFACT_ROOT = join(REPO_ROOT, '.artifacts')
+const EXTERNAL_ARTIFACT_ROOT = join(parse(REPO_ROOT).root, 'dev-caches', 'dsh-recovery-artifacts')
 const DEFAULT_READY_TIMEOUT_MS = 150_000
 const READY_POLL_MS = 100
 // Cold-session history/attachment reads may cross the first detached
@@ -84,6 +86,10 @@ export interface RecoveryDataset {
   workspaceId: string
   /** Expected durable values. */
   expected: RecoveryExpectedState
+  /** How source-home immutability is proven for this dataset. */
+  homeProjection: 'full-tree' | 'selected-records'
+  /** How the private candidate represents the source Workspace contents. */
+  workspaceProjection: 'copy-source-tree' | 'isolated-empty'
   /** Expected content-addressed image, when the selected Session references one. */
   attachment?: RecoveryAttachment
 }
@@ -102,8 +108,12 @@ export interface TreeSnapshot {
 export interface RecoverySourceSnapshot {
   /** Snapshot of the source DSH home. */
   home: TreeSnapshot
+  /** Scope covered by the source-home checksum. */
+  homeProof: 'full-tree-checksum' | 'selected-records-checksum'
   /** Snapshot of the source Workspace directory. */
   workspace: TreeSnapshot
+  /** Scope used to prove the source Workspace was not exposed to the child. */
+  workspaceProof: 'full-tree-checksum' | 'root-identity-read-isolation'
   /** Combined source proof digest. */
   digest: string
 }
@@ -197,6 +207,10 @@ export interface RecoveryGateReport {
   sourceUnchanged: true
   /** Whether this dataset exercised attachment recovery or had no durable image reference. */
   attachmentValidation: 'verified' | 'not-applicable-no-reference'
+  /** Whether source Workspace files were copied or replaced with an isolated empty cwd. */
+  workspaceProjection: RecoveryDataset['workspaceProjection']
+  /** Whether the source-home proof covered all files or only records admitted to the copy. */
+  homeProjection: RecoveryDataset['homeProjection']
   /** The private world path, which is absent after successful cleanup. */
   tempRoot: string
   /** True only after the private world has been removed. */
@@ -326,12 +340,63 @@ async function snapshotDirectory(path: string): Promise<TreeSnapshot> {
   return { root, files, digest }
 }
 
+async function snapshotDirectoryRootIdentity(path: string): Promise<TreeSnapshot> {
+  const root = await requireDirectory(path, 'Workspace root identity')
+  return {
+    root,
+    files: [],
+    digest: createHash('sha256').update(`root-identity:${pathKey(root)}`).digest('hex'),
+  }
+}
+
+async function snapshotSelectedHomeRecords(dataset: RecoveryDataset): Promise<TreeSnapshot> {
+  const root = await requireDirectory(dataset.sourceHome, 'source home')
+  const paths = [
+    await requireRegularFile(join(root, 'storages', 'workspace.json'), 'Workspace storage'),
+    await findSourceSessionArtifact(root, dataset.sourceWorkspace, dataset.sessionId),
+  ]
+  if (dataset.attachment !== undefined) {
+    const digest = dataset.attachment.attachmentId.slice('sha256:'.length)
+    paths.push(await requireRegularFile(
+      join(root, 'attachments', 'v1', 'objects', digest.slice(0, 2), digest),
+      'attachment object',
+    ))
+  }
+  const files = await Promise.all(paths.map(async (path) => {
+    if (!isWithin(root, path)) throw new Error(`selected recovery record escaped source home: ${path}`)
+    const bytes = await readFile(path)
+    return {
+      path: relative(root, path).replaceAll('\\', '/'),
+      bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    }
+  }))
+  files.sort((left, right) => left.path.localeCompare(right.path))
+  return {
+    root,
+    files,
+    digest: createHash('sha256').update(JSON.stringify(files)).digest('hex'),
+  }
+}
+
 /** Snapshot a source home and Workspace without opening either in the Host process. */
 export async function snapshotRecoverySource(dataset: RecoveryDataset): Promise<RecoverySourceSnapshot> {
-  const home = await snapshotDirectory(dataset.sourceHome)
-  const workspace = await snapshotDirectory(dataset.sourceWorkspace)
-  const digest = createHash('sha256').update(`${home.digest}\n${workspace.digest}`).digest('hex')
-  return { home, workspace, digest }
+  const homeProof = dataset.homeProjection === 'full-tree'
+    ? 'full-tree-checksum'
+    : 'selected-records-checksum'
+  const home = homeProof === 'full-tree-checksum'
+    ? await snapshotDirectory(dataset.sourceHome)
+    : await snapshotSelectedHomeRecords(dataset)
+  const workspaceProof = dataset.workspaceProjection === 'copy-source-tree'
+    ? 'full-tree-checksum'
+    : 'root-identity-read-isolation'
+  const workspace = workspaceProof === 'full-tree-checksum'
+    ? await snapshotDirectory(dataset.sourceWorkspace)
+    : await snapshotDirectoryRootIdentity(dataset.sourceWorkspace)
+  const digest = createHash('sha256')
+    .update(`${homeProof}\n${home.digest}\n${workspaceProof}\n${workspace.digest}`)
+    .digest('hex')
+  return { home, homeProof, workspace, workspaceProof, digest }
 }
 
 function assertSnapshotUnchanged(before: TreeSnapshot, after: TreeSnapshot, label: string): void {
@@ -345,7 +410,9 @@ export function assertRecoverySourceUnchanged(
   before: RecoverySourceSnapshot,
   after: RecoverySourceSnapshot,
 ): void {
+  if (before.homeProof !== after.homeProof) throw new Error('source-home proof mode changed during recovery gate')
   assertSnapshotUnchanged(before.home, after.home, 'source home')
+  if (before.workspaceProof !== after.workspaceProof) throw new Error('source Workspace proof mode changed during recovery gate')
   assertSnapshotUnchanged(before.workspace, after.workspace, 'source Workspace')
   if (before.digest !== after.digest) throw new Error(`source checksum changed (before ${before.digest}, after ${after.digest})`)
 }
@@ -543,6 +610,8 @@ export async function inspectRecoveryDataset(sourceHome: string, sourceWorkspace
       archived: archivedSessionIds.includes(source.sessionId),
       favorite: favoriteSessionIds.includes(source.sessionId),
     },
+    homeProjection: 'selected-records',
+    workspaceProjection: 'isolated-empty',
     ...(attachment === undefined ? {} : { attachment }),
   }
 }
@@ -640,7 +709,16 @@ export async function createRecoveryFixture(root: string): Promise<RecoveryDatas
       },
     },
   }, null, 2)}\n`, 'utf8')
-  return { sourceHome, sourceWorkspace, sessionId, workspaceId, expected, attachment }
+  return {
+    sourceHome,
+    sourceWorkspace,
+    sessionId,
+    workspaceId,
+    expected,
+    homeProjection: 'full-tree',
+    workspaceProjection: 'copy-source-tree',
+    attachment,
+  }
 }
 
 /** Copy only the selected recoverable records into test-owned paths and rebase all stored cwd values. */
@@ -654,7 +732,8 @@ export async function copyRecoveryDataset(dataset: RecoveryDataset, targetRoot: 
   assertDisjoint(dataset.sourceHome, home, 'source home/copy home')
   assertDisjoint(dataset.sourceWorkspace, workspace, 'source Workspace/copy Workspace')
   await mkdir(world, { recursive: true, mode: 0o700 })
-  await copyTree(dataset.sourceWorkspace, workspace)
+  if (dataset.workspaceProjection === 'copy-source-tree') await copyTree(dataset.sourceWorkspace, workspace)
+  else await mkdir(workspace, { recursive: true, mode: 0o700 })
   await mkdir(agentsHome, { recursive: true, mode: 0o700 })
   await mkdir(bundledSkillDir, { recursive: true, mode: 0o700 })
 
@@ -1105,6 +1184,29 @@ function requireValue<T>(value: T | undefined, message: string): T {
   return value
 }
 
+async function readCompleteHistory(baseUrl: string, sessionId: string): Promise<Array<{ event: unknown }>> {
+  const pages: Array<Array<{ event: unknown }>> = []
+  let beforeSeq: number | undefined
+  for (let pageIndex = 0; pageIndex < 10_000; pageIndex++) {
+    const page = await webRpc<{ events: Array<{ event: unknown }>; hasMore: boolean }>(baseUrl, 'session.history', {
+      sessionId,
+      ...(beforeSeq === undefined ? {} : { beforeSeq }),
+      maxMessages: 100,
+    })
+    pages.unshift(page.events)
+    if (!page.hasMore) return pages.flat()
+    const seqs = page.events.map(({ event }) => (
+      isRecord(event) && typeof event.seq === 'number' && Number.isInteger(event.seq) ? event.seq : undefined
+    )).filter((seq): seq is number => seq !== undefined)
+    const nextBefore = seqs.length === 0 ? undefined : Math.min(...seqs)
+    if (nextBefore === undefined || (beforeSeq !== undefined && nextBefore >= beforeSeq)) {
+      throw new Error('recovery history pagination did not make backward progress')
+    }
+    beforeSeq = nextBefore
+  }
+  throw new Error('recovery history exceeded the 10,000-page safety bound')
+}
+
 async function assertRecoveredState(baseUrl: string, copy: RecoveryCopy, dataset: RecoveryDataset): Promise<void> {
   const workspaceList = await webRpc<{
     items: Array<{ workspaceId: string; path: string; title: string; sessionIds: string[] }>
@@ -1129,12 +1231,9 @@ async function assertRecoveredState(baseUrl: string, copy: RecoveryCopy, dataset
   assertCondition(session.cwd !== undefined && pathsEquivalent(session.cwd, copy.workspace), `recovered Session cwd was not rebased: ${session.cwd ?? '<missing>'}`)
   assertCondition(!session.blank, 'recovered Session was incorrectly classified as blank')
 
-  const history = await webRpc<{ events: Array<{ event: unknown }>; hasMore: boolean }>(baseUrl, 'session.history', {
-    sessionId: dataset.sessionId,
-    maxMessages: 100,
-  })
-  assertCondition(!history.hasMore, 'recovery history unexpectedly exceeded the bounded fixture page')
-  const recoveredReference = firstImageReference(history.events)
+  const history = await readCompleteHistory(baseUrl, dataset.sessionId)
+  assertCondition(history.length > 0, 'recovered Session history is empty')
+  const recoveredReference = firstImageReference(history)
   if (dataset.attachment === undefined) {
     assertCondition(recoveredReference === undefined, 'recovery introduced an image attachment reference')
   } else {
@@ -1156,16 +1255,23 @@ async function assertRecoveredState(baseUrl: string, copy: RecoveryCopy, dataset
   assertCondition(typeof described.cwd === 'string' && pathsEquivalent(described.cwd, copy.workspace), `Host cwd was not test-owned: ${String(described.cwd)} (expected ${copy.workspace})`)
 }
 
-async function createOwnedWorld(): Promise<string> {
-  await mkdir(ARTIFACT_ROOT, { recursive: true, mode: 0o700 })
-  return await mkdtemp(join(ARTIFACT_ROOT, 'dsh-web-recovery-'))
+async function createOwnedWorld(dataset: RecoveryDataset | undefined): Promise<{ parent: string; world: string }> {
+  const candidates = [ARTIFACT_ROOT, EXTERNAL_ARTIFACT_ROOT, join(tmpdir(), 'dsh-recovery-artifacts')]
+  const parent = requireValue(candidates.find(candidate => (
+    dataset === undefined
+    || (!isWithin(dataset.sourceHome, candidate) && !isWithin(candidate, dataset.sourceHome)
+      && !isWithin(dataset.sourceWorkspace, candidate) && !isWithin(candidate, dataset.sourceWorkspace))
+  )), 'no disjoint temporary root is available for the external recovery dataset')
+  await mkdir(parent, { recursive: true, mode: 0o700 })
+  return { parent, world: await mkdtemp(join(parent, 'dsh-web-recovery-')) }
 }
 
 /** Run Web smoke, cold Session/Workspace recovery in a fresh process, source checksum proof, and cleanup proof. */
 export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promise<RecoveryGateReport> {
   assertBuiltWebArtifacts()
-  const world = await createOwnedWorld()
   let dataset = options.dataset
+  const owned = await createOwnedWorld(dataset)
+  const { parent: worldParent, world } = owned
   let sourceBefore: RecoverySourceSnapshot | undefined
   let sourceAfter: RecoverySourceSnapshot | undefined
   let first: ManagedWebProcess | undefined
@@ -1214,6 +1320,8 @@ export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promis
       secondProcess: { ...secondRecord, stop: secondStop },
       sourceUnchanged: true,
       attachmentValidation: dataset.attachment === undefined ? 'not-applicable-no-reference' : 'verified',
+      workspaceProjection: dataset.workspaceProjection,
+      homeProjection: dataset.homeProjection,
       tempRoot: world,
       tempRootCleaned: true,
     }
@@ -1230,7 +1338,7 @@ export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promis
     first = undefined
   }
   try {
-    await removeOwnedDirectory(world, ARTIFACT_ROOT)
+    await removeOwnedDirectory(world, worldParent)
   } catch (error: unknown) {
     cleanupErrors.push(error)
   }
@@ -1253,6 +1361,8 @@ export function compactRecoveryReport(report: RecoveryGateReport): Record<string
     sourceDigest: report.sourceBefore.digest,
     sourceFiles: report.sourceBefore.home.files.length + report.sourceBefore.workspace.files.length,
     attachmentValidation: report.attachmentValidation,
+    workspaceProjection: report.workspaceProjection,
+    homeProjection: report.homeProjection,
     symlink: report.symlink,
     firstProcess: {
       pid: report.firstProcess.pid,

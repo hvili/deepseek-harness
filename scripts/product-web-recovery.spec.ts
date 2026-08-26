@@ -91,6 +91,8 @@ describe('product Web recovery support', () => {
 
     const dataset = await inspectRecoveryDataset(fixture.sourceHome, fixture.sourceWorkspace)
     expect(dataset.attachment).toBeUndefined()
+    expect(dataset.homeProjection).toBe('selected-records')
+    expect(dataset.workspaceProjection).toBe('isolated-empty')
     const copy = await copyRecoveryDataset(dataset, join(root, 'copy-world'))
     const copiedSession = join(
       projectDir(join(copy.home, 'sessions'), copy.workspace),
@@ -102,6 +104,7 @@ describe('product Web recovery support', () => {
     expect(copiedRecords.slice(1)).toEqual(expectedEventRows)
     expect(existsSync(join(dirname(copiedSession), 'session.jsonl.zstd'))).toBe(false)
     expect(existsSync(join(copy.home, 'attachments'))).toBe(false)
+    expect(existsSync(join(copy.workspace, 'recovery-fixture.txt'))).toBe(false)
   })
 
   it('fails closed when an image node has a malformed attachment reference', async () => {
