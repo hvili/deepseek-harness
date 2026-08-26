@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-26-dsh-session-codex-thread-journal.md
-2026-08-26-dsh-session-codex-thread-journal.md: 66025ac0ade61de87570c258f7848dd2c194e135
-2026-08-26-dsh-session-codex-thread-journal.zh.md: d225700606b17dec06f96433e786e385c3231e12
+2026-08-26-dsh-session-codex-thread-journal.md: 09bcf347b332346425a975ca365358af164a4faa
+2026-08-26-dsh-session-codex-thread-journal.zh.md: 5911b3043009b354195a5f66ebcc161b280478dc

@@ -21,3 +21,13 @@ This is an explicit stateful API fix. The one-shot Codex provider, its default-o
 ## Verification
 
 The focused stateful execution tests cover batched completion, child exit and rejection, abort with failed interrupt, input close, output transport failure, malformed `turn/completed`, bounded settlement, and process-tree quiescence.
+
+## Alternatives considered
+
+- **Wait only for `turn/completed`** — rejected because a child exit, input close, transport error, or malformed terminal notification can occur without that notification.
+- **Make `turn/interrupt` authoritative for cancellation** — rejected because a failed or unanswered interrupt cannot be allowed to keep local cancellation pending.
+- **Expose raw process or upstream errors** — rejected because paths, commands, stderr, credentials, and upstream text are not stable or safe public diagnostics.
+
+## Consequences
+
+Local cancellation settles immediately while cleanup continues through the normal disposal ladder; a best-effort interrupt may fail without changing the bounded result. Every terminal path observes child and transport failures, closes the wire, and waits for the whole process tree. This adds explicit coordination and safe fixed messages to the lower-level stateful API while preserving the one-shot provider and all native DeepSeek surfaces.
