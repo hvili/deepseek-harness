@@ -370,18 +370,6 @@ async function copyTree(source: string, target: string): Promise<void> {
   }
 }
 
-function replacePathValue(value: unknown, sourcePath: string, targetPath: string): unknown {
-  if (typeof value === 'string') {
-    if (value === sourcePath) return targetPath
-    const sourceSeparators = sourcePath.endsWith('/') || sourcePath.endsWith('\\') ? sourcePath : `${sourcePath}${sep}`
-    if (value.startsWith(sourceSeparators)) return `${targetPath}${value.slice(sourcePath.length)}`
-    return value
-  }
-  if (Array.isArray(value)) return value.map(item => replacePathValue(item, sourcePath, targetPath))
-  if (!isRecord(value)) return value
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replacePathValue(item, sourcePath, targetPath)]))
-}
-
 async function decodeSessionArtifact(path: string): Promise<string> {
   const bytes = await readFile(path)
   if (!path.endsWith('.zstd')) return bytes.toString('utf8')
@@ -397,7 +385,9 @@ async function decodeSessionArtifact(path: string): Promise<string> {
   return Buffer.concat(frames).toString('utf8')
 }
 
-function rebaseJsonl(text: string, sourceWorkspace: string, targetWorkspace: string): string {
+/** Rebase only the Session header cwd while preserving every durable event row byte-for-byte. */
+export function rebaseSessionJsonlForRecovery(text: string, sourceWorkspace: string, targetWorkspace: string): string {
+  let recordIndex = 0
   return text.split(/(\r?\n)/u).map((part) => {
     if (part === '\n' || part === '\r\n' || part === '') return part
     let parsed: unknown
@@ -406,7 +396,16 @@ function rebaseJsonl(text: string, sourceWorkspace: string, targetWorkspace: str
     } catch (error: unknown) {
       throw new Error(`Session copy contains a non-JSONL row: ${errorMessage(error)}`)
     }
-    return JSON.stringify(replacePathValue(parsed, sourceWorkspace, targetWorkspace))
+    const currentIndex = recordIndex
+    recordIndex += 1
+    if (currentIndex !== 0) return part
+    if (!isRecord(parsed) || parsed.type !== 'session') {
+      throw new Error('Session copy does not begin with a Session header')
+    }
+    if (typeof parsed.cwd !== 'string' || !pathsEquivalent(parsed.cwd, sourceWorkspace)) {
+      throw new Error(`Session header cwd does not match the selected source Workspace: ${String(parsed.cwd)}`)
+    }
+    return JSON.stringify({ ...parsed, cwd: targetWorkspace })
   }).join('')
 }
 
@@ -696,7 +695,11 @@ export async function copyRecoveryDataset(dataset: RecoveryDataset, targetRoot: 
     }
   }
   if (sourceArtifact === undefined) throw new Error('copied Session artifact disappeared before rebasing')
-  const rebased = rebaseJsonl(await decodeSessionArtifact(sourceArtifact), dataset.sourceWorkspace, workspace)
+  const rebased = rebaseSessionJsonlForRecovery(
+    await decodeSessionArtifact(sourceArtifact),
+    dataset.sourceWorkspace,
+    workspace,
+  )
   await writeFile(targetPlain, rebased, 'utf8')
   if (sourceArtifact === targetCompressed) await rm(targetCompressed, { force: true })
   await writeFile(patchPath, [
@@ -791,7 +794,9 @@ export async function webRpc<T>(baseUrl: string, method: string, payload: unknow
   if (!isRecord(body) || !isRecord(body.result)) throw new Error(`${method} returned an invalid RPC envelope`)
   if (body.result.ok !== true) {
     const error = isRecord(body.result.error) ? body.result.error : {}
-    throw new Error(`${method} failed: ${String(error.code ?? 'unknown')}: ${String(error.message ?? 'unknown error')}`)
+    const code = typeof error.code === 'string' ? error.code : 'unknown'
+    const message = typeof error.message === 'string' ? error.message : 'unknown error'
+    throw new Error(`${method} failed: ${code}: ${message}`)
   }
   return body.result.value as T
 }
@@ -1055,8 +1060,8 @@ export async function startRecoveryWebProcess(
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   })
-  child.stdout?.on('data', (chunk) => { collector.add(chunk) })
-  child.stderr?.on('data', (chunk) => { collector.add(chunk) })
+  child.stdout.on('data', (chunk: Buffer | string) => { collector.add(chunk) })
+  child.stderr.on('data', (chunk: Buffer | string) => { collector.add(chunk) })
   child.on('error', (error) => { collector.add(`\n[child error] ${errorMessage(error)}\n`) })
   const pid = child.pid
   if (pid === undefined) throw new Error('dsh web child did not expose a pid')
@@ -1069,7 +1074,9 @@ export async function startRecoveryWebProcess(
     const ready = await waitForReady(child, collector, port, timeoutMs)
     return { pid, port, baseUrl: ready.url, ready, output: () => collector.text, stop }
   } catch (error: unknown) {
-    await stop().catch((stopError) => { throw new AggregateError([error, stopError], 'dsh web failed during startup and teardown') })
+    await stop().catch((stopError: unknown) => {
+      throw new AggregateError([error, stopError], 'dsh web failed during startup and teardown')
+    })
     throw error
   }
 }
@@ -1115,7 +1122,7 @@ async function assertRecoveredState(baseUrl: string, copy: RecoveryCopy, dataset
     sessionId: dataset.sessionId,
     maxMessages: 100,
   })
-  assertCondition(history.hasMore === false, 'recovery history unexpectedly exceeded the bounded fixture page')
+  assertCondition(!history.hasMore, 'recovery history unexpectedly exceeded the bounded fixture page')
   const recoveredReference = firstImageReference(history.events)
   assertCondition(recoveredReference?.attachmentId === dataset.attachment.attachmentId, 'recovered history lost its attachment reference')
   const attachment = await webRpc<{ attachment: ImageReferenceShape; data: string }>(baseUrl, 'session.attachment', {
@@ -1215,7 +1222,7 @@ export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promis
   if (mainError !== undefined && cleanupErrors.length > 0) {
     throw new AggregateError([mainError, ...cleanupErrors], 'Web recovery gate and cleanup both failed')
   }
-  if (mainError !== undefined) throw mainError
+  if (mainError !== undefined) throw mainError instanceof Error ? mainError : new Error(errorMessage(mainError))
   if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'Web recovery gate cleanup failed')
   if (report === undefined || sourceAfter === undefined || sourceBefore === undefined) {
     throw new Error('Web recovery gate completed without a report')

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertRecoverySourceUnchanged, classifySymlinkError, copyRecoveryDataset, createRecoveryFixture,
-  snapshotRecoverySource,
+  rebaseSessionJsonlForRecovery, snapshotRecoverySource,
 } from './product-web-recovery-support.ts'
 
 const temporaryRoots: string[] = []
@@ -37,5 +37,23 @@ describe('product Web recovery support', () => {
     expect(classifySymlinkError(error, 'probe', 'win32')).toBe('environment-limitation')
     expect(classifySymlinkError(error, 'product-copy', 'win32')).toBe('product-failure')
     expect(classifySymlinkError(error, 'probe', 'linux')).toBe('product-failure')
+  })
+
+  it('rebases only the Session header cwd and preserves event content', () => {
+    const sourceWorkspace = join('D:', 'source-workspace')
+    const targetWorkspace = join('D:', 'copied-workspace')
+    const userText = join(sourceWorkspace, 'nested', 'file.txt')
+    const header = JSON.stringify({
+      type: 'session', version: 2, id: 'session', createdAt: 1, cwd: sourceWorkspace, delegationDepth: 0,
+    })
+    const event = JSON.stringify({ type: 'user/message', seq: 0, time: 2, data: { text: userText } })
+
+    const rebased = rebaseSessionJsonlForRecovery(`${header}\n${event}\n`, sourceWorkspace, targetWorkspace)
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map(line => JSON.parse(line) as Record<string, unknown>)
+
+    expect(rebased[0]?.cwd).toBe(targetWorkspace)
+    expect(rebased[1]).toEqual(JSON.parse(event))
   })
 })
