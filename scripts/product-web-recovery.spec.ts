@@ -1,13 +1,18 @@
 /** Focused unit checks for the non-destructive Web/Host recovery gate. */
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertRecoverySourceUnchanged, classifySymlinkError, copyRecoveryDataset, createRecoveryFixture,
-  rebaseSessionJsonlForRecovery, snapshotRecoverySource,
+  inspectRecoveryDataset, rebaseSessionJsonlForRecovery, snapshotRecoverySource,
 } from './product-web-recovery-support.ts'
+import {
+  encodeSegment, projectDir,
+} from '../packages/session/session-persistence-jsonl/src/format.ts'
+import { compressZstdFrame } from '../packages/session/session-persistence-jsonl/src/zstd.ts'
 
 const temporaryRoots: string[] = []
 
@@ -55,5 +60,70 @@ describe('product Web recovery support', () => {
 
     expect(rebased[0]?.cwd).toBe(targetWorkspace)
     expect(rebased[1]).toEqual(JSON.parse(event))
+  })
+
+  it('accepts an attachment-free multi-frame zstd Session and preserves every event row', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-product-web-recovery-zstd-'))
+    temporaryRoots.push(root)
+    const fixture = await createRecoveryFixture(root)
+    const sessionDirectory = join(
+      projectDir(join(fixture.sourceHome, 'sessions'), fixture.sourceWorkspace),
+      encodeSegment(fixture.sessionId),
+    )
+    const plainPath = join(sessionDirectory, 'session.jsonl')
+    const compressedPath = join(sessionDirectory, 'session.jsonl.zstd')
+    const records = (await readFile(plainPath, 'utf8')).trimEnd().split(/\r?\n/u)
+    const userEvent = JSON.parse(records[2] ?? '{}') as { data?: { content?: unknown[] } }
+    if (userEvent.data === undefined || !Array.isArray(userEvent.data.content)) {
+      throw new Error('fixture user event lost its content array')
+    }
+    userEvent.data.content = userEvent.data.content.filter(item => (
+      typeof item !== 'object' || item === null || !('type' in item) || item.type !== 'image'
+    ))
+    records[2] = JSON.stringify(userEvent)
+    const expectedEventRows = records.slice(1)
+    const frames = await Promise.all([
+      compressZstdFrame(`${records[0]}\n`),
+      compressZstdFrame(`${expectedEventRows.join('\n')}\n`),
+    ])
+    await writeFile(compressedPath, Buffer.concat(frames))
+    await unlink(plainPath)
+
+    const dataset = await inspectRecoveryDataset(fixture.sourceHome, fixture.sourceWorkspace)
+    expect(dataset.attachment).toBeUndefined()
+    const copy = await copyRecoveryDataset(dataset, join(root, 'copy-world'))
+    const copiedSession = join(
+      projectDir(join(copy.home, 'sessions'), copy.workspace),
+      encodeSegment(dataset.sessionId),
+      'session.jsonl',
+    )
+    const copiedRecords = (await readFile(copiedSession, 'utf8')).trimEnd().split(/\r?\n/u)
+    expect((JSON.parse(copiedRecords[0] ?? '{}') as { cwd?: string }).cwd).toBe(copy.workspace)
+    expect(copiedRecords.slice(1)).toEqual(expectedEventRows)
+    expect(existsSync(join(dirname(copiedSession), 'session.jsonl.zstd'))).toBe(false)
+    expect(existsSync(join(copy.home, 'attachments'))).toBe(false)
+  })
+
+  it('fails closed when an image node has a malformed attachment reference', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-product-web-recovery-malformed-'))
+    temporaryRoots.push(root)
+    const fixture = await createRecoveryFixture(root)
+    const plainPath = join(
+      projectDir(join(fixture.sourceHome, 'sessions'), fixture.sourceWorkspace),
+      encodeSegment(fixture.sessionId),
+      'session.jsonl',
+    )
+    const records = (await readFile(plainPath, 'utf8')).trimEnd().split(/\r?\n/u)
+    const userEvent = JSON.parse(records[2] ?? '{}') as {
+      data?: { content?: Array<{ type?: string; attachment?: unknown }> }
+    }
+    const image = userEvent.data?.content?.find(item => item.type === 'image')
+    if (image === undefined) throw new Error('fixture user event lost its image node')
+    image.attachment = { attachmentId: fixture.attachment?.attachmentId }
+    records[2] = JSON.stringify(userEvent)
+    await writeFile(plainPath, `${records.join('\n')}\n`, 'utf8')
+
+    await expect(inspectRecoveryDataset(fixture.sourceHome, fixture.sourceWorkspace))
+      .rejects.toThrow('malformed image attachment reference')
   })
 })

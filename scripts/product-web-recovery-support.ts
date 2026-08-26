@@ -84,8 +84,8 @@ export interface RecoveryDataset {
   workspaceId: string
   /** Expected durable values. */
   expected: RecoveryExpectedState
-  /** Expected content-addressed image. */
-  attachment: RecoveryAttachment
+  /** Expected content-addressed image, when the selected Session references one. */
+  attachment?: RecoveryAttachment
 }
 
 /** A deterministic checksum snapshot of all regular files below a directory. */
@@ -195,6 +195,8 @@ export interface RecoveryGateReport {
   secondProcess: { pid: number; port: number; ready: WebReadyBoundary; stop: ProcessStopEvidence }
   /** True only after source snapshots compare exactly. */
   sourceUnchanged: true
+  /** Whether this dataset exercised attachment recovery or had no durable image reference. */
+  attachmentValidation: 'verified' | 'not-applicable-no-reference'
   /** The private world path, which is absent after successful cleanup. */
   tempRoot: string
   /** True only after the private world has been removed. */
@@ -418,12 +420,15 @@ function firstImageReference(value: unknown): ImageReferenceShape | undefined {
     return undefined
   }
   if (!isRecord(value)) return undefined
-  if (value.type === 'image' && isRecord(value.attachment)
-    && typeof value.attachment.attachmentId === 'string'
-    && typeof value.attachment.mediaType === 'string'
-    && typeof value.attachment.bytes === 'number'
-    && typeof value.attachment.width === 'number'
-    && typeof value.attachment.height === 'number') {
+  if (value.type === 'image') {
+    if (!isRecord(value.attachment)
+      || typeof value.attachment.attachmentId !== 'string'
+      || typeof value.attachment.mediaType !== 'string'
+      || typeof value.attachment.bytes !== 'number'
+      || typeof value.attachment.width !== 'number'
+      || typeof value.attachment.height !== 'number') {
+      throw new Error('Session contains a malformed image attachment reference')
+    }
     return {
       attachmentId: value.attachment.attachmentId,
       mediaType: value.attachment.mediaType,
@@ -506,14 +511,20 @@ export async function inspectRecoveryDataset(sourceHome: string, sourceWorkspace
   const artifact = await findSourceSessionArtifact(home, workspace, source.sessionId)
   const sessionText = await decodeSessionArtifact(artifact)
   const attachmentRef = firstImageReference(sessionText.split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line) as unknown))
-  if (attachmentRef === undefined) throw new Error(`Session ${source.sessionId} has no image attachment reference`)
-  const match = /^sha256:([a-f0-9]{64})$/u.exec(attachmentRef.attachmentId)
-  if (match?.[1] === undefined) throw new Error(`Session ${source.sessionId} has a non-content-addressed attachment reference`)
-  const objectPath = join(home, 'attachments', 'v1', 'objects', match[1].slice(0, 2), match[1])
-  const objectBytes = await readFile(await requireRegularFile(objectPath, 'attachment object'))
-  const actual = createHash('sha256').update(objectBytes).digest('hex')
-  if (actual !== match[1] || objectBytes.byteLength !== attachmentRef.bytes) {
-    throw new Error(`attachment object failed source integrity verification: ${objectPath}`)
+  let attachment: RecoveryAttachment | undefined
+  if (attachmentRef !== undefined) {
+    const match = /^sha256:([a-f0-9]{64})$/u.exec(attachmentRef.attachmentId)
+    if (match?.[1] === undefined) throw new Error(`Session ${source.sessionId} has a non-content-addressed attachment reference`)
+    const objectPath = join(home, 'attachments', 'v1', 'objects', match[1].slice(0, 2), match[1])
+    const objectBytes = await readFile(await requireRegularFile(objectPath, 'attachment object'))
+    const actual = createHash('sha256').update(objectBytes).digest('hex')
+    if (actual !== match[1] || objectBytes.byteLength !== attachmentRef.bytes) {
+      throw new Error(`attachment object failed source integrity verification: ${objectPath}`)
+    }
+    attachment = {
+      ...attachmentRef,
+      dataBase64: objectBytes.toString('base64'),
+    }
   }
   const global = source.global
   const archivedSessionIds = nonEmptyStringArray(global.archivedSessionIds)
@@ -532,10 +543,7 @@ export async function inspectRecoveryDataset(sourceHome: string, sourceWorkspace
       archived: archivedSessionIds.includes(source.sessionId),
       favorite: favoriteSessionIds.includes(source.sessionId),
     },
-    attachment: {
-      ...attachmentRef,
-      dataBase64: objectBytes.toString('base64'),
-    },
+    ...(attachment === undefined ? {} : { attachment }),
   }
 }
 
@@ -653,10 +661,13 @@ export async function copyRecoveryDataset(dataset: RecoveryDataset, targetRoot: 
   const sourceSessionDirectory = join(projectDir(join(dataset.sourceHome, 'sessions'), dataset.sourceWorkspace), encodeSegment(dataset.sessionId))
   const targetSessionDirectory = join(projectDir(join(home, 'sessions'), workspace), encodeSegment(dataset.sessionId))
   await copyTree(sourceSessionDirectory, targetSessionDirectory)
-  const sourceObject = join(dataset.sourceHome, 'attachments', 'v1', 'objects', dataset.attachment.attachmentId.slice('sha256:'.length, 'sha256:'.length + 2), dataset.attachment.attachmentId.slice('sha256:'.length))
-  const targetObject = join(home, 'attachments', 'v1', 'objects', dataset.attachment.attachmentId.slice('sha256:'.length, 'sha256:'.length + 2), dataset.attachment.attachmentId.slice('sha256:'.length))
-  await mkdir(dirname(targetObject), { recursive: true, mode: 0o700 })
-  await copyFile(await requireRegularFile(sourceObject, 'source attachment object'), targetObject)
+  if (dataset.attachment !== undefined) {
+    const digest = dataset.attachment.attachmentId.slice('sha256:'.length)
+    const sourceObject = join(dataset.sourceHome, 'attachments', 'v1', 'objects', digest.slice(0, 2), digest)
+    const targetObject = join(home, 'attachments', 'v1', 'objects', digest.slice(0, 2), digest)
+    await mkdir(dirname(targetObject), { recursive: true, mode: 0o700 })
+    await copyFile(await requireRegularFile(sourceObject, 'source attachment object'), targetObject)
+  }
 
   const now = new Date().toISOString()
   await mkdir(join(home, 'storages'), { recursive: true, mode: 0o700 })
@@ -1124,16 +1135,20 @@ async function assertRecoveredState(baseUrl: string, copy: RecoveryCopy, dataset
   })
   assertCondition(!history.hasMore, 'recovery history unexpectedly exceeded the bounded fixture page')
   const recoveredReference = firstImageReference(history.events)
-  assertCondition(recoveredReference?.attachmentId === dataset.attachment.attachmentId, 'recovered history lost its attachment reference')
-  const attachment = await webRpc<{ attachment: ImageReferenceShape; data: string }>(baseUrl, 'session.attachment', {
-    sessionId: dataset.sessionId,
-    attachmentId: dataset.attachment.attachmentId,
-  })
-  assertCondition(attachment.attachment.attachmentId === dataset.attachment.attachmentId, 'recovered attachment id changed')
-  assertCondition(attachment.attachment.mediaType === dataset.attachment.mediaType, 'recovered attachment media type changed')
-  assertCondition(attachment.attachment.bytes === dataset.attachment.bytes, 'recovered attachment size changed')
-  assertCondition(attachment.attachment.width === dataset.attachment.width && attachment.attachment.height === dataset.attachment.height, 'recovered attachment dimensions changed')
-  assertCondition(attachment.data === dataset.attachment.dataBase64, 'recovered attachment bytes changed')
+  if (dataset.attachment === undefined) {
+    assertCondition(recoveredReference === undefined, 'recovery introduced an image attachment reference')
+  } else {
+    assertCondition(recoveredReference?.attachmentId === dataset.attachment.attachmentId, 'recovered history lost its attachment reference')
+    const attachment = await webRpc<{ attachment: ImageReferenceShape; data: string }>(baseUrl, 'session.attachment', {
+      sessionId: dataset.sessionId,
+      attachmentId: dataset.attachment.attachmentId,
+    })
+    assertCondition(attachment.attachment.attachmentId === dataset.attachment.attachmentId, 'recovered attachment id changed')
+    assertCondition(attachment.attachment.mediaType === dataset.attachment.mediaType, 'recovered attachment media type changed')
+    assertCondition(attachment.attachment.bytes === dataset.attachment.bytes, 'recovered attachment size changed')
+    assertCondition(attachment.attachment.width === dataset.attachment.width && attachment.attachment.height === dataset.attachment.height, 'recovered attachment dimensions changed')
+    assertCondition(attachment.data === dataset.attachment.dataBase64, 'recovered attachment bytes changed')
+  }
 
   const described = await webRpc<Record<string, unknown>>(baseUrl, 'host.describe', {})
   const processHome = join(dirname(copy.home), 'process-home')
@@ -1198,6 +1213,7 @@ export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promis
       firstProcess: { ...firstRecord, stop: firstStop },
       secondProcess: { ...secondRecord, stop: secondStop },
       sourceUnchanged: true,
+      attachmentValidation: dataset.attachment === undefined ? 'not-applicable-no-reference' : 'verified',
       tempRoot: world,
       tempRootCleaned: true,
     }
@@ -1236,6 +1252,7 @@ export function compactRecoveryReport(report: RecoveryGateReport): Record<string
     sourceUnchanged: report.sourceUnchanged,
     sourceDigest: report.sourceBefore.digest,
     sourceFiles: report.sourceBefore.home.files.length + report.sourceBefore.workspace.files.length,
+    attachmentValidation: report.attachmentValidation,
     symlink: report.symlink,
     firstProcess: {
       pid: report.firstProcess.pid,
