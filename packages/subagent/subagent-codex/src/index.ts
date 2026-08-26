@@ -35,6 +35,7 @@ export {
   createCodexThreadReference,
   foldCodexThreadReference,
   seedCodexThreadReference,
+  validateCodexThreadReference,
   type CodexPersistentThreadOptions,
   type CodexThreadId,
   type CodexThreadReference,
@@ -48,6 +49,8 @@ export {
   type CodexStatefulTurn,
   type CodexThreadJournal,
 } from './stateful-execution.ts'
+
+export { DshSessionCodexThreadJournal } from './session-journal.ts'
 
 export const name = 'subagent-codex'
 export const inject = ['subagents', 'subprocess']

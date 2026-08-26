@@ -19,6 +19,7 @@ class AppServerPeer {
   private buffer = ''
   private readonly frames: Frame[] = []
   private readonly waiters = new Set<() => void>()
+  readonly methods: string[] = []
 
   constructor(input: PassThrough, private readonly output: PassThrough) {
     input.on('data', (chunk: Buffer | string) => {
@@ -28,7 +29,11 @@ class AppServerPeer {
         if (newline < 0) break
         const line = this.buffer.slice(0, newline)
         this.buffer = this.buffer.slice(newline + 1)
-        if (line.trim().length > 0) this.frames.push(JSON.parse(line) as Frame)
+        if (line.trim().length > 0) {
+          const frame = JSON.parse(line) as Frame
+          if (frame.method !== undefined) this.methods.push(frame.method)
+          this.frames.push(frame)
+        }
       }
       for (const wake of this.waiters) wake()
       this.waiters.clear()
@@ -102,8 +107,8 @@ class TestChild {
   }
 }
 
-function memoryJournal(): CodexThreadJournal {
-  const events: SessionEvent[] = []
+function memoryJournal(seed: readonly SessionEvent[] = []): CodexThreadJournal {
+  const events: SessionEvent[] = [...seed]
   return {
     load: async () => events,
     appendWal: async (data) => {
@@ -115,7 +120,7 @@ function memoryJournal(): CodexThreadJournal {
   }
 }
 
-function executionFixture(): {
+function executionFixture(seed?: readonly SessionEvent[]): {
   readonly execution: CodexStatefulExecution
   readonly peer: AppServerPeer
   readonly child: TestChild
@@ -129,7 +134,7 @@ function executionFixture(): {
     env: {},
     disposeGraceMs: 1,
     spawn: () => child as unknown as SubprocessHandle,
-    journal: memoryJournal(),
+    journal: memoryJournal(seed),
   })
   return { execution, peer, child }
 }
@@ -209,6 +214,24 @@ describe('CodexStatefulExecution', () => {
     await expect(settleWithin(running)).rejects.toThrow(
       'subagent-codex: stateful Codex app-server exited before turn completion',
     )
+    await expectTreeStopped(child)
+  })
+
+  it('fails closed on durable prepared-only recovery without starting another thread', async () => {
+    const { execution, peer, child } = executionFixture([{
+      type: 'codex/thread-start-wal',
+      seq: 0,
+      time: 0,
+      data: { version: 1, operationId: 'unresolved-start', state: 'prepared' },
+    }])
+    const running = execution.execute(['This turn must not start a second thread.'])
+    const initialize = await peer.request('initialize')
+    peer.send([{ id: initialize.id, result: {} }])
+
+    await expect(settleWithin(running)).rejects.toThrow(
+      'subagent-codex: persisted Codex thread start requires reconciliation',
+    )
+    expect(peer.methods).not.toContain('thread/start')
     await expectTreeStopped(child)
   })
 

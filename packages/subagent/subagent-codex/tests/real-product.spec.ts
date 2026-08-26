@@ -22,7 +22,8 @@ import type {
   SubprocessOutcome,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionPreparation, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
@@ -35,7 +36,8 @@ import {
 const execFileAsync = promisify(execFile)
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
+const codexPackageRequire = createRequire(resolve(packageRoot, '..', 'codex-app-server', 'package.json'))
+const codexPackageJson = codexPackageRequire.resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
   codexPackageJson,
   'utf8',
@@ -137,6 +139,30 @@ async function realRuntime(): Promise<RealRuntime> {
     return handle
   })
   return { ctx, handles, spawnSpecs }
+}
+
+async function realDshSessionMount(root: string): Promise<Context> {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  return ctx
+}
+
+function publishPreparedSession(ctx: Context, preparation: SessionPreparation): Session {
+  const session = preparation.session
+  ctx.effect(function* (this: SessionStore) {
+    yield this.enter(session)
+    this.announce(session)
+  }.bind(ctx.sessions), 'real-product DSH Session')
+  preparation[Symbol.dispose]()
+  return session
+}
+
+async function disposeContext(ctx: Context): Promise<void> {
+  await ctx.fiber.dispose()
+  const index = contexts.indexOf(ctx)
+  if (index >= 0) contexts.splice(index, 1)
 }
 
 async function realHarness(
@@ -571,46 +597,62 @@ describe('real @openai/codex 0.147.0 product', () => {
       { kind: 'complete', text: firstAnswer },
       { kind: 'complete', text: secondAnswer },
     ])
-    const events: SessionEvent[] = []
-    const journal: codex.CodexThreadJournal = {
-      load: async () => events,
-      appendWal: async (data) => {
-        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
-      },
-      appendReference: async (data) => {
-        if (events.some(event => event.type === 'codex/thread-reference')) return
-        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
-      },
-    }
+    const sessionRoot = join(instance.workspace, '.dsh-session')
+    const sessionId = SessionId('codex-real-stateful-restart')
+    const firstDsh = await realDshSessionMount(sessionRoot)
+    const firstSession = firstDsh.sessions.create(sessionId, { meta: { cwd: instance.workspace } })
+    const firstJournal = new codex.DshSessionCodexThreadJournal(firstSession, firstDsh.sessions)
     const firstRuntime = await realRuntime()
     const first = new codex.CodexStatefulExecution({
       cwd: instance.workspace,
       env: instance.env,
       disposeGraceMs: 2_000,
       spawn: spec => firstRuntime.ctx.subprocess.spawn(spec),
-      journal,
+      journal: firstJournal,
     })
     await expect(first.execute(['Return the first stateful sentinel.'])).resolves.toMatchObject({ text: firstAnswer })
     await expectQuiescent(firstRuntime.handles)
-    const reference = events.find(event => event.type === 'codex/thread-reference')
-    expect(reference?.data).toMatchObject({ version: 1 })
+    const firstStored = await firstDsh.sessionPersistence.inspect(sessionId)
+    const firstReference = firstStored.events.find(event => event.type === 'codex/thread-reference')
+    expect(firstReference?.data).toMatchObject({ version: 1 })
+    expect(firstStored.events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
 
+    await disposeContext(firstRuntime.ctx)
+    await disposeContext(firstDsh)
+
+    const secondDsh = await realDshSessionMount(sessionRoot)
+    const prepared = await secondDsh.sessionPersistence.prepare(sessionId)
+    const secondSession = publishPreparedSession(secondDsh, prepared)
+    const secondJournal = new codex.DshSessionCodexThreadJournal(secondSession, secondDsh.sessions)
     const secondRuntime = await realRuntime()
     const second = new codex.CodexStatefulExecution({
       cwd: instance.workspace,
       env: instance.env,
       disposeGraceMs: 2_000,
       spawn: spec => secondRuntime.ctx.subprocess.spawn(spec),
-      journal,
+      journal: secondJournal,
     })
     await expect(second.execute(['Return the second stateful sentinel.'])).resolves.toMatchObject({
       text: secondAnswer,
-      reference: reference?.data,
+      reference: firstReference?.data,
     })
     await expectQuiescent(secondRuntime.handles)
-    expect(events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
+    const secondStored = await secondDsh.sessionPersistence.inspect(sessionId)
+    const references = secondStored.events.filter(event => event.type === 'codex/thread-reference')
+    const accepted = secondStored.events.filter(event => event.type === 'codex/thread-start-wal')
+      .map(event => event.data)
+      .filter((data): data is { state: 'accepted'; threadId: string } => (
+        typeof data === 'object'
+        && data !== null
+        && (data as { state?: unknown }).state === 'accepted'
+        && typeof (data as { threadId?: unknown }).threadId === 'string'
+      ))
+    expect(references).toHaveLength(1)
+    expect(new Set(accepted.map(data => data.threadId))).toEqual(new Set([firstReference?.data.threadId]))
     expect(firstRuntime.handles).toHaveLength(1)
     expect(secondRuntime.handles).toHaveLength(1)
+    await disposeContext(secondRuntime.ctx)
+    await disposeContext(secondDsh)
   }, 60_000)
 
   it('cancels a stateful real app-server turn and waits for its tree to exit', async () => {
@@ -667,7 +709,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     })
 
     await expect(execution.execute(['Exercise the stateful service failure path.']))
-      .rejects.toThrow('stateful Codex turn ended with')
+      .rejects.toThrow('subagent-codex: stateful Codex turn failed')
     await expectQuiescent(runtime.handles)
     expect(runtime.handles).toHaveLength(1)
   }, 60_000)

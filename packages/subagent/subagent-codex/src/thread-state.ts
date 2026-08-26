@@ -110,6 +110,22 @@ function parseReference(value: unknown, label: string): CodexThreadReference | u
   }
 }
 
+/**
+ * Validate a public or persisted reference payload without accepting unknown
+ * fields or a future payload version.
+ * @param value - untrusted reference-shaped data.
+ * @returns the current versioned reference.
+ * @throws when the payload is malformed, conflicting with the current version,
+ *   or contains fields this adapter does not understand.
+ */
+export function validateCodexThreadReference(value: unknown): CodexThreadReference {
+  const parsed = parseReference(value, 'Codex thread reference')
+  if (parsed === undefined) {
+    throw new Error('subagent-codex: Codex thread reference version is unsupported')
+  }
+  return parsed
+}
+
 function parseWal(value: unknown, label: string): CodexThreadStartWal {
   const source = record(value, label)
   const keys = Object.keys(source)
@@ -275,8 +291,7 @@ export class CodexPersistentThreadClient {
    * @returns the verified unchanged reference.
    */
   async resume(reference: CodexThreadReference, signal?: AbortSignal): Promise<CodexThreadReference> {
-    const validated = parseReference(reference, 'Codex thread reference')
-    if (validated === undefined) throw new Error('subagent-codex: Codex thread reference version is unsupported')
+    const validated = validateCodexThreadReference(reference)
     return responseReference(await this.appServer.request('thread/resume', {
       threadId: validated.threadId,
     }, signal), 'thread/resume', validated.threadId)

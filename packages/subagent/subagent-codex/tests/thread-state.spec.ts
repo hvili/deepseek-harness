@@ -9,6 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { CodexAppServerClient } from '@deepseek-ai/dsh-codex-app-server'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { DshSessionCodexThreadJournal } from '../src/session-journal.ts'
 import {
   CODEX_THREAD_REFERENCE_VERSION,
   CodexPersistentThreadClient,
@@ -17,6 +18,7 @@ import {
   recoverCodexThreadStartWal,
   seedCodexThreadReference,
   startCodexThreadWithWal,
+  type CodexThreadStartWal,
 } from '../src/thread-state.ts'
 
 type Frame = Record<string, unknown>
@@ -156,6 +158,39 @@ describe('Codex persistent thread state', () => {
     expect(() => foldCodexThreadReference(future as never)).toThrow('version is unsupported')
   })
 
+  it('binds the production journal to Session append plus a successful flush barrier', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-codex-session-journal-'))
+    roots.push(root)
+    const sessionId = SessionId('codex-session-journal')
+    const ctx = await mountPersistence(root)
+    const session = ctx.sessions.create(sessionId, { meta: { cwd: 'D:/workspace' } })
+    const journal = new DshSessionCodexThreadJournal(session, ctx.sessions)
+    const prepared: CodexThreadStartWal = {
+      version: 1,
+      operationId: 'op-journal',
+      state: 'prepared',
+    }
+    await journal.appendWal(prepared)
+    await expect(ctx.sessionPersistence.inspect(sessionId)).resolves.toMatchObject({
+      events: [{ type: 'codex/thread-start-wal', data: prepared }],
+    })
+
+    const reference = createCodexThreadReference('codex-journal-thread')
+    await journal.appendReference(reference)
+    const stored = await ctx.sessionPersistence.inspect(sessionId)
+    expect(stored.events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
+    expect(foldCodexThreadReference(stored.events)).toEqual(reference)
+    expect(session.header).not.toHaveProperty('threadId')
+
+    await journal.appendReference(reference)
+    const retried = await ctx.sessionPersistence.inspect(sessionId)
+    expect(retried.events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
+    await expect(journal.appendReference(createCodexThreadReference('other-thread')))
+      .rejects.toThrow('conflicts with the Session')
+    await expect(journal.appendReference({ version: 2, threadId: 'future' } as never))
+      .rejects.toThrow('version is unsupported')
+  })
+
   it('fails closed for malformed public resume values and non-absolute app-server cwd values', async () => {
     const { client } = await initializedClient()
     const threads = new CodexPersistentThreadClient(client)
@@ -184,25 +219,70 @@ describe('Codex persistent thread state', () => {
       .toThrow('requires reconciliation')
   })
 
-  it('does not publish a reference when fault injection rejects the accepted WAL write', async () => {
+  it('leaves only durable prepared evidence when accepted WAL flush fails', async () => {
     const { client, peer } = await initializedClient()
     const threads = new CodexPersistentThreadClient(client)
-    const entries: unknown[] = []
-    const references: unknown[] = []
-    const started = startCodexThreadWithWal(threads, 'D:/workspace', {
-      appendWal: async (entry) => {
-        entries.push(entry)
-        if (entry.state === 'accepted') throw new Error('injected accepted WAL durability failure')
-      },
-      appendReference: async (reference) => { references.push(reference) },
-    })
+    const persisted: Array<{ type: string; seq: number; time: number; data: unknown }> = []
+    let startCalls = 0
+    const start = () => {
+      startCalls += 1
+      return startCodexThreadWithWal(threads, 'D:/workspace', {
+        appendWal: async (entry) => {
+          if (entry.state === 'accepted') throw new Error('injected accepted WAL durability failure')
+          persisted.push({ type: 'codex/thread-start-wal', seq: persisted.length, time: 0, data: entry })
+        },
+        appendReference: async () => undefined,
+      })
+    }
+    const started = start()
     const request = await peer.request('thread/start')
     peer.respond(request, { thread: { id: 'accepted-but-not-logged', ephemeral: false } })
     await expect(started).rejects.toThrow('injected accepted WAL durability failure')
-    expect(entries).toMatchObject([{ state: 'prepared' }, {
-      state: 'accepted', threadId: 'accepted-but-not-logged',
-    }])
-    expect(references).toEqual([])
+    expect(persisted).toMatchObject([{ data: { state: 'prepared' } }])
+    expect(persisted).toHaveLength(1)
+    expect(() => recoverCodexThreadStartWal(persisted as never)).toThrow('requires reconciliation')
+    expect(startCalls).toBe(1)
     client.close()
+  })
+
+  it('recovers accepted evidence, writes one reference, and resumes without a second start', async () => {
+    const first = await initializedClient()
+    const firstThreads = new CodexPersistentThreadClient(first.client)
+    const persisted: Array<{ type: string; seq: number; time: number; data: unknown }> = []
+    const firstJournal = {
+      appendWal: async (entry: CodexThreadStartWal) => {
+        persisted.push({ type: 'codex/thread-start-wal', seq: persisted.length, time: 0, data: entry })
+      },
+      appendReference: async () => {
+        throw new Error('injected final reference durability failure')
+      },
+    }
+    const started = startCodexThreadWithWal(firstThreads, 'D:/workspace', firstJournal)
+    const startRequest = await first.peer.request('thread/start')
+    first.peer.respond(startRequest, { thread: { id: 'accepted-thread', ephemeral: false } })
+    await expect(started).rejects.toThrow('injected final reference durability failure')
+    expect(persisted.map(event => (event.data as { state: string }).state)).toEqual(['prepared', 'accepted'])
+    const recovered = recoverCodexThreadStartWal(persisted as never)
+    expect(recovered).toEqual({ version: 1, threadId: 'accepted-thread' })
+    first.client.close()
+
+    const retryJournal = {
+      appendWal: async (entry: CodexThreadStartWal) => {
+        persisted.push({ type: 'codex/thread-start-wal', seq: persisted.length, time: 0, data: entry })
+      },
+      appendReference: async (reference: ReturnType<typeof createCodexThreadReference>) => {
+        persisted.push({ type: 'codex/thread-reference', seq: persisted.length, time: 0, data: reference })
+      },
+    }
+    await retryJournal.appendReference(recovered)
+    expect(recoverCodexThreadStartWal(persisted as never)).toEqual(recovered)
+
+    const resumedApp = await initializedClient()
+    const resumed = new CodexPersistentThreadClient(resumedApp.client).resume(recovered)
+    const resumeRequest = await resumedApp.peer.request('thread/resume')
+    expect(resumeRequest.params).toEqual({ threadId: 'accepted-thread' })
+    resumedApp.peer.respond(resumeRequest, { thread: { id: 'accepted-thread', ephemeral: false } })
+    await expect(resumed).resolves.toEqual(recovered)
+    resumedApp.client.close()
   })
 })
