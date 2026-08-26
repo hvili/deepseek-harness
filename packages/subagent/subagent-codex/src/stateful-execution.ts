@@ -247,7 +247,7 @@ export class CodexStatefulExecution {
       const onInputError = (error: Error): void => { fail(statefulFailure('protocol', error)) }
       const onOutputError = (error: Error): void => { fail(statefulFailure('protocol', error)) }
       const onChildDone = (): void => { fail(statefulFailure('process')) }
-      const childDone = child.done.then(onChildDone, (error) => { fail(statefulFailure('process', error)) })
+      const childDone = child.done.then(onChildDone, (error: unknown) => { fail(statefulFailure('process', error)) })
       void childDone.catch(() => {})
       inputStream.on('end', onInputEnd)
       inputStream.on('close', onInputEnd)
@@ -271,7 +271,9 @@ export class CodexStatefulExecution {
           try {
             pending = activeClient.request('turn/interrupt', { threadId, turnId })
           } catch (error: unknown) {
-            pending = Promise.reject(error)
+            pending = Promise.reject(
+              error instanceof Error ? error : new Error('subagent-codex: stateful interrupt request failed'),
+            )
           }
           void pending.catch((error: unknown) => {
             if (!terminalSettled) fail(statefulFailure('interrupt', error))

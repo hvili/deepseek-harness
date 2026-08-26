@@ -2,10 +2,7 @@
 
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import type {
-  SubprocessHandle,
-  SubprocessOutcome,
-} from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CodexStatefulExecution, type CodexThreadJournal } from '../src/stateful-execution.ts'
 
@@ -133,7 +130,7 @@ function executionFixture(seed?: readonly SessionEvent[]): {
     cwd: 'D:/workspace',
     env: {},
     disposeGraceMs: 1,
-    spawn: () => child as unknown as SubprocessHandle,
+    spawn: () => child,
     journal: memoryJournal(seed),
   })
   return { execution, peer, child }
@@ -145,7 +142,7 @@ async function settleWithin<T>(promise: Promise<T>): Promise<T> {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('stateful execute did not settle')), 500)
+        timer = setTimeout(() => { reject(new Error('stateful execute did not settle')) }, 500)
       }),
     ])
   } finally {
