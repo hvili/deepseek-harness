@@ -165,6 +165,8 @@
     "@types/spdx-expression-parse": "^4.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@yarnpkg/cli-dist": "4.17.1",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
     "eslint-plugin-sonarjs": "^4.1.0",
     "execa": "^10.0.0",
     "fast-check": "^4.8.0",

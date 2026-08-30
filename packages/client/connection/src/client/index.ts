@@ -7,6 +7,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { HostDescription, IApiClient } from './api.ts'
 import { ConnectionController, EXPECTED_SCHEMA_VERSION, type ConnectionConfig, type ConnectionSinks, type ConnectionState } from './connection.ts'
 import { FixtureApiClient } from './fixture.ts'
+import type { DesktopBridge } from './desktop-bridge.ts'
+import { IpcApiClient } from './ipc-api-client.ts'
+import { createIpcConnectionRpc } from './ipc-rpc.ts'
 import { WebApiClient } from './web-api-client.ts'
 import { createWebConnectionRpc, type RpcFetch } from './rpc.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
@@ -42,6 +45,12 @@ export type { ConnectionConfig, ConnectionSinks, ConnectionState }
 export { EXPECTED_SCHEMA_VERSION }
 export type { ClientConnectionRpc } from '../rpc.ts'
 export type { RpcFetch } from './rpc.ts'
+export type {
+  DesktopBridge, DesktopBridgeRequest, DesktopBridgeResponse, DesktopBridgeSubscription,
+  DesktopNotificationIntent, DesktopNotificationKind, DesktopWindowControls,
+} from './desktop-bridge.ts'
+export { IpcApiClient } from './ipc-api-client.ts'
+export { createIpcConnectionRpc } from './ipc-rpc.ts'
 
 /** Observable Host description published by each completed connection handshake. */
 export interface HostDescriptionSource {
@@ -61,6 +70,8 @@ export const inject: string[] = []
  * provides both halves here instead of forking this plugin.
  */
 export interface ClientTransportHooks {
+  /** Whether the carrier is a trusted loopback-equivalent local surface. */
+  isLoopback: boolean
   /** Build the API carrier: unary calls plus the two downstream event streams. */
   createApiClient(): IApiClient
   /** Transport for generic unary RPC channels (the Typert gateway). */
@@ -76,6 +87,7 @@ export interface ClientTransportHooks {
 /** Page global carrying {@link ClientTransportHooks}; absent in the served web app. */
 interface ClientTransportGlobal {
   __DSH_TRANSPORT__?: ClientTransportHooks
+  desktopBridge?: DesktopBridge
 }
 
 /**
@@ -112,8 +124,13 @@ export function apply(ctx: Context): void {
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureClient = fixture ? new FixtureApiClient() : undefined
   const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
-  const api: IApiClient = fixtureClient ?? transport?.createApiClient() ?? new WebApiClient()
-  const rpc = fixtureClient?.rpc ?? createWebConnectionRpc(transport?.fetch)
+  const desktopBridge = (globalThis as ClientTransportGlobal).desktopBridge
+  const api: IApiClient = fixtureClient ?? (desktopBridge === undefined
+    ? transport?.createApiClient() ?? new WebApiClient()
+    : new IpcApiClient(desktopBridge))
+  const rpc = fixtureClient?.rpc ?? (desktopBridge === undefined
+    ? createWebConnectionRpc(transport?.fetch)
+    : createIpcConnectionRpc(desktopBridge))
   let started = false
   let description: HostDescription | undefined
   const descriptionListeners = new Set<() => void>()
@@ -130,7 +147,10 @@ export function apply(ctx: Context): void {
   }
   const handle: ConnectionHandle = {
     api,
-    isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isLoopback: transport?.isLoopback
+      ?? (desktopBridge !== undefined
+        || pageLocation === undefined
+        || isLoopbackHostname(pageLocation.hostname)),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

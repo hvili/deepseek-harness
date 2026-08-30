@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-30-desktop-zero-port-carriers.md
+2026-08-30-desktop-zero-port-carriers.md: 7a28390254d749fcbeed2552b7de6feb5ba27e5b
+2026-08-30-desktop-zero-port-carriers.zh.md: 2c326dcec42fd2626802ce94e0f5c43c0b3e8c9c

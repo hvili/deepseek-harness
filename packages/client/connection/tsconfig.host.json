@@ -7,8 +7,10 @@
   },
   "files": [
     "src/api-path.ts",
+    "src/api-gateway.ts",
     "src/api-request-trust.ts",
     "src/http-bridge.ts",
+    "src/desktop.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/loopback-hostname.ts",

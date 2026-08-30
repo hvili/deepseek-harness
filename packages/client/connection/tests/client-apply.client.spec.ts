@@ -8,9 +8,14 @@ import { apply, type ConnectionHandle } from '../src/client/index.ts'
 import type { RpcMessage } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
+import type { DesktopBridge } from '../src/client/desktop-bridge.ts'
+import { IpcApiClient } from '../src/client/ipc-api-client.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
 
-type Win = { location?: { hostname: string; search: string; origin?: string } }
+type Win = {
+  location?: { hostname: string; search: string; origin?: string }
+  desktopBridge?: DesktopBridge
+}
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
 
 const originalWebSocket = globalThis.WebSocket
@@ -49,6 +54,7 @@ class FakeWebSocket extends EventTarget {
 
 afterEach(() => {
   delete (globalThis as Win).location
+  delete (globalThis as Win).desktopBridge
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
   else globalThis.WebSocket = originalWebSocket
@@ -82,6 +88,73 @@ describe('connection client apply', () => {
   it('reports non-loopback page authority through the connection handle', async () => {
     ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
     expect((await mount()).isLoopback).toBe(false)
+  })
+
+  it('uses the context-isolated desktop bridge for RPC, loopback permissions, and cancellation', async () => {
+    const cancel = vi.fn()
+    const bridge = {
+      async fetch(request: { id: string; url: string; body?: string }) {
+        if (request.body === undefined) throw new Error('missing RPC request body')
+        const { rpcId } = JSON.parse(request.body) as { rpcId: string }
+        return {
+          status: 200,
+          headers: [['content-type', 'application/json']] as [string, string][],
+          body: JSON.stringify({ type: 'server-response', rpcId, result: { ok: true, value: { ref: 'desktop-goal' } } }),
+        }
+      },
+      cancel,
+    } as DesktopBridge
+    ;(globalThis as Win).location = { hostname: 'untrusted.invalid', search: '', origin: 'app://dsh' }
+    ;(globalThis as Win).desktopBridge = bridge
+    const handle = await mount()
+    expect(handle.api).toBeInstanceOf(IpcApiClient)
+    expect(handle.isLoopback).toBe(true)
+    await expect(handle.rpc.call('/api', 'goals/create', { args: {} }))
+      .resolves.toEqual({ ok: true, value: { ref: 'desktop-goal' } })
+
+    bridge.fetch = () => new Promise(() => {})
+    const abort = new AbortController()
+    const pending = handle.rpc.call('/api', 'goals/create', { args: {} }, abort.signal)
+    abort.abort()
+    await expect(pending).rejects.toThrow('This operation was aborted')
+    expect(cancel).toHaveBeenCalledWith(expect.stringMatching(/^rpc_/))
+  })
+
+  it('validates IPC downlink frames and releases its subscription on abort', async () => {
+    let listener: ((frame: unknown) => void) | undefined
+    let onEnd: (() => void) | undefined
+    const unsubscribe = vi.fn()
+    const bridge = {
+      subscribe(_stream: 'mux' | 'host', receive: (frame: unknown) => void) {
+        listener = receive
+        return { unsubscribe, onEnd(callback: () => void) { onEnd = callback } }
+      },
+    } as DesktopBridge
+    const client = new IpcApiClient(bridge)
+    const abort = new AbortController()
+    const opened = vi.fn()
+    const iterator = client.events.mux({}, abort.signal, opened)[Symbol.asyncIterator]()
+    const next = iterator.next()
+    expect(opened).toHaveBeenCalledOnce()
+    if (listener === undefined) throw new Error('desktop bridge did not subscribe')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    listener({ type: 'server-request', rpcId: 'bad', method: 'session/subscribed', payload: {} })
+    listener({
+      type: 'server-request',
+      rpcId: 'desktop-mux',
+      method: 'session/subscribed',
+      payload: { type: 'session/subscribed', sessionId: 'desktop-session', lastSeq: 2 },
+    })
+    await expect(next).resolves.toMatchObject({
+      value: { rpcId: 'desktop-mux', payload: { type: 'session/subscribed', lastSeq: 2 } },
+    })
+    expect(errors).toHaveBeenCalledOnce()
+    const end = iterator.next()
+    abort.abort()
+    await expect(end).resolves.toMatchObject({ done: true })
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(onEnd).toBeTypeOf('function')
+    errors.mockRestore()
   })
 
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
