@@ -1,0 +1,24 @@
+appId: ai.deepseek.harness
+productName: DeepSeek Harness
+asar: true
+directories:
+  output: ../../dist/desktop
+files:
+  - lib/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.tsbuildinfo'
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: DeepSeek-Harness-${version}-win-x64-portable.exe
+artifactName: DeepSeek-Harness-${version}-${arch}-${ext}

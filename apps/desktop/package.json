@@ -1,0 +1,30 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Windows Electron shell for DeepSeek Harness with app:// delivery and zero TCP listeners",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "type": "module",
+  "main": "lib/main.mjs",
+  "files": ["lib/**/*", "package.json", "electron-builder.yml", "!**/*.map", "!**/*.tsbuildinfo"],
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "dev": "pnpm run build && electron .",
+    "start": "electron .",
+    "pack": "pnpm run build && electron-builder --dir --win --x64",
+    "dist": "pnpm run build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-app-boot": "workspace:^",
+    "@deepseek-ai/dsh-base": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^",
+    "@deepseek-ai/dsh-desktop-app": "workspace:^",
+    "@deepseek-ai/dsh-host-desktop-carrier": "workspace:^",
+    "@deepseek-ai/dsh-web-app": "workspace:^",
+    "@dsh-local/enhanced-distribution": "link:../../../../plugins/dsh-enhanced-distribution"
+  },
+  "devDependencies": {
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3"
+  }
+}

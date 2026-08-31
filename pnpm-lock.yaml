@@ -368,6 +368,40 @@ importers:
         specifier: ^10.0.0
         version: 10.0.0
 
+  apps/desktop:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../vendor/cordis
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../packages/boot/app-boot
+      '@deepseek-ai/dsh-base':
+        specifier: workspace:^
+        version: link:../../packages/bundle/base
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:^
+        version: link:../../packages/client/connection
+      '@deepseek-ai/dsh-desktop-app':
+        specifier: workspace:^
+        version: link:../../packages/bundle/desktop-app
+      '@deepseek-ai/dsh-host-desktop-carrier':
+        specifier: workspace:^
+        version: link:../../packages/host/desktop-carrier
+      '@deepseek-ai/dsh-web-app':
+        specifier: workspace:^
+        version: link:../../packages/bundle/web-app
+      '@dsh-local/enhanced-distribution':
+        specifier: link:../../../../plugins/dsh-enhanced-distribution
+        version: link:../../../../plugins/dsh-enhanced-distribution
+    devDependencies:
+      electron:
+        specifier: 44.0.0
+        version: 44.0.0(supports-color@9.4.0)
+      electron-builder:
+        specifier: 26.15.3
+        version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+
   apps/web:
     devDependencies:
       '@deepseek-ai/cordis-plugin-group':

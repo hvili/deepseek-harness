@@ -1,0 +1,41 @@
+/** Structural security contracts that remain checkable without Electron's binary. */
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+const source = (name: string): string => readFileSync(resolve(import.meta.dirname, '..', 'src', name), 'utf8')
+
+describe('desktop shell security boundary', () => {
+  it('uses a privileged app origin and one named host', () => {
+    const protocol = source('protocol.ts')
+    expect(protocol).toContain("APP_INDEX_URL = 'app://dsh/index.html'")
+    expect(protocol).toContain('secure: true')
+    expect(protocol).toContain('hostname !== HOST')
+  })
+
+  it('keeps the renderer sandboxed and prevents navigation/new windows', () => {
+    const main = source('main.ts')
+    expect(main).toContain('sandbox: true')
+    expect(main).toContain('contextIsolation: true')
+    expect(main).toContain('nodeIntegration: false')
+    expect(main).toContain('setWindowOpenHandler')
+    expect(main).toContain('will-navigate')
+    expect(main).toContain("connect-src 'self'")
+  })
+
+  it('pins all persistent Electron paths to DesktopData and fixes Home/CWD', () => {
+    const main = source('main.ts')
+    for (const key of ['userData', 'cache', 'logs', 'crashDumps']) expect(main).toContain(`app.setPath('${key}'`)
+    expect(main).toContain("const WORKSPACE = 'D:\\\\DeepSeek'")
+    expect(main).toContain('process.env.DSH_HOME = HOME')
+    expect(main).toContain('process.chdir(WORKSPACE)')
+  })
+
+  it('exposes only named contextBridge methods from the preload', () => {
+    const preload = source('preload.ts')
+    expect(preload).toContain("contextBridge.exposeInMainWorld('desktopBridge', bridge)")
+    expect(preload).not.toContain('ipcRenderer:')
+    expect(preload).not.toContain('require(')
+  })
+})

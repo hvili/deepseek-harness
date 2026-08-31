@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"], "rewriteRelativeImportExtensions": false },
+  "include": ["src"],
+  "references": [
+    { "path": "../../vendor/cordis" },
+    { "path": "../../packages/boot/app-boot" },
+    { "path": "../../packages/bundle/desktop-app" },
+    { "path": "../../packages/host/desktop-carrier" },
+    { "path": "../../packages/client/connection/tsconfig.host.json" }
+  ]
+}

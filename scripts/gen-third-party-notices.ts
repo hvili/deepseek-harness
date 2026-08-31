@@ -66,6 +66,8 @@ export function isOwnerAuthorizedRuntime(name: string): boolean {
  * Each entry documents why the store cannot answer.
  */
 const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
+  // Product-owned local desktop distribution bundle (not a registry package).
+  '@dsh-local/enhanced-distribution': { license: 'MIT', repo: 'https://github.com/deepseek-ai/deepseek-harness' },
   // Rust workspaces publishing npm bins without `license` in package.json.
   'oxlint': { license: 'MIT', repo: 'https://github.com/oxc-project/oxc' },
   'oxlint-tsgolint': { license: 'MIT', repo: 'https://github.com/oxc-project/tsgolint' },
