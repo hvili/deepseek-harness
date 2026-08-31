@@ -8,23 +8,15 @@ import { DESKTOP_BRIDGE_SERVICE, type DesktopBridgeHost } from '@deepseek-ai/dsh
 import { DesktopWebServer } from '@deepseek-ai/dsh-host-desktop-carrier'
 import { bootDesktopHost } from './host.ts'
 import { registerIpc } from './ipc.ts'
-import { APP_INDEX_URL, registerAppScheme, registerDesktopProtocol } from './protocol.ts'
+import { registerDesktopProtocol } from './protocol.ts'
+import { APP_INDEX_URL } from './scheme.ts'
 import { IPC } from './channels.ts'
 
 const WORKSPACE = 'D:\\DeepSeek'
 const HOME = join(WORKSPACE, 'Home')
-const DATA = join(WORKSPACE, 'DesktopData')
 let host: Awaited<ReturnType<typeof bootDesktopHost>> | undefined
 let quitting = false
 const SHUTDOWN_TIMEOUT_MS = 5_000
-
-registerAppScheme()
-process.chdir(WORKSPACE)
-process.env.DSH_HOME = HOME
-app.setPath('userData', join(DATA, 'userData'))
-app.setPath('cache', join(DATA, 'cache'))
-app.setPath('logs', join(DATA, 'logs'))
-app.setPath('crashDumps', join(DATA, 'crashDumps'))
 
 // Renderer assets are exclusively app://dsh. The static frontend may still
 // request module/image/font bytes from that origin, but it never needs a

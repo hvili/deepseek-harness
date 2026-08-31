@@ -8,10 +8,11 @@ const source = (name: string): string => readFileSync(resolve(import.meta.dirnam
 
 describe('desktop shell security boundary', () => {
   it('uses a privileged app origin and one named host', () => {
+    const scheme = source('scheme.ts')
     const protocol = source('protocol.ts')
-    expect(protocol).toContain("APP_INDEX_URL = 'app://dsh/index.html'")
-    expect(protocol).toContain('secure: true')
-    expect(protocol).toContain('hostname !== HOST')
+    expect(scheme).toContain("APP_INDEX_URL = 'app://dsh/index.html'")
+    expect(scheme).toContain('secure: true')
+    expect(protocol).toContain('hostname !== APP_HOST')
   })
 
   it('keeps the renderer sandboxed and prevents navigation/new windows', () => {
@@ -25,11 +26,12 @@ describe('desktop shell security boundary', () => {
   })
 
   it('pins all persistent Electron paths to DesktopData and fixes Home/CWD', () => {
-    const main = source('main.ts')
-    for (const key of ['userData', 'cache', 'logs', 'crashDumps']) expect(main).toContain(`app.setPath('${key}'`)
-    expect(main).toContain("const WORKSPACE = 'D:\\\\DeepSeek'")
-    expect(main).toContain('process.env.DSH_HOME = HOME')
-    expect(main).toContain('process.chdir(WORKSPACE)')
+    const bootstrap = source('bootstrap.ts')
+    for (const key of ['userData', 'cache', 'logs', 'crashDumps']) expect(bootstrap).toContain(`app.setPath('${key}'`)
+    expect(bootstrap).toContain("const WORKSPACE = 'D:\\\\DeepSeek'")
+    expect(bootstrap).toContain('process.env.DSH_HOME = HOME')
+    expect(bootstrap).toContain('process.chdir(WORKSPACE)')
+    expect(bootstrap.indexOf("app.setPath('userData'")).toBeLessThan(bootstrap.indexOf('import(MAIN_ENTRY)'))
   })
 
   it('shuts down the Host before bounded current-process-tree cleanup', () => {

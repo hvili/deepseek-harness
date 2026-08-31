@@ -4,7 +4,7 @@
   "version": "0.1.1-rc.2",
   "private": true,
   "type": "module",
-  "main": "lib/main.mjs",
+  "main": "lib/bootstrap.cjs",
   "files": [
     "lib/**/*",
     "package.json",
