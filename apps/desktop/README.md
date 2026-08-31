@@ -20,4 +20,5 @@ that manifest. An electron-builder hook copies the Windows x64 packages named
 by Koffi, Sharp, Codex, and ripgrep's own `optionalDependencies`, then the
 packaged verifier checks every reviewed PE payload and exercises the modules
 and executables under Electron's Node runtime. The latter command requires
-Electron's Windows binary to be installed.
+Electron's Windows binary to be installed and writes `SHA256SUMS.txt` beside
+the installer and ZIP after both artifacts pass verification.
