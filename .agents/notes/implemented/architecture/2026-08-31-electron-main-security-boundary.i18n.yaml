@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-31-electron-main-security-boundary.md
-2026-08-31-electron-main-security-boundary.md: 9ac740250ddca8b3b9a8bb6a0401cd61f43e9566
-2026-08-31-electron-main-security-boundary.zh.md: 8ec5bdca5b2f1207eadcd03bc9b69d9df4605579
+2026-08-31-electron-main-security-boundary.md: 416ca36405cbecc543c8858f30aa5db0abcae525
+2026-08-31-electron-main-security-boundary.zh.md: cf006497baf10e46acbb136e9a30a7d4ae7f0c0d

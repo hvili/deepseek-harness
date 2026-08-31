@@ -9,5 +9,9 @@ shared Harness state and the managed `desktop` Profile, while Electron state,
 cache, logs, and dumps live beneath `D:\DeepSeek\DesktopData`.
 
 Run `pnpm run build:desktop` to build the application, `pnpm run desktop:dev`
-for development, and `pnpm run desktop:dist` for NSIS plus portable Windows
-artifacts. The latter requires Electron's Windows binary to be installed.
+for development, and `pnpm run desktop:dist` for an NSIS installer plus a
+portable ZIP. Both artifacts are unsigned test builds, so Windows SmartScreen
+may require an explicit user confirmation. The distribution keeps
+`resources/app` unpacked because the managed Profile needs real package
+directories for its module junctions. The latter command requires Electron's
+Windows binary to be installed.

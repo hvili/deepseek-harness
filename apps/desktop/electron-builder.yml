@@ -1,6 +1,12 @@
 appId: ai.deepseek.harness
 productName: DeepSeek Harness
-asar: true
+# The desktop Profile heals package fallbacks through Windows junctions. Keep
+# resources/app as a real directory: an asar archive cannot own that layout.
+asar: false
+# node-pty ships the Windows x64 N-API prebuild consumed by Electron 44. Do not
+# invoke node-gyp during packaging: this keeps the tested prebuild and avoids
+# making a VS C++ toolchain an artifact-build prerequisite.
+npmRebuild: false
 directories:
   output: ../../dist/desktop
 files:
@@ -12,13 +18,11 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: portable
+    - target: zip
       arch: [x64]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
   deleteAppDataOnUninstall: false
-portable:
-  artifactName: DeepSeek-Harness-${version}-win-x64-portable.exe
-artifactName: DeepSeek-Harness-${version}-${arch}-${ext}
+artifactName: DeepSeek-Harness-${version}-${os}-${arch}.${ext}

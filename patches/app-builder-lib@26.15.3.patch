@@ -1,0 +1,33 @@
+diff --git a/out/binDownload.js b/out/binDownload.js
+index 287e8735e53970c9787253e85b5980988719a668..227101f5fa9a605d3db1994ce5e8c66a4f3d0f2e 100644
+--- a/out/binDownload.js
++++ b/out/binDownload.js
+@@ -24,7 +24,7 @@ async function download(url, output, checksum) {
+         version: "9.9.9",
+         artifactName: filenameWithExt,
+         cacheRoot: path.resolve((0, electronGet_1.getCacheDirectory)({ allowEnvVarOverride: true }), "downloads"),
+-        cacheMode: ElectronDownloadCacheMode.ReadWrite,
++        cacheMode: ElectronDownloadCacheMode === null || ElectronDownloadCacheMode === void 0 ? void 0 : ElectronDownloadCacheMode.ReadWrite,
+         ...(checksum != null ? { checksums: { [filenameWithExt]: checksum } } : { unsafelyDisableChecksums: true }),
+         mirrorOptions: { resolveAssetURL: async () => Promise.resolve(url) },
+         isGeneric: true,
+diff --git a/out/util/electronGet.js b/out/util/electronGet.js
+index a941f9d20c10ca58a84b9a600b0df468631aae01..e6e4dc0b47dcf1910b37282a5fc43797ac64ed4f 100644
+--- a/out/util/electronGet.js
++++ b/out/util/electronGet.js
+@@ -61,12 +61,13 @@ function resolveCacheMode() {
+     var _a;
+     const varName = "ELECTRON_DOWNLOAD_CACHE_MODE";
+     const cacheOverride = (_a = process.env[varName]) === null || _a === void 0 ? void 0 : _a.trim();
+-    if (cacheOverride && Number(cacheOverride) in get_1.ElectronDownloadCacheMode) {
++    const cacheModes = get_1.ElectronDownloadCacheMode;
++    if (cacheOverride && cacheModes && Number(cacheOverride) in cacheModes) {
+         const mode = Number(cacheOverride);
+         builder_util_1.log.debug({ mode }, `cache mode overridden via env var ${varName}`);
+         return mode;
+     }
+-    return get_1.ElectronDownloadCacheMode.ReadWrite;
++    return cacheModes === null || cacheModes === void 0 ? void 0 : cacheModes.ReadWrite;
+ }
+ async function extractZipStreaming(file, dir) {
+     var _a;
