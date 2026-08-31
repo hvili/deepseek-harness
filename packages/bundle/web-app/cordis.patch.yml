@@ -149,6 +149,15 @@
     - id: client-hmr
       name: '@deepseek-ai/dsh-client-hmr'
 
+    # Interactive web and Electron Hosts share one Home and therefore one
+    # proper-lockfile lease. The desktop bundle targets this same row and
+    # changes only its mode for a useful contention diagnostic.
+    - id: host-instance-lock
+      name: '@deepseek-ai/dsh-host-instance-lock'
+      config:
+        path: !!js `${process.env.DSH_HOME}/interactive-host`
+        mode: web
+
     # ── browser plugin roster (dsh.client rows; node halves are layer-2 hosts) ──
 
     # Dual-face: the node half scans this tree, composes window.__DSH_BOOT__,

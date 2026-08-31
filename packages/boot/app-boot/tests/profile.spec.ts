@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
+  DESKTOP_PROFILE_BUNDLES,
+  ensureDesktopProfile,
   healProfilesModuleFallback,
   initProfile,
   loadProfile,
@@ -69,6 +71,35 @@ describe('initProfile', () => {
     initProfile(dir, ['other'])
     expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base'])
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('- id: x')
+  })
+})
+
+describe('ensureDesktopProfile', () => {
+  it('atomically seeds and subsequently reconciles only the managed bundle tuple', () => {
+    const home = tmp()
+    const dir = ensureDesktopProfile(home, ['base', 'desktop'])
+    expect(dir).toBe(resolveProfileDir('desktop', home))
+    expect(readProfileManifest('t', dir).dsh).toMatchObject({
+      desktopManaged: true,
+      profile: { bundles: ['base', 'desktop'] },
+    })
+    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- id: user\n  disabled: true\n')
+    const existing = readProfileManifest('t', dir)
+    writeProfileManifest(dir, { ...existing, description: 'keep me', dsh: { ...existing.dsh, extra: 'keep' } as never })
+    ensureDesktopProfile(home, ['base', 'web', 'desktop'])
+    expect(readProfileManifest('t', dir)).toMatchObject({ description: 'keep me', dsh: { desktopManaged: true, extra: 'keep', profile: { bundles: ['base', 'web', 'desktop'] } } })
+    expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('id: user')
+  })
+
+  it('refuses to adopt an independently managed profile named desktop', () => {
+    const home = tmp()
+    const dir = resolveProfileDir('desktop', home)
+    initProfile(dir, ['person-bundle'])
+    expect(() => ensureDesktopProfile(home)).toThrow('refusing to adopt unmanaged desktop profile')
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(['person-bundle'])
+    expect(DESKTOP_PROFILE_BUNDLES).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@dsh-local/enhanced-distribution', '@deepseek-ai/dsh-desktop-app',
+    ])
   })
 })
 

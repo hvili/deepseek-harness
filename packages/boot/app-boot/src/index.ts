@@ -30,7 +30,9 @@ declare module '@deepseek-ai/cordis' {
 
 export {
   composeEntries,
+  DESKTOP_PROFILE_BUNDLES,
   DEFAULT_PROFILE_BUNDLES,
+  ensureDesktopProfile,
   healProfilesModuleFallback,
   initProfile,
   loadProfile,

@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -59,6 +59,8 @@ export interface DshManifestSection {
   bundle?: DshBundleManifest
   /** Profile metadata consumed by the profile launcher. */
   profile?: DshProfileManifest
+  /** Set only by an application which owns and reconciles this profile. */
+  desktopManaged?: true
 }
 
 /** The slice of package.json both profiles and bundles use. */
@@ -165,6 +167,68 @@ export function initProfile(dir: string, bundles: readonly string[]): void {
   if (!existsSync(patchPath)) writeFileSync(patchPath, PROFILE_PATCH_TEMPLATE)
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
+}
+
+/** Stable bundle tuple owned by the Windows desktop application. */
+export const DESKTOP_PROFILE_BUNDLES: readonly string[] = [
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@dsh-local/enhanced-distribution',
+  '@deepseek-ai/dsh-desktop-app',
+]
+
+/**
+ * Create or reconcile the desktop application's private Profile without
+ * touching its user patch layer. A pre-existing unmarked `desktop` Profile is
+ * deliberately rejected: it might be a person's independently managed setup,
+ * and silently adopting it would make upgrades overwrite their bundle tuple.
+ *
+ * The first manifest is published by directory rename after all three seed
+ * files exist. Later reconciliation updates only the fields the application
+ * owns, preserving package metadata, dependencies, and every unknown `dsh`
+ * property a user or another tool may maintain.
+ * @param home - Harness home that owns `profiles/desktop`.
+ * @param bundles - application-owned layers, injectable by tests.
+ * @returns absolute directory of the managed profile.
+ */
+export function ensureDesktopProfile(
+  home: string,
+  bundles: readonly string[] = DESKTOP_PROFILE_BUNDLES,
+): string {
+  const dir = resolveProfileDir('desktop', home)
+  if (!existsSync(dir)) {
+    mkdirSync(dirname(dir), { recursive: true })
+    const staging = mkdtempSync(join(dirname(dir), '.desktop-staging-'))
+    try {
+      initProfile(staging, bundles)
+      const manifest = readProfileManifest('dsh', staging)
+      writeProfileManifest(staging, {
+        ...manifest,
+        dsh: { ...manifest.dsh, desktopManaged: true, profile: { ...manifest.dsh?.profile, bundles: [...bundles] } },
+      })
+      renameSync(staging, dir)
+      return dir
+    } catch (error) {
+      // A second launcher may have published the directory first. It is safe
+      // to inspect it through the normal ownership check below; otherwise only
+      // the uniquely named staging directory is removed.
+      if (!existsSync(dir)) rmSync(staging, { recursive: true, force: true })
+      if (!existsSync(dir)) throw error
+    }
+  }
+  const manifest = readProfileManifest('dsh', dir)
+  if (manifest.dsh?.desktopManaged !== true) {
+    throw new Error(`dsh: refusing to adopt unmanaged desktop profile ${dir}; rename it before launching the desktop app`)
+  }
+  const next: ProfileManifest = {
+    ...manifest,
+    dsh: { ...manifest.dsh, desktopManaged: true, profile: { ...manifest.dsh.profile, bundles: [...bundles] } },
+  }
+  if (!sameBundles(manifest.dsh.profile?.bundles ?? [], bundles)) writeProfileManifest(dir, next)
+  // These are installation defaults, not user content. They are only seeded
+  // when missing, exactly like ordinary profile initialization.
+  initProfile(dir, bundles)
+  return dir
 }
 
 /** Ensure `link` is a symlink to `target`, replacing a wrong or dangling link; a real directory throws. */

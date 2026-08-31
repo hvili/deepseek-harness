@@ -1,0 +1,44 @@
+# Electron desktop overlay applied after the ordinary web surface. It keeps the
+# exact browser composition but replaces every physical TCP operation with the
+# app:// protocol carrier and Electron IPC.
+- id: web-startup
+  disabled: true
+
+- id: webserver
+  name: '@deepseek-ai/dsh-host-desktop-carrier'
+  inject: []
+  config:
+    host: '127.0.0.1'
+    port: 0
+
+- id: web-runtime
+  inject: []
+  config:
+    openBrowser: false
+    printUrl: false
+    # dsh-web-app's surface prompt derives a TCP URL. The desktop Main process
+    # adds its own app:// orientation once it owns the framed window.
+    surfaceContext: false
+    trustedHosts: []
+
+- id: client-hmr
+  disabled: true
+
+- id: connection
+  inject: []
+  config:
+    trustedHosts: []
+
+- insert:
+    - id: desktop-connection
+      name: '@deepseek-ai/dsh-client-connection/desktop'
+      inject: [connection]
+
+    # Both `dsh --profile web` and the desktop overlay use this same lock path;
+    # the desktop overlay replaces only `mode`, so contention diagnostics name
+    # the owning surface without allowing two interactive Hosts on one Home.
+    - id: host-instance-lock
+      name: '@deepseek-ai/dsh-host-instance-lock'
+      config:
+        path: !!js `${process.env.DSH_HOME}/interactive-host`
+        mode: desktop
