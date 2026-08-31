@@ -32,6 +32,13 @@ describe('desktop shell security boundary', () => {
     expect(main).toContain('process.chdir(WORKSPACE)')
   })
 
+  it('shuts down the Host before bounded current-process-tree cleanup', () => {
+    const main = source('main.ts')
+    expect(main).toContain('SHUTDOWN_TIMEOUT_MS = 5_000')
+    expect(main).toContain("execFile('taskkill', ['/PID', String(process.pid), '/T', '/F']")
+    expect(main).toContain('host.ctx.fiber.dispose()')
+  })
+
   it('exposes only named contextBridge methods from the preload', () => {
     const preload = source('preload.ts')
     expect(preload).toContain("contextBridge.exposeInMainWorld('desktopBridge', bridge)")

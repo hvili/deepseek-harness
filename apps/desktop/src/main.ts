@@ -1,6 +1,7 @@
 /** Windows desktop Main: owns paths, Host lifetime, protocol, and the one sandboxed window. */
 
 import { app, BrowserWindow, shell } from 'electron'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DESKTOP_BRIDGE_SERVICE, type DesktopBridgeHost } from '@deepseek-ai/dsh-client-connection/desktop'
@@ -15,6 +16,7 @@ const HOME = join(WORKSPACE, 'Home')
 const DATA = join(WORKSPACE, 'DesktopData')
 let host: Awaited<ReturnType<typeof bootDesktopHost>> | undefined
 let quitting = false
+const SHUTDOWN_TIMEOUT_MS = 5_000
 
 registerAppScheme()
 process.chdir(WORKSPACE)
@@ -75,5 +77,16 @@ app.on('window-all-closed', () => { void app.quit() })
 app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
-  if (host !== undefined) { event.preventDefault(); void host.ctx.fiber.dispose().finally(() => app.exit(0)) }
+  if (host === undefined) return
+  event.preventDefault()
+  // A Host disposer normally stops every owned process. If a provider wedges,
+  // Windows receives a last-resort tree cleanup only for this Electron PID;
+  // no shared Home or legacy installation path is ever a cleanup target.
+  const fallback = setTimeout(() => {
+    execFile('taskkill', ['/PID', String(process.pid), '/T', '/F'], () => {})
+  }, SHUTDOWN_TIMEOUT_MS)
+  void host.ctx.fiber.dispose().finally(() => {
+    clearTimeout(fallback)
+    app.exit(0)
+  })
 })
