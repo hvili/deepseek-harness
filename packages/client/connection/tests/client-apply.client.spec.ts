@@ -103,7 +103,7 @@ describe('connection client apply', () => {
         }
       },
       cancel,
-    } as DesktopBridge
+    } as unknown as DesktopBridge
     ;(globalThis as Win).location = { hostname: 'untrusted.invalid', search: '', origin: 'app://dsh' }
     ;(globalThis as Win).desktopBridge = bridge
     const handle = await mount()
@@ -129,7 +129,7 @@ describe('connection client apply', () => {
         listener = receive
         return { unsubscribe, onEnd(callback: () => void) { onEnd = callback } }
       },
-    } as DesktopBridge
+    } as unknown as DesktopBridge
     const client = new IpcApiClient(bridge)
     const abort = new AbortController()
     const opened = vi.fn()

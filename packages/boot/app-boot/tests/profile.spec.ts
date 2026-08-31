@@ -85,7 +85,11 @@ describe('ensureDesktopProfile', () => {
     })
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- id: user\n  disabled: true\n')
     const existing = readProfileManifest('t', dir)
-    writeProfileManifest(dir, { ...existing, description: 'keep me', dsh: { ...existing.dsh, extra: 'keep' } as never })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      ...existing,
+      description: 'keep me',
+      dsh: { ...existing.dsh, extra: 'keep' },
+    }))
     ensureDesktopProfile(home, ['base', 'web', 'desktop'])
     expect(readProfileManifest('t', dir)).toMatchObject({ description: 'keep me', dsh: { desktopManaged: true, extra: 'keep', profile: { bundles: ['base', 'web', 'desktop'] } } })
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('id: user')

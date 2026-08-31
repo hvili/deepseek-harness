@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import HostInstanceLock, { HostLockContendedError } from '../src/index.ts'
+import HostInstanceLock from '../src/index.ts'
 
 const roots: string[] = []
 
@@ -24,11 +24,12 @@ describe('interactive Host lock', () => {
     const firstLock = await first.plugin(HostInstanceLock, { path, mode: 'desktop', staleMs: 5_000 })
     await firstLock.await()
     const second = new Context()
+    const contention = {
+      name: 'HostLockContendedError',
+      owner: { mode: 'desktop', pid: process.pid },
+    }
     await expect(second.plugin(HostInstanceLock, { path, mode: 'web', staleMs: 5_000 }))
-      .rejects.toMatchObject<Partial<HostLockContendedError>>({
-        name: 'HostLockContendedError',
-        owner: { mode: 'desktop', pid: process.pid },
-      })
+      .rejects.toMatchObject(contention)
     await firstLock.dispose()
     const third = new Context()
     const thirdLock = await third.plugin(HostInstanceLock, { path, mode: 'web', staleMs: 5_000 })
