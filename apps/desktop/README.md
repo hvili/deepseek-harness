@@ -16,5 +16,8 @@ may require an explicit user confirmation. The distribution keeps
 directories for its module junctions. `desktop:dist` checks the generated
 workspace runtime closure first; use `pnpm --filter @deepseek-ai/dsh-desktop
 run sync-pack-deps` only when a deliberate dependency change needs to refresh
-that manifest. The latter command requires Electron's Windows binary to be
-installed.
+that manifest. An electron-builder hook copies the Windows x64 packages named
+by Koffi, Sharp, Codex, and ripgrep's own `optionalDependencies`, then the
+packaged verifier checks every reviewed PE payload and exercises the modules
+and executables under Electron's Node runtime. The latter command requires
+Electron's Windows binary to be installed.

@@ -7,6 +7,7 @@ asar: false
 # invoke node-gyp during packaging: this keeps the tested prebuild and avoids
 # making a VS C++ toolchain an artifact-build prerequisite.
 npmRebuild: false
+afterPack: scripts/stage-windows-runtime.mjs
 directories:
   output: ../../dist/desktop
 files:

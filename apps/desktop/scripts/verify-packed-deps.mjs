@@ -1,5 +1,6 @@
 /** Verify the app's packaged dependency roots and Windows x64 native payloads. */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -17,17 +18,48 @@ for (const name of ['@dsh-local/appearance-studio', '@dsh-local/deepseek-balance
   if (!existsSync(join(app, 'node_modules', name, 'lib', 'client.js'))) throw new Error(`enhanced plugin is missing its client bundle: ${name}`)
 }
 if (!existsSync(join(app, 'node_modules', '@deepseek-ai', 'dsh-subagent-codex', 'lib', 'index.js'))) throw new Error('Codex provider is missing')
-for (const name of ['node-pty', 'koffi', 'sharp']) verifyNativeX64(join(app, 'node_modules', name), name)
-verifyNativeX64(join(app, 'node_modules', '@koromix', 'koffi-win32-x64'), 'koffi Windows x64')
-if (!existsSync(join(app, 'node_modules', '@openai', 'codex'))) throw new Error('Codex runtime package is missing')
-if (!existsSync(join(app, 'node_modules', '@vscode', 'ripgrep-win32-x64'))) throw new Error('ripgrep Windows x64 runtime is missing')
-console.log(`desktop packed dependencies: ${Object.keys(manifest.dependencies ?? {}).length} roots, enhanced plugins, Codex provider, and x64 native modules are present.`)
+
+const nodePtyX64 = join(app, 'node_modules', 'node-pty', 'prebuilds', 'win32-x64')
+verifyNativeX64(nodePtyX64, 'node-pty .node')
+verifyNativeX64(nodePtyX64, 'node-pty .dll', '.dll')
+verifyNativeX64(nodePtyX64, 'node-pty .exe', '.exe')
+verifyPlatformPackage('@koromix/koffi-win32-x64', '@koromix/koffi-win32-x64', ['.node'])
+verifyPlatformPackage('@img/sharp-win32-x64', '@img/sharp-win32-x64', ['.node', '.dll'])
+verifyPlatformPackage('@openai/codex-win32-x64', '@openai/codex', ['.exe'])
+verifyPlatformPackage('@vscode/ripgrep-win32-x64', '@vscode/ripgrep-win32-x64', ['.exe'])
+
+const executable = resolve(app, '..', '..', 'DeepSeek Harness.exe')
+const probe = join(import.meta.dirname, 'probe-packed-runtime.cjs')
+const result = spawnSync(executable, [probe, app], {
+  encoding: 'utf8',
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  timeout: 45_000,
+  windowsHide: true,
+})
+if (result.error !== undefined || result.status !== 0) {
+  throw new Error(`packaged Electron runtime probe failed: ${result.error?.message ?? result.stderr ?? `exit ${String(result.status)}`}`)
+}
+process.stdout.write(result.stdout)
+console.log(`desktop packed dependencies: ${Object.keys(manifest.dependencies ?? {}).length} roots, enhanced plugins, Codex provider, and x64 runtime payloads are verified.`)
+
+/** Verify one copied optional package's identity, target, and PE payload kinds. */
+function verifyPlatformPackage(alias, expectedName, extensions) {
+  const directory = join(app, 'node_modules', ...alias.split('/'))
+  const packagePath = join(directory, 'package.json')
+  if (!existsSync(packagePath)) throw new Error(`packaged optional dependency is missing: ${alias}`)
+  const packageManifest = JSON.parse(readFileSync(packagePath, 'utf8'))
+  if (packageManifest.name !== expectedName || !packageManifest.os?.includes('win32') || !packageManifest.cpu?.includes('x64')) {
+    throw new Error(`${alias} has the wrong package identity or platform`)
+  }
+  for (const extension of extensions) verifyNativeX64(directory, `${alias} ${extension}`, extension)
+}
 
 /** Find a Windows x64 native addon and reject a non-AMD64 PE payload. */
-function verifyNativeX64(directory, name) {
-  const entries = walk(directory).filter(path => path.endsWith('.node'))
-  const x64 = entries.find(path => peMachine(path) === 0x8664)
-  if (x64 === undefined) throw new Error(`${name} has no Windows x64 native addon`)
+function verifyNativeX64(directory, name, extension = '.node') {
+  const entries = walk(directory).filter(path => path.endsWith(extension))
+  if (entries.length === 0) throw new Error(`${name} has no ${extension} payload`)
+  const wrong = entries.filter(path => peMachine(path) !== 0x8664)
+  if (wrong.length > 0) throw new Error(`${name} contains a non-x64 PE payload: ${wrong.join(', ')}`)
 }
 
 /** Recursively enumerate files below a known packaged dependency directory. */
