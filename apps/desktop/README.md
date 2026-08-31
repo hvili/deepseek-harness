@@ -13,5 +13,8 @@ for development, and `pnpm run desktop:dist` for an NSIS installer plus a
 portable ZIP. Both artifacts are unsigned test builds, so Windows SmartScreen
 may require an explicit user confirmation. The distribution keeps
 `resources/app` unpacked because the managed Profile needs real package
-directories for its module junctions. The latter command requires Electron's
-Windows binary to be installed.
+directories for its module junctions. `desktop:dist` checks the generated
+workspace runtime closure first; use `pnpm --filter @deepseek-ai/dsh-desktop
+run sync-pack-deps` only when a deliberate dependency change needs to refresh
+that manifest. The latter command requires Electron's Windows binary to be
+installed.
