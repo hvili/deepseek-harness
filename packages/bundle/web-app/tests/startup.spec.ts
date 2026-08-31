@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
+import { loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply, WEB_STARTUP_SERVICE, type WebStartupValues } from '../src/startup.ts'
@@ -87,6 +88,11 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
 }
 
 describe('web command-line provider', () => {
+  it('ships an overlay fully parseable by the application boot dialect', () => {
+    const overlay = join(import.meta.dirname, '..', 'cordis.patch.yml')
+    expect(loadOverlayPatches('web-app-test', overlay).length).toBeGreaterThan(0)
+  })
+
   it('publishes each flag and releases direct service expressions', async () => {
     const { values, observed } = await bootProvider([
       '--host', '127.0.0.1',

@@ -10,7 +10,9 @@ DeepSeek Harness 的 Windows x64 Electron 壳。它通过 `app://dsh` 服务前�
 受管 `desktop` Profile，而 Electron 状态、cache、logs 和 dumps 位于
 `D:\DeepSeek\DesktopData` 下。一个最小 CommonJS bootstrap 会在导入完整
 Host 图之前建立这些路径和特权 scheme，因此无效的打包依赖会失败关闭，且不会
-退回 Electron 默认的 C 盘数据目录。
+退回 Electron 默认的 C 盘数据目录。Web 与 desktop 通过 app-boot 的
+`dshHomePath()` 表达式 helper 解析共享 interactive Host 锁，使发布 overlay
+始终采用运行时 boot 会验证的同一严格 YAML 方言。
 
 使用 `pnpm run build:desktop` 构建应用，使用 `pnpm run desktop:dev` 开发，
 使用 `pnpm run desktop:dist` 生成 NSIS 安装器和便携 ZIP。两个产物都是未签名

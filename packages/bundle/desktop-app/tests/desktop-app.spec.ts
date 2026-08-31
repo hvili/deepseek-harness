@@ -11,6 +11,7 @@ describe('desktop app bundle', () => {
     expect(patch).toContain('id: client-hmr\n  disabled: true')
     expect(patch).toContain("name: '@deepseek-ai/dsh-client-connection/desktop'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-host-instance-lock'")
+    expect(patch).toContain("path: !!js dshHomePath('interactive-host')")
     expect(patch).toContain('mode: desktop')
   })
 })

@@ -11,7 +11,10 @@ shared Harness state and the managed `desktop` Profile, while Electron state,
 cache, logs, and dumps live beneath `D:\DeepSeek\DesktopData`. A minimal
 CommonJS bootstrap establishes those paths and the privileged scheme before it
 imports the full Host graph, so an invalid packaged dependency fails closed
-without falling back to Electron's default C-drive data directory.
+without falling back to Electron's default C-drive data directory. Web and
+desktop resolve their shared interactive Host lock through app-boot's
+`dshHomePath()` expression helper, keeping the shipped overlay in the same
+strict YAML dialect that runtime boot validates.
 
 Run `pnpm run build:desktop` to build the application, `pnpm run desktop:dev`
 for development, and `pnpm run desktop:dist` for an NSIS installer plus a

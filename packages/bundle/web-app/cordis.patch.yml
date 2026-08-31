@@ -155,7 +155,7 @@
     - id: host-instance-lock
       name: '@deepseek-ai/dsh-host-instance-lock'
       config:
-        path: !!js `${process.env.DSH_HOME}/interactive-host`
+        path: !!js dshHomePath('interactive-host')
         mode: web
 
     # ── browser plugin roster (dsh.client rows; node halves are layer-2 hosts) ──
