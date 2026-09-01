@@ -219,7 +219,8 @@
     "@dsh-local/appearance-studio": "link:../../../../plugins/dsh-appearance-studio",
     "@dsh-local/deepseek-balance": "link:../../../../plugins/dsh-deepseek-balance",
     "@dsh-local/enhanced-distribution": "link:../../../../plugins/dsh-enhanced-distribution",
-    "@dsh-local/operations-center": "link:../../../../plugins/dsh-operations-center"
+    "@dsh-local/operations-center": "link:../../../../plugins/dsh-operations-center",
+    "cordis": "workspace:@deepseek-ai/cordis@^"
   },
   "devDependencies": {
     "electron": "44.0.0",

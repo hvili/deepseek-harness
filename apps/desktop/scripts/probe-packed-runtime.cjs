@@ -21,6 +21,10 @@ function run(executable, args, name) {
   return result.stdout.trim()
 }
 
+function importPackage(name) {
+  return import(pathToFileURL(appRequire.resolve(name)).href)
+}
+
 async function probePty(pty) {
   await new Promise((resolveProbe, reject) => {
     const child = pty.spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'echo dsh-pty-probe'], {
@@ -54,6 +58,23 @@ async function probePty(pty) {
 }
 
 async function main() {
+  const [legacyCordis, scopedCordis] = await Promise.all([
+    importPackage('cordis'),
+    importPackage('@deepseek-ai/cordis'),
+  ])
+  if (legacyCordis.Context !== scopedCordis.Context || legacyCordis.Service !== scopedCordis.Service) {
+    throw new Error('packaged Cordis aliases do not share one runtime identity')
+  }
+
+  await Promise.all([
+    importPackage('@dsh-local/appearance-studio'),
+    importPackage('@dsh-local/deepseek-balance'),
+    importPackage('@dsh-local/operations-center'),
+    importPackage('@deepseek-ai/dsh-app-boot'),
+    importPackage('@deepseek-ai/dsh-client-connection/desktop'),
+    importPackage('@deepseek-ai/dsh-host-desktop-carrier'),
+  ])
+
   const koffi = appRequire('koffi')
   const kernel32 = koffi.load('kernel32.dll')
   const getCurrentProcessId = kernel32.func('uint32 GetCurrentProcessId(void)')
@@ -75,7 +96,7 @@ async function main() {
   const codexExecutable = join(dirname(codexPlatformManifest), 'vendor', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe')
   const codexVersion = run(codexExecutable, ['--version'], 'Codex')
 
-  console.log(`desktop packaged runtime: koffi, sharp, node-pty, ${ripgrepVersion.split(/\r?\n/, 1)[0]}, and ${codexVersion} loaded.`)
+  console.log(`desktop packaged runtime: shared Cordis, enhanced plugins, desktop entries, koffi, sharp, node-pty, ${ripgrepVersion.split(/\r?\n/, 1)[0]}, and ${codexVersion} loaded.`)
   process.exit(0)
 }
 

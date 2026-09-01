@@ -959,6 +959,9 @@ importers:
       '@dsh-local/operations-center':
         specifier: link:../../../../plugins/dsh-operations-center
         version: link:../../../../plugins/dsh-operations-center
+      cordis:
+        specifier: workspace:@deepseek-ai/cordis@^
+        version: link:../../vendor/cordis
     devDependencies:
       electron:
         specifier: 44.0.0

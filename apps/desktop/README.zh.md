@@ -12,7 +12,9 @@ DeepSeek Harness 的 Windows x64 Electron 壳。它通过 `app://dsh` 服务前�
 Host 图之前建立这些路径和特权 scheme，因此无效的打包依赖会失败关闭，且不会
 退回 Electron 默认的 C 盘数据目录。Web 与 desktop 通过 app-boot 的
 `dshHomePath()` 表达式 helper 解析共享 interactive Host 锁，使发布 overlay
-始终采用运行时 boot 会验证的同一严格 YAML 方言。
+始终采用运行时 boot 会验证的同一严格 YAML 方言。增强插件使用的旧 `cordis`
+peer 名称是 `@deepseek-ai/cordis` 的 workspace alias；打包时会将其具现为 ESM
+转发 shim，因此两个名称共享 Host 唯一的 DI 运行时，而不会加载第二份框架。
 
 使用 `pnpm run build:desktop` 构建应用，使用 `pnpm run desktop:dev` 开发，
 使用 `pnpm run desktop:dist` 生成 NSIS 安装器和便携 ZIP。两个产物都是未签名

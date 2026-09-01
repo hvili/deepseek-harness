@@ -14,7 +14,10 @@ imports the full Host graph, so an invalid packaged dependency fails closed
 without falling back to Electron's default C-drive data directory. Web and
 desktop resolve their shared interactive Host lock through app-boot's
 `dshHomePath()` expression helper, keeping the shipped overlay in the same
-strict YAML dialect that runtime boot validates.
+strict YAML dialect that runtime boot validates. The enhanced plugins' legacy
+`cordis` peer name is a workspace alias of `@deepseek-ai/cordis`; packaging
+materializes it as an ESM forwarding shim, so both names share the Host's one
+DI runtime instead of loading a second framework.
 
 Run `pnpm run build:desktop` to build the application, `pnpm run desktop:dev`
 for development, and `pnpm run desktop:dist` for an NSIS installer plus a

@@ -1,6 +1,6 @@
 /** Stage Windows x64 optional payloads that pnpm keeps below their parents. */
 
-import { cp, mkdir, readFile, realpath } from 'node:fs/promises'
+import { cp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Arch } from 'electron-builder'
@@ -29,6 +29,9 @@ const PAYLOADS = [
   },
 ]
 
+const CORDIS_PACKAGE = '@deepseek-ai/cordis'
+const CORDIS_ALIAS = 'cordis'
+
 /** Convert an npm package name to path segments below node_modules. */
 function packageSegments(name) {
   return name.split('/')
@@ -37,6 +40,34 @@ function packageSegments(name) {
 /** Read one package manifest. */
 async function manifest(path) {
   return JSON.parse(await readFile(path, 'utf8'))
+}
+
+/** Stage an ESM alias without creating a second Cordis runtime identity. */
+async function stageCordisAlias(nodeModules) {
+  const sourceManifest = await manifest(join(nodeModules, ...packageSegments(CORDIS_PACKAGE), 'package.json'))
+  if (sourceManifest.name !== CORDIS_PACKAGE || typeof sourceManifest.version !== 'string') {
+    throw new Error(`packaged ${CORDIS_PACKAGE} manifest is invalid`)
+  }
+
+  const destination = join(nodeModules, CORDIS_ALIAS)
+  await mkdir(destination, { recursive: true })
+  await writeFile(join(destination, 'index.js'), `export * from '${CORDIS_PACKAGE}'\n`, 'utf8')
+  await writeFile(
+    join(destination, 'package.json'),
+    `${JSON.stringify({
+      name: CORDIS_ALIAS,
+      version: sourceManifest.version,
+      private: true,
+      type: 'module',
+      main: './index.js',
+      exports: {
+        '.': './index.js',
+        './package.json': './package.json',
+      },
+      license: sourceManifest.license,
+    }, null, 2)}\n`,
+    'utf8',
+  )
 }
 
 /** Locate the node_modules directory that owns one real package path. */
@@ -99,7 +130,8 @@ export async function stageWindowsRuntime(appDirectory) {
     await mkdir(dirname(destination), { recursive: true })
     await cp(dirname(realSourceManifestPath), destination, { recursive: true, force: true })
   }
-  console.log(`desktop Windows runtime: staged ${PAYLOADS.length} optional x64 packages.`)
+  await stageCordisAlias(nodeModules)
+  console.log(`desktop Windows runtime: staged ${PAYLOADS.length} optional x64 packages and the shared Cordis alias.`)
 }
 
 /** electron-builder hook for the Windows x64 unpacked application. */
