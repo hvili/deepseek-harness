@@ -20,8 +20,9 @@ peer 名称是 `@deepseek-ai/cordis` 的 workspace alias；打包时会将其具
 使用 `pnpm run desktop:dist` 生成 NSIS 安装器和便携 ZIP。两个产物都是未签名
 测试版本，因此 Windows SmartScreen 可能要求用户显式确认。分发包保持
 `resources/app` 未封装，因为受管 Profile 需要真实包目录来建立模块 junction。
-`desktop:dist` 会先检查生成的 workspace 运行时闭包；只有在有意变更依赖、需要
-刷新该 manifest 时，才使用 `pnpm --filter @deepseek-ai/dsh-desktop run
+`desktop:dist` 会先运行增强插件检查和官方 Host／Client／Web 构建，再检查生成的
+workspace 运行时闭包；只有在有意变更依赖、需要刷新该 manifest 时，才使用
+`pnpm --filter @deepseek-ai/dsh-desktop run
 sync-pack-deps`。electron-builder hook 会复制 Koffi、Sharp、Codex 和 ripgrep
 各自 `optionalDependencies` 命名的 Windows x64 包，然后打包验证器会检查每个
 已审查 PE 载荷，并在 Electron 的 Node 运行时下实际执行模块与可执行文件。

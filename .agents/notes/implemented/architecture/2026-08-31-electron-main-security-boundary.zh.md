@@ -16,7 +16,7 @@ Preload 为兼容 Electron sandbox 使用 CommonJS，仅暴露有类型的 `desk
 
 ## 验证
 
-Desktop build 产出同步 CommonJS bootstrap、ESM Main 和 CommonJS preload，并将 Electron 保持为外部依赖而非打包下载器。结构测试断言路径与 scheme 设置先于 Main 动态导入，以及安全自定义来源、sandbox/context isolation、禁用 node integration、拒绝导航和弹窗、CSP 与窄 contextBridge 表面。既有 carrier、lock、Profile、Bundle、connection 聚焦测试全部通过。打包依赖验证器会拒绝非 AMD64 的 `.node`、`.dll` 和 `.exe` 载荷，再用打包后的 Electron Node 运行时调用 Koffi、经 Sharp 渲染、打开 ConPTY，并执行打包内的 ripgrep 和 Codex。
+桌面分发会先运行增强插件检查和官方 Host／Client／Web 构建，因此打包入口与前端资产不会来自过时的局部构建。随后 Desktop build 产出同步 CommonJS bootstrap、ESM Main 和 CommonJS preload，并将 Electron 保持为外部依赖而非打包下载器。结构测试断言路径与 scheme 设置先于 Main 动态导入，以及安全自定义来源、sandbox/context isolation、禁用 node integration、拒绝导航和弹窗、CSP 与窄 contextBridge 表面。既有 carrier、lock、Profile、Bundle、connection 聚焦测试全部通过。打包依赖验证器会拒绝非 AMD64 的 `.node`、`.dll` 和 `.exe` 载荷，再用打包后的 Electron Node 运行时调用 Koffi、经 Sharp 渲染、打开 ConPTY，并执行打包内的 ripgrep 和 Codex。
 
 ## 后果
 
