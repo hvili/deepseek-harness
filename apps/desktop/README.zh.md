@@ -28,3 +28,8 @@ sync-pack-deps`。electron-builder hook 会复制 Koffi、Sharp、Codex 和 ripg
 已审查 PE 载荷，并在 Electron 的 Node 运行时下实际执行模块与可执行文件。
 后一命令要求已安装 Electron Windows binary，并且只会在安装器和 ZIP 都通过
 验证后，在其旁边写入 `SHA256SUMS.txt`。
+
+最终的打包 boot probe 会打开真实的未封装可执行文件并等待
+`app://dsh/index.html`。若出现 TCP listener、C 盘 Electron 状态、
+`Home`／`DesktopData` 之外的写入、安装目录或 Harness 变化、非零退出，或任何
+已观测到的 Electron、Host、PTY、Codex 进程残留，验证都会失败。

@@ -34,3 +34,8 @@ packaged verifier checks every reviewed PE payload and exercises the modules
 and executables under Electron's Node runtime. The latter command requires
 Electron's Windows binary to be installed and writes `SHA256SUMS.txt` beside
 the installer and ZIP after both artifacts pass verification.
+
+The final packaged boot probe opens the real unpacked executable and waits for
+`app://dsh/index.html`. It rejects TCP listeners, C-drive Electron state,
+writes outside `Home`/`DesktopData`, installation or Harness changes, a
+non-zero close, and any observed Electron, Host, PTY, or Codex process residue.

@@ -17,12 +17,13 @@
     "dev": "pnpm run build && electron .",
     "start": "electron .",
     "prepare:runtime": "pnpm --dir D:\\DeepSeek\\plugins run check && pnpm --workspace-root run build:official",
-    "pack": "pnpm run prepare:runtime && pnpm run check:pack-deps && pnpm run build && electron-builder --dir --win --x64 && pnpm run verify:packed-deps",
-    "dist": "pnpm run prepare:runtime && pnpm run check:pack-deps && pnpm run build && electron-builder --win --x64 && pnpm run verify:packed-deps && pnpm run checksums",
+    "pack": "pnpm run prepare:runtime && pnpm run check:pack-deps && pnpm run build && electron-builder --dir --win --x64 && pnpm run verify:packed-deps && pnpm run verify:packaged-boot",
+    "dist": "pnpm run prepare:runtime && pnpm run check:pack-deps && pnpm run build && electron-builder --win --x64 && pnpm run verify:packed-deps && pnpm run verify:packaged-boot && pnpm run checksums",
     "checksums": "node scripts/write-checksums.mjs ../../dist/desktop",
     "check:pack-deps": "node scripts/sync-pack-deps.mjs",
     "sync-pack-deps": "node scripts/sync-pack-deps.mjs --write",
-    "verify:packed-deps": "node scripts/verify-packed-deps.mjs ../../dist/desktop/win-unpacked/resources/app"
+    "verify:packed-deps": "node scripts/verify-packed-deps.mjs ../../dist/desktop/win-unpacked/resources/app",
+    "verify:packaged-boot": "pwsh -NoProfile -File scripts/verify-packaged-boot.ps1 \"../../dist/desktop/win-unpacked/DeepSeek Harness.exe\""
   },
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:^",

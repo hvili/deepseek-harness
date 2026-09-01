@@ -23,6 +23,9 @@ describe('desktop shell security boundary', () => {
     expect(main).toContain('setWindowOpenHandler')
     expect(main).toContain('will-navigate')
     expect(main).toContain("connect-src 'self'")
+    expect(main).toContain('did-finish-load')
+    expect(main).toContain('dsh-desktop ready ${loadedUrl}')
+    expect(main).toContain('did-fail-load')
   })
 
   it('pins all persistent Electron paths to DesktopData and fixes Home/CWD', () => {

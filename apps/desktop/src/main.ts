@@ -23,7 +23,10 @@ const SHUTDOWN_TIMEOUT_MS = 5_000
 // network connection, embedded frame, or executable plugin source elsewhere.
 app.on('web-contents-created', (_event, contents) => {
   contents.session.webRequest.onHeadersReceived((details, callback) => {
-    if (!details.url.startsWith('app://dsh/')) return callback({})
+    if (!details.url.startsWith('app://dsh/')) {
+      callback({})
+      return
+    }
     callback({ responseHeaders: {
       ...details.responseHeaders,
       'Content-Security-Policy': ["default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'"],
@@ -40,21 +43,38 @@ function version(): string {
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({ width: 1280, height: 820, minWidth: 980, minHeight: 640, frame: false, show: false, webPreferences: { preload: join(import.meta.dirname, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } })
-  window.once('ready-to-show', () => window.show())
-  window.on('maximize', () => window.webContents.send(IPC.windowMaximized, true))
-  window.on('unmaximize', () => window.webContents.send(IPC.windowMaximized, false))
-  window.on('close', () => { if (!quitting) void app.quit() })
-  window.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//u.test(url)) void shell.openExternal(url); return { action: 'deny' } })
+  window.once('ready-to-show', () => { window.show() })
+  window.webContents.once('did-finish-load', () => {
+    const loadedUrl = window.webContents.getURL()
+    if (loadedUrl !== APP_INDEX_URL) {
+      console.error(`dsh-desktop loaded unexpected URL ${loadedUrl}`)
+      app.exit(1)
+      return
+    }
+    console.log(`dsh-desktop ready ${loadedUrl}`)
+  })
+  window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (!isMainFrame) return
+    console.error(`dsh-desktop failed to load ${url}: ${String(code)} ${description}`)
+    app.exit(1)
+  })
+  window.on('maximize', () => { window.webContents.send(IPC.windowMaximized, true) })
+  window.on('unmaximize', () => { window.webContents.send(IPC.windowMaximized, false) })
+  window.on('close', () => { if (!quitting) app.quit() })
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//u.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => { if (url !== APP_INDEX_URL) event.preventDefault() })
   void window.loadURL(APP_INDEX_URL)
   return window
 }
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   try {
     host = await bootDesktopHost(HOME)
     const carrier = host.ctx.get('webServer')
-    const bridge = host.ctx.get(DESKTOP_BRIDGE_SERVICE)
+    const bridge: unknown = host.ctx.get(DESKTOP_BRIDGE_SERVICE)
     if (!(carrier instanceof DesktopWebServer) || bridge === undefined) throw new Error('desktop Host did not provide zero-port carrier and IPC bridge')
     registerDesktopProtocol(carrier)
     registerIpc(bridge as DesktopBridgeHost, version())
@@ -65,7 +85,7 @@ app.whenReady().then(async () => {
   }
 })
 
-app.on('window-all-closed', () => { void app.quit() })
+app.on('window-all-closed', () => { app.quit() })
 app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
