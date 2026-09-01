@@ -4,7 +4,6 @@ import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot, composeEntries, ensureDesktopProfile, healProfilesModuleFallback,
   loadOptionalPatches, loadProfile,
@@ -38,7 +37,7 @@ export async function bootDesktopHost(home: string): Promise<DesktopHost> {
   // Compose once here solely to force structural patch diagnostics before any
   // services mount. Fresh clones avoid Loader mutating parsed insert rows.
   composeEntries([bundles, user, homePatch])
-  const patches = structuredClone([...bundles, ...user, ...homePatch]) as PatchOptions[]
+  const patches = structuredClone([...bundles, ...user, ...homePatch])
   const ctx = await boot(NAME, rootConfig, patches, undefined, installAnchor)
   return { ctx, profileDir }
 }

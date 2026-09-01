@@ -40,11 +40,15 @@ export function registerIpc(bridge: DesktopBridgeHost, version: string): void {
     return { ok: true }
   })
   ipcMain.on(IPC.unsubscribe, (_event, id: unknown) => { if (typeof id === 'string') active.get(id)?.abort() })
-  ipcMain.on(IPC.windowAction, (event, action: unknown) => applyWindowAction(BrowserWindow.fromWebContents(event.sender), action))
+  ipcMain.on(IPC.windowAction, (event, action: unknown) => {
+    applyWindowAction(BrowserWindow.fromWebContents(event.sender), action)
+  })
   ipcMain.handle(IPC.windowState, event => ({
     maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false,
   }))
-  ipcMain.on(IPC.notify, (event, intent: unknown) => showNotification(BrowserWindow.fromWebContents(event.sender), intent))
+  ipcMain.on(IPC.notify, (event, intent: unknown) => {
+    showNotification(BrowserWindow.fromWebContents(event.sender), intent)
+  })
   // Version is returned from a non-privileged value, not an Electron object.
   ipcMain.handle('dsh:version', () => version)
 }
@@ -59,10 +63,10 @@ async function pump(
 
 function validateRequest(value: unknown): DesktopBridgeRequest {
   if (value === null || typeof value !== 'object') throw new Error('desktop IPC request must be an object')
-  const input = value as Partial<DesktopBridgeRequest>
+  const input = value as { id?: unknown; url?: unknown; method?: unknown; headers?: unknown; body?: unknown }
   if (typeof input.id !== 'string' || input.id.length === 0 || input.id.length > 160
     || typeof input.url !== 'string' || typeof input.method !== 'string' || !allowedMethods.has(input.method)
-    || input.headers === null || typeof input.headers !== 'object'
+    || !isStringRecord(input.headers)
     || input.body !== undefined && typeof input.body !== 'string') throw new Error('desktop IPC request is invalid')
   const url = new URL(input.url)
   if (url.protocol !== 'http:' || url.hostname !== 'dsh.internal') throw new Error('desktop IPC request has an invalid logical origin')
@@ -70,9 +74,14 @@ function validateRequest(value: unknown): DesktopBridgeRequest {
     id: input.id,
     url: input.url,
     method: input.method,
-    headers: input.headers as Record<string, string>,
+    headers: input.headers,
     ...(input.body === undefined ? {} : { body: input.body }),
   }
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value).every(item => typeof item === 'string')
 }
 
 function validateSubscription(value: unknown): { stream: 'mux' | 'host'; subId: string } {

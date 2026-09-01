@@ -41,7 +41,7 @@ const bridge: DesktopBridge = {
     const subId = `sub_${String(++counter)}`
     const ends = new Set<() => void>()
     const frame = (_event: unknown, value: { subId?: unknown; frame?: unknown }) => {
-      if (value.subId === subId) listener(value.frame as never)
+      if (value.subId === subId) listener(value.frame)
     }
     const end = (_event: unknown, value: { subId?: unknown }) => { if (value.subId === subId) for (const listener of ends) listener() }
     ipcRenderer.on(IPC.frame, frame); ipcRenderer.on(IPC.streamEnd, end)
@@ -57,7 +57,7 @@ const bridge: DesktopBridge = {
   },
   onOpenSession: (listener) => {
     const handler = (_event: unknown, value: { sessionId?: unknown }) => {
-      if (typeof value.sessionId === 'string') listener(value.sessionId as never)
+      if (typeof value.sessionId === 'string') listener(value.sessionId)
     }
     ipcRenderer.on(IPC.openSession, handler)
     return () => { ipcRenderer.removeListener(IPC.openSession, handler) }
