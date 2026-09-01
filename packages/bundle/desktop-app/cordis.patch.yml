@@ -5,11 +5,14 @@
   disabled: true
 
 - id: webserver
-  name: '@deepseek-ai/dsh-host-desktop-carrier'
-  inject: []
-  config:
-    host: '127.0.0.1'
-    port: 0
+  disabled: true
+
+- insert:
+    - id: desktop-carrier
+      name: '@deepseek-ai/dsh-host-desktop-carrier'
+      config:
+        host: '127.0.0.1'
+        port: 0
 
 - id: web-runtime
   inject: []

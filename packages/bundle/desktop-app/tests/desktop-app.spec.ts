@@ -6,8 +6,11 @@ describe('desktop app bundle', () => {
   it('declares the zero-port desktop overlay and interactive lock', () => {
     const root = resolve(import.meta.dirname, '..')
     const patch = readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')
+    expect(patch).toContain('- id: webserver\n  disabled: true')
+    expect(patch).toContain('- id: desktop-carrier')
     expect(patch).toContain("name: '@deepseek-ai/dsh-host-desktop-carrier'")
     expect(patch).toContain('port: 0')
+    expect(patch).not.toContain("- id: webserver\n  name: '@deepseek-ai/dsh-host-desktop-carrier'")
     expect(patch).toContain('id: client-hmr\n  disabled: true')
     expect(patch).toContain("name: '@deepseek-ai/dsh-client-connection/desktop'")
     expect(patch).toContain('- id: host-instance-lock\n  config:')
