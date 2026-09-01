@@ -34,11 +34,10 @@
       name: '@deepseek-ai/dsh-client-connection/desktop'
       inject: [connection]
 
-    # Both `dsh --profile web` and the desktop overlay use this same lock path;
-    # the desktop overlay replaces only `mode`, so contention diagnostics name
-    # the owning surface without allowing two interactive Hosts on one Home.
-    - id: host-instance-lock
-      name: '@deepseek-ai/dsh-host-instance-lock'
-      config:
-        path: !!js dshHomePath('interactive-host')
-        mode: desktop
+# Both `dsh --profile web` and the desktop overlay use this same lock path;
+# this id-targeted patch replaces only the row's config rather than inserting a
+# duplicate, so contention diagnostics name the owning surface.
+- id: host-instance-lock
+  config:
+    path: !!js dshHomePath('interactive-host')
+    mode: desktop
