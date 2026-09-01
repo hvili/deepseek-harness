@@ -307,7 +307,7 @@ export interface LaunchOptions {
    * 127.0.0.1; a non-resolving authority fails before Host trust is exercised.
    */
   remoteAuthority?: string
-  /** Reuse an existing harness home so a second Host can verify user settings across origins. */
+  /** Reuse an existing harness home so a successor Host can verify user settings across origins. */
   harnessHome?: string
 }
 
@@ -363,7 +363,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // whole scaffold lifetime, not just the boot, since presets mount when a
   // session is created. Without this a developer's real ~/.dsh/skills silently
   // enters replay requests and goldens while CI sees none. `DSH_HOME` follows
-  // the resolved harness home so a scaffold sharing another's home — the
+  // the resolved harness home so a successor scaffold reusing that home — the
   // cross-port persistence scenario — pins the same roots the settings and
   // credentials rows were configured with.
   const skillRootEnvironment = {

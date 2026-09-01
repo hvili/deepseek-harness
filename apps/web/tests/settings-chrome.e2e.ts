@@ -8,7 +8,8 @@
 // Zero model calls: everything is pure client + persistence state on a blank
 // frame, so there is no fixture and a stray stream would fail loud on the
 // open llm seam.
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -34,8 +35,10 @@ describe('web e2e: settings modal and General preferences', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let sharedHarnessHome: string
 
   beforeAll(async () => {
+    sharedHarnessHome = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-settings-home-')))
     scaffold = await launchWebScaffold({})
     browser = await chromium.launch()
     // Chinese browser: the shared page asserts the localized settings surface
@@ -55,9 +58,29 @@ describe('web e2e: settings modal and General preferences', () => {
   })
 
   afterAll(async () => {
-    await browser?.close()
-    await scaffold?.close()
+    const failures: unknown[] = []
+    await browser?.close().catch((error: unknown) => failures.push(error))
+    await scaffold?.close().catch((error: unknown) => failures.push(error))
+    await rm(sharedHarnessHome, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (failures.length > 0) throw new AggregateError(failures, 'settings chrome teardown failed')
   })
+
+  const restartOnDistinctPort = async (): Promise<void> => {
+    const previousBaseUrl = scaffold.baseUrl
+    await page.goto('about:blank', { waitUntil: 'load' })
+    await scaffold.close()
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const next = await launchWebScaffold({ harnessHome: sharedHarnessHome })
+      if (next.baseUrl !== previousBaseUrl) {
+        scaffold = next
+        await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+        await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+        return
+      }
+      await next.close()
+    }
+    throw new Error(`settings chrome could not bind a port distinct from ${previousBaseUrl}`)
+  }
 
   it('opens the settings dialog, switches sections, and closes by every path', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-shell'))
@@ -190,10 +213,15 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it('uses the persisted dark preference while plugins are still loading', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-boot-theme'))
+    // Start from a fresh Host lifecycle: the preceding permission scenario
+    // intentionally creates live sessions, while this case isolates early-boot
+    // theme hydration and its persisted settings document.
+    await restartOnDistinctPort()
     await page.emulateMedia({ colorScheme: 'light' })
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const initialDialog = page.getByRole('dialog', { name: '设置' })
     const darkCube = initialDialog.getByRole('button', { name: '深色' })
+    await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('false')
     await darkCube.click()
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
@@ -313,27 +341,15 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(reloaded.legacy).toBeNull()
     expectThemeColorSynchronized(reloaded)
 
-    // A second live Host binds another ephemeral port but shares the same
-    // user-settings home. Its fresh origin has no theme localStorage and still
+    // A successor Host binds another ephemeral port after the first releases
+    // the shared-home lock. Its fresh origin has no theme localStorage and still
     // converges to dark before the settings dialog opens.
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
-    const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
-    const secondTripwire = watchConsole(secondPage)
-    try {
-      expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.emulateMedia({ colorScheme: 'light' })
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
-      await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      await expect.poll(async () => (await readState(secondPage)).attr, { timeout: 5_000 }).toBe(true)
-      const secondState = await readState(secondPage)
-      expect(secondState.legacy).toBeNull()
-      expectThemeColorSynchronized(secondState)
-      expect(secondTripwire.pageErrors).toEqual([])
-      expect(secondTripwire.warnings).toEqual([])
-    } finally {
-      await secondPage.close()
-      await second.close()
-    }
+    await restartOnDistinctPort()
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
+    const successorState = await readState()
+    expect(successorState.legacy).toBeNull()
+    expectThemeColorSynchronized(successorState)
 
     // `system` follows the emulated OS scheme (dark stays dark, light clears).
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -375,27 +391,15 @@ describe('web e2e: settings modal and General preferences', () => {
     const reloaded = page.getByRole('dialog', { name: '设置' })
     await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
 
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
-    const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
-    const secondTripwire = watchConsole(secondPage)
-    try {
-      expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
-      await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      await secondPage.getByRole('button', { name: '设置', exact: true }).click()
-      await secondPage.getByRole('dialog', { name: '设置' })
-        .getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
-      expect(await secondPage.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
-      expect(secondTripwire.pageErrors).toEqual([])
-      expect(secondTripwire.warnings).toEqual([])
-    } finally {
-      await secondPage.close()
-      await second.close()
-    }
+    await restartOnDistinctPort()
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const successor = page.getByRole('dialog', { name: '设置' })
+    await successor.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+    expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
 
-    await reloaded.getByRole('button', { name: '插话发送' }).click()
+    await successor.getByRole('button', { name: '插话发送' }).click()
     await page.getByRole('menuitem', { name: '排队发送' }).click()
-    await reloaded.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
+    await successor.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/ui-conversation:\n\s+busyEnter: queue/)
@@ -439,27 +443,14 @@ describe('web e2e: settings modal and General preferences', () => {
     const enTrigger = page.getByRole('button', { name: 'Settings' })
     await enTrigger.waitFor({ timeout: 10_000 })
 
-    // A Chinese browser on another port still receives the explicit English
-    // preference from the shared Host settings document.
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
-    const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
-    const secondTripwire = watchConsole(secondPage)
-    try {
-      expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
-      await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      await secondPage.getByRole('button', { name: 'Settings', exact: true }).click()
-      await secondPage.getByRole('dialog', { name: 'Settings' })
-        .getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
-      expect(await secondPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
-      expect(secondTripwire.pageErrors).toEqual([])
-      expect(secondTripwire.warnings).toEqual([])
-    } finally {
-      await secondPage.close()
-      await second.close()
-    }
+    // A Chinese browser origin served by a successor Host still receives the
+    // explicit English preference from the shared Host settings document.
+    await restartOnDistinctPort()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Settings' })
+      .getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+    expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
 
-    await enTrigger.click()
     await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'English' }).click()
     await page.getByRole('menuitem', { name: '中文' }).click()
     await page.getByRole('dialog', { name: '设置' }).waitFor({ timeout: 10_000 })
