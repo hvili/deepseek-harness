@@ -1127,8 +1127,14 @@ export async function waitForInstanceLockStale(
   const staleAfterMs = thresholds.staleMs + thresholds.graceMs
   const deadline = Date.now() + staleAfterMs + thresholds.refreshMs
   while (Date.now() < deadline) {
-    if (!existsSync(lockDir)) return
-    if ((await lstat(lockDir)).mtimeMs + staleAfterMs <= Date.now()) return
+    let lockStat
+    try {
+      lockStat = await lstat(lockDir)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    if (lockStat.mtimeMs + staleAfterMs <= Date.now()) return
     await new Promise(resolve => setTimeout(resolve, 100))
   }
 }

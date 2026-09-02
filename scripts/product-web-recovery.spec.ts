@@ -156,6 +156,24 @@ describe('waitForInstanceLockStale', () => {
     expect(Date.now() - startedAt).toBeLessThan(100)
   })
 
+  it('returns when a fresh lease is released while the wait is in progress', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-released-'))
+    temporaryRoots.push(root)
+    const lockDir = join(root, 'interactive-host.lock')
+    await mkdir(lockDir)
+    const released = new Promise<void>((resolve, reject) => {
+      setTimeout(() => { void rm(lockDir, { recursive: true }).then(resolve, reject) }, 25)
+    })
+
+    const startedAt = Date.now()
+    await waitForInstanceLockStale(root, { staleMs: 60_000, graceMs: 1_000, refreshMs: 5_000 })
+    await released
+
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(25)
+    expect(Date.now() - startedAt).toBeLessThan(1_000)
+    expect(existsSync(lockDir)).toBe(false)
+  })
+
   it('waits out a fresh lease only until its staleness window elapses', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-fresh-'))
     temporaryRoots.push(root)
