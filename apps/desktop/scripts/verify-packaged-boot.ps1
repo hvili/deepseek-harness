@@ -103,6 +103,10 @@ $observedIds = [System.Collections.Generic.HashSet[uint32]]::new()
 $readyTree = @()
 try {
   $process = Start-Process -FilePath $resolvedExecutable -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+  # Touch the handle before the app can exit: without an open OS handle the
+  # .NET Process object cannot report ExitCode after HasExited (PowerShell's
+  # Start-Process -PassThru returns null for an already-collected process).
+  [void]$process.Handle
   [void]$observedIds.Add([uint32]$process.Id)
   $deadline = [DateTime]::UtcNow.AddSeconds(120)
   $ready = $false
