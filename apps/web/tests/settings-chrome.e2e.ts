@@ -8,7 +8,7 @@
 // Zero model calls: everything is pure client + persistence state on a blank
 // frame, so there is no fixture and a stray stream would fail loud on the
 // open llm seam.
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
@@ -216,10 +216,13 @@ describe('web e2e: settings modal and General preferences', () => {
     // Start from a fresh Host lifecycle: the preceding permission scenario
     // intentionally creates live sessions, while this case isolates early-boot
     // theme hydration and its persisted settings document.
+    await writeFile(join(sharedHarnessHome, 'settings.yaml'), 'ui-theme:\n  preference: light\n')
     await restartOnDistinctPort()
     await page.emulateMedia({ colorScheme: 'light' })
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const initialDialog = page.getByRole('dialog', { name: '设置' })
+    const lightCube = initialDialog.getByRole('button', { name: '浅色' })
+    await expect.poll(() => lightCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     const darkCube = initialDialog.getByRole('button', { name: '深色' })
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('false')
     await darkCube.click()
