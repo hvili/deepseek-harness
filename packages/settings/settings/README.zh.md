@@ -20,11 +20,11 @@
 
 ## 提供方约定
 
-子类实现 `writable`、`load()`、`persist(ns, section)`，可选择为一个本地用户可编辑文件重写 `documentPath` 与 `prepareDocument()`，并通过受保护的 `publish(doc)` 推入外部观察到的文档。基类服务 init 在服务可注入前加载并发布一次文档；拥有自有 init（watcher、连接）的提供方会先通过 `yield* super[Service.init]()` 委托给基类。publish 时每个已注册 namespace 独立重解析：非法分节保留该 namespace 的最后可用值并告警——热重载绝不拖垮进程；启动期与注册期校验则立即报错。
+子类实现 `writable`、`load()`、`persist(ns, section, commit, notify)`，可选择为一个本地用户可编辑文件重写 `documentPath` 与 `prepareDocument()`，并通过受保护的 `publish(doc)` 推入外部观察到的文档。存储首次持久持有分节时，提供方调用幂等的 `commit()`，同步落位原始文档、revision 与解析镜像；释放任何写锁后才调用幂等的 `notify()`，因此同步外部 listener 不会占用另一写入方的锁获取窗口。省略这些调用的提供方由基类在 `persist` settle 后补齐；耐久提交后的后续 settle 即使拒绝，基类仍会发出通知。基类服务 init 在服务可注入前加载并发布一次文档；拥有自有 init（watcher、连接）的提供方会先通过 `yield* super[Service.init]()` 委托给基类。publish 时每个已注册 namespace 独立重解析：非法分节保留该 namespace 的最后可用值并告警——热重载绝不拖垮进程；启动期与注册期校验则立即报错。
 
 ## 事件
 
-`settings/updated (ns, next, prev, source)` 在每次提交后触发；`source` 为 `update`（进程内写入）或 `provider`（外部变更）。解析值深相等时绝不触发——它面向消费方，而消费方只关心自己的值有没有变。
+`settings/updated (ns, next, prev, source)` 在每次提交后触发；`source` 为 `update`（进程内写入）或 `provider`（外部变更）。解析值深相等时绝不触发——它面向消费方，而消费方只关心自己的值有没有变。进程内提供方可以在存储耐久点先落位权威状态，等写锁释放后再扇出该事件。
 
 `settings/document-updated (ns, revision)` 在**原始**用户分节发生变化时触发，无论解析值是否随之改变。配置界面需要的是这一个：存入一个与组合 `base` 相同的覆盖值不会改变解析值，却改变了文档的说法（该字段从继承变成了覆盖），也推进了每个已打开编辑器所持有的 revision。监听器的异常隔离方式与 `settings/updated` 相同。
 

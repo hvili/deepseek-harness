@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { spawn } from 'node:child_process'
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,6 +37,26 @@ async function boot(config: ConstructorParameters<typeof FileSettingsProvider>[1
   cleanups.push(async () => { await fiber.dispose() })
   await fiber
   return ctx
+}
+
+function contendForWriterLock(path: string, marker: string): Promise<{ code: number | null; stderr: string }> {
+  const atomicWriteUrl = new URL('../../../util/atomic-write/src/index.ts', import.meta.url).href
+  const script = [
+    'import { writeFile } from \'node:fs/promises\'',
+    `import { withFileLock } from ${JSON.stringify(atomicWriteUrl)}`,
+    `await withFileLock(${JSON.stringify(path)}, () => writeFile(${JSON.stringify(marker)}, 'acquired'))`,
+  ].join('\n')
+  const child = spawn(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '--eval', script], {
+    cwd: process.cwd(),
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  let stderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk: string) => { stderr += chunk })
+  return new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code) => { resolve({ code, stderr }) })
+  })
 }
 
 describe('resolveSpec', () => {
@@ -196,6 +217,25 @@ describe('persist', () => {
     expect(alpha.get().theme).toBe('light')
     expect(beta.get().fontSize).toBe(20)
   })
+
+  it('releases the cross-process writer lock before synchronous settings listeners run', async () => {
+    const dir = await tempDir()
+    const path = join(dir, 'settings.yaml')
+    const marker = join(dir, 'contender-acquired')
+    const ctx = await boot({ path, watch: false })
+    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    let contender: Promise<{ code: number | null; stderr: string }> | undefined
+    ctx.on('settings/updated', () => {
+      contender = contendForWriterLock(path, marker)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2_500)
+    })
+
+    await scope.update({ theme: 'light' })
+    const result = await contender
+
+    expect(result?.code, result?.stderr).toBe(0)
+    expect(await readFile(marker, 'utf8')).toBe('acquired')
+  }, 10_000)
 
   it('never follows a planted symlink at a temp path and never leaves the document a symlink', async () => {
     const dir = await tempDir()

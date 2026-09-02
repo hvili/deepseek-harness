@@ -326,18 +326,52 @@ describe('update', () => {
     const fiber = ctx.plugin(GatedProvider)
     await fiber
     const events = recordUpdates(ctx)
+    const documents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (ns, revision) => { documents.push([String(ns), revision]) })
     const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
     const written = scope.update({ theme: 'light' })
     await vi.waitFor(() => { expect(scope.get()).toEqual({ theme: 'light', fontSize: 14 }) })
+    expect(documents).toEqual([])
+    expect(events).toEqual([])
+    release()
+    await written
+    expect(documents).toEqual([['ui-theme', 1]])
     expect(events).toEqual([{
       ns: 'ui-theme',
       next: { theme: 'light', fontSize: 14 },
       prev: { theme: 'dark', fontSize: 14 },
       source: 'update',
     }])
-    release()
-    await written
     // The post-persist fallback commit is idempotent: no second emission.
+    expect(events).toHaveLength(1)
+    await fiber.dispose()
+  })
+
+  it('announces a durable commit before preserving a later persist rejection', async () => {
+    const ctx = new Context()
+    class RejectedAfterCommitProvider extends SettingsProvider {
+      get writable(): boolean { return true }
+
+      protected load(): Promise<Record<string, unknown>> {
+        return Promise.resolve({})
+      }
+
+      protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>, commit: () => void): Promise<void> {
+        commit()
+        return Promise.reject(new Error('persist settlement failed'))
+      }
+    }
+    const fiber = ctx.plugin(RejectedAfterCommitProvider)
+    await fiber
+    const events = recordUpdates(ctx)
+    const documents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (ns, revision) => { documents.push([String(ns), revision]) })
+    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+
+    await expect(scope.update({ theme: 'light' })).rejects.toThrow('persist settlement failed')
+
+    expect(scope.get()).toEqual({ theme: 'light', fontSize: 14 })
+    expect(documents).toEqual([['ui-theme', 1]])
     expect(events).toHaveLength(1)
     await fiber.dispose()
   })

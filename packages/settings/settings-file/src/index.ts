@@ -181,12 +181,17 @@ export class FileSettingsProvider extends SettingsProvider {
     return doc
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>, commit: () => void): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    commit: () => void,
+    notify: () => void,
+  ): Promise<void> {
     // One document backs every namespace, so writes from different namespace
     // queues serialize with each other and with watcher reloads on the one
     // operation chain: each render must see the text the previous operation
     // committed, or a sibling section silently vanishes from disk.
-    return this.enqueue(() => this.persistSection(ns, section, commit))
+    return this.enqueue(() => this.persistSection(ns, section, commit, notify))
   }
 
   /** Queue one exclusive document operation behind every earlier one. */
@@ -207,7 +212,12 @@ export class FileSettingsProvider extends SettingsProvider {
     })
   }
 
-  private async persistSection(ns: SettingsNamespace, section: Record<string, unknown>, commit: () => void): Promise<void> {
+  private async persistSection(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    commit: () => void,
+    notify: () => void,
+  ): Promise<void> {
     // The writer lock's exclusive create needs the parent to exist before
     // writeFileAtomic gets its own chance to create it.
     // 0700: the harness home holds user-private documents.
@@ -232,6 +242,9 @@ export class FileSettingsProvider extends SettingsProvider {
       // stale preference (the boot-theme flash on reload).
       commit()
     })
+    // Listener work is outside the cross-process lock but remains inside this
+    // provider's operation chain, preserving commit notification order.
+    notify()
   }
 
   override async* [Service.init](): AsyncGenerator<() => Promise<void> | void, void, void> {

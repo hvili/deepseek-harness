@@ -341,6 +341,14 @@ interface SettingsRegistration {
   watchers: Set<SettingsWatcher>
 }
 
+/** One resolved-value notification captured after authoritative state lands. */
+interface SettingsCommitNotification {
+  registration: SettingsRegistration
+  next: unknown
+  prev: unknown
+  source: SettingsUpdateSource
+}
+
 /**
  * Abstract settings service. Providers implement raw-document storage
  * (`load`/`persist`) and push external changes through {@link Settings.publish};
@@ -425,11 +433,15 @@ export abstract class SettingsProvider extends Service {
    *   the persisted preference) never observes the stale mirror. A provider
    *   whose storage commits only when the returned promise resolves may
    *   return without calling it — the base class calls it then.
+   * @param notify - idempotent sink dispatching the committed revision and
+   *   resolved-value notifications; call it only after releasing any writer
+   *   lock. The base class calls it after `persist` settles when necessary.
    */
   protected abstract persist(
     ns: SettingsNamespace,
     section: Record<string, unknown>,
     commit: () => void,
+    notify: () => void,
   ): Promise<void>
 
   /**
@@ -642,6 +654,9 @@ export abstract class SettingsProvider extends Service {
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
       const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
       let stored = false
+      let notified = false
+      let revision: number | undefined
+      let update: SettingsCommitNotification | undefined
       const commit = (): void => {
         if (stored) return
         stored = true
@@ -652,12 +667,25 @@ export abstract class SettingsProvider extends Service {
         // TODO(settings-replacement-resync): Re-resolve any replacement registration
         // from this persisted section so an old in-flight write cannot leave it stale.
         if (this.registrations.get(ns) === registration && !this.isStopped()) {
-          this.bumpRevision(registration, current, section)
-          this.commit(registration, next, 'update')
+          revision = this.bumpRevision(registration, current, section)
+          update = this.commit(registration, next, 'update')
         }
       }
-      await this.persist(ns, section, commit)
+      const notify = (): void => {
+        if (!stored || notified) return
+        notified = true
+        if (revision !== undefined) this.emitDocumentUpdated(registration.ns, revision)
+        if (update !== undefined) this.notifyCommit(update)
+      }
+      try {
+        await this.persist(ns, section, commit, notify)
+      } finally {
+        // A provider may commit durably and then fail while settling. Preserve
+        // that rejection, but never leave the committed state unannounced.
+        notify()
+      }
       commit()
+      notify()
     })
     this.writeQueues.set(ns, run)
     return run
@@ -694,8 +722,10 @@ export abstract class SettingsProvider extends Service {
         this.ctx.logger.warn(error)
         continue
       }
-      this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns))
-      this.commit(registration, next, source)
+      const revision = this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns))
+      if (revision !== undefined) this.emitDocumentUpdated(registration.ns, revision)
+      const update = this.commit(registration, next, source)
+      if (update !== undefined) this.notifyCommit(update)
     }
   }
 
@@ -726,16 +756,16 @@ export abstract class SettingsProvider extends Service {
   }
 
   /**
-   * Advance a namespace's revision when its RAW section changed, and announce
-   * it. Deliberately independent of {@link commit}'s resolved-value equality:
+   * Advance a namespace's revision when its RAW section changed. Deliberately
+   * independent of {@link commit}'s resolved-value equality:
    * storing an override equal to the composition base leaves the resolved
    * value alone but changes what the document says, which is exactly what a
    * configuration surface must re-read.
    */
-  private bumpRevision(registration: SettingsRegistration, before: unknown, after: unknown): void {
-    if (deepEqualJson(before, after)) return
+  private bumpRevision(registration: SettingsRegistration, before: unknown, after: unknown): number | undefined {
+    if (deepEqualJson(before, after)) return undefined
     registration.revision += 1
-    this.emitDocumentUpdated(registration.ns, registration.revision)
+    return registration.revision
   }
 
   /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
@@ -761,11 +791,20 @@ export abstract class SettingsProvider extends Service {
     if (invariantFailure !== undefined) throw invariantFailure as Error
   }
 
-  /** Commit a resolved value when changed: swap, notify watchers, emit the event. */
-  private commit(registration: SettingsRegistration, next: unknown, source: SettingsUpdateSource): void {
+  /** Land a changed resolved value and capture the notification to dispatch. */
+  private commit(
+    registration: SettingsRegistration,
+    next: unknown,
+    source: SettingsUpdateSource,
+  ): SettingsCommitNotification | undefined {
     const prev = registration.resolved
-    if (deepEqualJson(next, prev)) return
+    if (deepEqualJson(next, prev)) return undefined
     registration.resolved = next
+    return { registration, next, prev, source }
+  }
+
+  /** Notify watchers and listeners after a resolved value has committed. */
+  private notifyCommit({ registration, next, prev, source }: SettingsCommitNotification): void {
     for (const watcher of [...registration.watchers]) {
       // Serialize per watcher: invocations of one callback run one at a time
       // in commit order, so a slow stale invocation can never apply after a

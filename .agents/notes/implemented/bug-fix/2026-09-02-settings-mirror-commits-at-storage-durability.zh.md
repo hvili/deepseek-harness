@@ -10,7 +10,7 @@ settings 基类只在 provider 的 `persist()` promise resolve 之后才更新�
 
 ## 决策
 
-`SettingsProvider.persist` 现在接收一个幂等的 `commit` 回调，基类 `write()` 在其中落位镜像：文档替换、revision 递增与 `settings/updated` 派发都在 provider 首次持久持有该分区的时刻发生。persist promise resolve 后的兜底调用让从不调用回调的 provider 维持原时序，抽象方法的契约因此是：存储持有该分区时调用 `commit`，否则基类在 `persist` resolve 后提交。`FileSettingsProvider.persistSection` 在 `writeFileAtomic`（使分区持久化的 rename）之后立即调用 `commit()`，位于写锁 unlink 之前。一个存储提交严格早于其 persist promise settle 的 provider 单测锁定了新顺序与兜底的幂等性。
+`SettingsProvider.persist` 接收幂等的 `commit` 与 `notify` 回调。provider 首次持久持有分区时，基类 `write()` 让 `commit` 同步落位原始文档、revision 与解析镜像；`notify` 随后按捕获提交的原顺序分发 `settings/document-updated`、watcher 工作与 `settings/updated`。提供方只在释放任何写锁后调用 `notify`。省略这些调用的提供方由基类在 persist promise settle 后补齐；耐久提交后的后续 settle 即使拒绝，基类也会先发出通知再传播该拒绝。`FileSettingsProvider.persistSection` 在 `writeFileAtomic`（使分区持久化的 rename）后立即调用 `commit()`，并在 `withFileLock` 移除锁后调用 `notify()`。listener 分发仍在文件提供方的操作链内，因此保留其写入间的通知顺序，却不延长跨进程锁持有时间。
 
 ## 备选方案
 
@@ -22,4 +22,4 @@ settings 基类只在 provider 的 `persist()` promise resolve 之后才更新�
 
 ## 后果
 
-镜像与持久化文件不再可能在 rename 到 unlink 的窗口内不一致：从任一来源服务的读者看到相同分区。`settings/updated` 监听器现在在文件 provider 的写锁仍然存在时、共享操作链内部运行——再次写入的监听器与此前完全一样排队在当前操作之后，且该链是 promise 队列而非同步互斥量，重入写不可能死锁。忽略回调的 provider（内存 provider 与测试替身）保持原有计时，已在抽象方法上文档化。settings-chrome 的 boot-theme 用例在此前每轮完整套件运行都间歇失败之后，连续三次完整文件运行全部通过（每次 9/9）。
+镜像与持久化文件不会在 rename 到 unlink 的窗口内不一致：从任一来源服务的读者看到相同分区。同步 settings listener 在写锁消失后运行，其耗时因此不会让第二进程超过 2 s 锁获取期限。同进程操作链仍保留通知顺序，再次写入的 listener 会排在当前操作之后，且不存在同步互斥量。忽略两个回调的 provider 通过基类兜底保留 persist resolve 时序。覆盖用例锁定镜像先于 settle、锁先于 listener 释放、耐久提交后的拒绝行为、revision 顺序与通知幂等性。
