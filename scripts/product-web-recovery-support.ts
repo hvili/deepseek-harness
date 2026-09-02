@@ -40,6 +40,15 @@ const REQUEST_TIMEOUT_MS = 15_000
 const GRACEFUL_STOP_TIMEOUT_MS = 8_000
 const FORCE_STOP_TIMEOUT_MS = 12_000
 const PORT_RELEASE_TIMEOUT_MS = 12_000
+// Mirrors the instance-lock defaults the web-app and desktop-app bundles ship
+// (proper-lockfile stale 15s, 5s refresh) plus a grace margin for mtime
+// precision, so a fresh process always takes over an orphaned lease instead of
+// reporting spurious contention.
+const INSTANCE_LOCK_THRESHOLDS = {
+  staleMs: 15_000,
+  graceMs: 1_000,
+  refreshMs: 5_000,
+} as const
 const SOURCE_HOME_DENY = /(?:^|_)(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|COOKIE|AUTH)(?:_|$)/iu
 
 /** One image reference and its expected bytes in the recovery fixture. */
@@ -1095,6 +1104,35 @@ async function stopWebProcess(
   }
 }
 
+/**
+ * Wait out an orphaned interactive-Host instance lease before a fresh process
+ * reopens the copied home.
+ *
+ * The gate's SIGTERM stop is a hard TerminateProcess on Windows, so the stopped
+ * Web child never runs proper-lockfile's exit hook: its `<home>/
+ * interactive-host.lock` lease directory and owner metadata survive as orphans.
+ * The product's own recovery path for a hard-killed Host is the lease's
+ * staleness takeover (proper-lockfile unlinks a stale lease and re-acquires),
+ * so the fresh-process boundary must wait that window out instead of surfacing
+ * a spurious HostLockContendedError. Where the lease was released (POSIX
+ * graceful exit) the directory is already gone and this returns immediately.
+ * A lease that never goes stale is left for the next spawn to report through
+ * the product's genuine contention path.
+ */
+export async function waitForInstanceLockStale(
+  home: string,
+  thresholds: { staleMs: number; graceMs: number; refreshMs: number } = INSTANCE_LOCK_THRESHOLDS,
+): Promise<void> {
+  const lockDir = join(home, 'interactive-host.lock')
+  const staleAfterMs = thresholds.staleMs + thresholds.graceMs
+  const deadline = Date.now() + staleAfterMs + thresholds.refreshMs
+  while (Date.now() < deadline) {
+    if (!existsSync(lockDir)) return
+    if ((await lstat(lockDir)).mtimeMs + staleAfterMs <= Date.now()) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+}
+
 async function waitForReady(
   child: ChildProcess,
   collector: OutputCollector,
@@ -1301,6 +1339,9 @@ export async function runRecoveryGate(options: RecoveryGateOptions = {}): Promis
     firstRecord.stop = await first.stop()
     first = undefined
 
+    // The hard-killed first Host leaves an orphaned lease on Windows; wait out
+    // its staleness window so the fresh process does not report contention.
+    await waitForInstanceLockStale(copy.home)
     second = await startRecoveryWebProcess(copy, world, options.timeoutMs)
     const secondRecord = { pid: second.pid, port: second.port, ready: second.ready, stop: undefined as ProcessStopEvidence | undefined }
     assertCondition(second.pid !== firstRecord.pid, 'recovery did not cross a fresh process boundary')

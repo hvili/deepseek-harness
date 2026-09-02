@@ -1,13 +1,13 @@
 /** Focused unit checks for the non-destructive Web/Host recovery gate. */
 
-import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
+import { existsSync, utimesSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertRecoverySourceUnchanged, classifySymlinkError, copyRecoveryDataset, createRecoveryFixture,
-  inspectRecoveryDataset, rebaseSessionJsonlForRecovery, snapshotRecoverySource,
+  inspectRecoveryDataset, rebaseSessionJsonlForRecovery, snapshotRecoverySource, waitForInstanceLockStale,
 } from './product-web-recovery-support.ts'
 import {
   encodeSegment, projectDir,
@@ -128,5 +128,64 @@ describe('product Web recovery support', () => {
 
     await expect(inspectRecoveryDataset(fixture.sourceHome, fixture.sourceWorkspace))
       .rejects.toThrow('malformed image attachment reference')
+  })
+})
+
+describe('waitForInstanceLockStale', () => {
+  it('returns immediately when no lease directory exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-absent-'))
+    temporaryRoots.push(root)
+
+    const startedAt = Date.now()
+    await waitForInstanceLockStale(root, { staleMs: 60_000, graceMs: 1_000, refreshMs: 5_000 })
+
+    expect(Date.now() - startedAt).toBeLessThan(100)
+  })
+
+  it('returns immediately when the lease is already stale', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-expired-'))
+    temporaryRoots.push(root)
+    const lockDir = join(root, 'interactive-host.lock')
+    await mkdir(lockDir)
+    const backdated = new Date(Date.now() - 60_000)
+    utimesSync(lockDir, backdated, backdated)
+
+    const startedAt = Date.now()
+    await waitForInstanceLockStale(root, { staleMs: 500, graceMs: 100, refreshMs: 1_000 })
+
+    expect(Date.now() - startedAt).toBeLessThan(100)
+  })
+
+  it('waits out a fresh lease only until its staleness window elapses', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-fresh-'))
+    temporaryRoots.push(root)
+    await mkdir(join(root, 'interactive-host.lock'))
+
+    const startedAt = Date.now()
+    await waitForInstanceLockStale(root, { staleMs: 200, graceMs: 100, refreshMs: 5_000 })
+    const elapsed = Date.now() - startedAt
+
+    expect(elapsed).toBeGreaterThanOrEqual(250)
+    expect(elapsed).toBeLessThan(2_000)
+  })
+
+  it('gives up at the bounded deadline when the lease never goes stale', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lock-stale-live-'))
+    temporaryRoots.push(root)
+    const lockDir = join(root, 'interactive-host.lock')
+    await mkdir(lockDir)
+    const touch = (): void => { utimesSync(lockDir, new Date(), new Date()) }
+    const refresher = setInterval(touch, 200)
+
+    const startedAt = Date.now()
+    try {
+      await waitForInstanceLockStale(root, { staleMs: 1_000, graceMs: 100, refreshMs: 300 })
+    } finally {
+      clearInterval(refresher)
+    }
+    const elapsed = Date.now() - startedAt
+
+    expect(elapsed).toBeGreaterThanOrEqual(1_300)
+    expect(elapsed).toBeLessThan(3_000)
   })
 })
