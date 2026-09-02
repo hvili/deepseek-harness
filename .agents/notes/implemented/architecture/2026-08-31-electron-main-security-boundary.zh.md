@@ -18,6 +18,18 @@ Preload 为兼容 Electron sandbox 使用 CommonJS，仅暴露有类型的 `desk
 
 桌面分发会先运行增强插件检查和官方 Host／Client／Web 构建，因此打包入口与前端资产不会来自过时的局部构建。随后 Desktop build 产出同步 CommonJS bootstrap、ESM Main 和 CommonJS preload，并将 Electron 保持为外部依赖而非打包下载器。结构测试断言路径与 scheme 设置先于 Main 动态导入，以及安全自定义来源、sandbox/context isolation、禁用 node integration、拒绝导航和弹窗、CSP 与窄 contextBridge 表面。既有 carrier、lock、Profile、Bundle、connection 聚焦测试全部通过。打包依赖验证器会拒绝非 AMD64 的 `.node`、`.dll` 和 `.exe` 载荷，再用打包后的 Electron Node 运行时调用 Koffi、经 Sharp 渲染、打开 ConPTY，并执行打包内的 ripgrep 和 Codex。最终 boot probe 会等待真实窗口报告 `app://dsh/index.html`，观测其完整进程树与 TCP listener，关闭窗口，并在接受干净退出前比较 C 盘路径、安装目录及 Harness 的前后元数据。
 
+## 备选方案
+
+**经由 loopback HTTP 监听器服务桌面 UI。** 监听器是桌面壳不得继承的网络表面；内存 `app://dsh` carrier 以零 TCP 监听服务同一组合，boot probe 会在完整进程树上断言这一点。
+
+**关窗后把 Host 留在托盘。** 关闭操作必须终止 Host 而不是隐藏它；壳不带托盘，probe 的有界退出断言锁定了该行为。
+
+**用反引号 YAML scalar 拼写共享锁路径。** 严格 YAML 无法解析它；`!!js dshHomePath('interactive-host')` 保持为 Loader 表达式，在任何读取该文件的地方都能解析。
+
+**打包期间重编 native modules。** electron-builder 复制 node-pty 的 Windows x64 N-API 预编译产物，并经由精确 `optionalDependencies` 解析运行时载荷，而不是在打包路径里引入原生工具链。
+
+**给渲染器宽的 contextBridge 表面。** node integration 保持禁用，preload 仅暴露有类型的 `desktopBridge`；每个逻辑 IPC 请求都先经 Main 验证再转发，渲染器模块不经权威 bridge 合同扩展就无法触达 Electron 权限。
+
 ## 后果
 
 每次升级只要改变任一已审查 optional 包的身份、版本或目标字段，就会在产物获准前使打包失败。完整发布门禁仍需证明 Host 启动、无 TCP 监听、子进程清理和产物哈希。任何渲染器模块都不得新增任意 IPC channel；必须先扩展权威 bridge 合同和 Main 验证。
