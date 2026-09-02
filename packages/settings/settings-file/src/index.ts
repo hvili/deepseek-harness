@@ -181,12 +181,12 @@ export class FileSettingsProvider extends SettingsProvider {
     return doc
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>, commit: () => void): Promise<void> {
     // One document backs every namespace, so writes from different namespace
     // queues serialize with each other and with watcher reloads on the one
     // operation chain: each render must see the text the previous operation
     // committed, or a sibling section silently vanishes from disk.
-    return this.enqueue(() => this.persistSection(ns, section))
+    return this.enqueue(() => this.persistSection(ns, section, commit))
   }
 
   /** Queue one exclusive document operation behind every earlier one. */
@@ -207,7 +207,7 @@ export class FileSettingsProvider extends SettingsProvider {
     })
   }
 
-  private async persistSection(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  private async persistSection(ns: SettingsNamespace, section: Record<string, unknown>, commit: () => void): Promise<void> {
     // The writer lock's exclusive create needs the parent to exist before
     // writeFileAtomic gets its own chance to create it.
     // 0700: the harness home holds user-private documents.
@@ -226,6 +226,11 @@ export class FileSettingsProvider extends SettingsProvider {
       // 0600: a document that may hold personal values is never world-readable.
       await writeFileAtomic(this.spec.filename, output, { mode: 0o600, dirMode: 0o700 })
       this.text = output
+      // The rename above made the section durable on disk; land the in-memory
+      // mirror on that same moment rather than after the lock file's cleanup
+      // unlink, so an index render served between the two never reads the
+      // stale preference (the boot-theme flash on reload).
+      commit()
     })
   }
 

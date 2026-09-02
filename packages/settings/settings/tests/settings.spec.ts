@@ -303,6 +303,44 @@ describe('update', () => {
     await expect(scope.update({ theme: 'light' })).rejects.toThrow(/read-only/)
     expect(provider.persisted).toEqual([])
   })
+
+  it('lands the in-memory mirror at the provider storage commit, not after persist resolves', async () => {
+    // The file provider's rename-then-unlink shape compressed into a gate:
+    // storage commits strictly before the persist promise settles, and a
+    // reader of that moment must already see the next value.
+    const ctx = new Context()
+    let release!: () => void
+    const persistSettled = new Promise<void>((resolve) => { release = resolve })
+    class GatedProvider extends SettingsProvider {
+      get writable(): boolean { return true }
+
+      protected load(): Promise<Record<string, unknown>> {
+        return Promise.resolve({})
+      }
+
+      protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>, commit: () => void): Promise<void> {
+        commit()
+        return persistSettled
+      }
+    }
+    const fiber = ctx.plugin(GatedProvider)
+    await fiber
+    const events = recordUpdates(ctx)
+    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const written = scope.update({ theme: 'light' })
+    await vi.waitFor(() => { expect(scope.get()).toEqual({ theme: 'light', fontSize: 14 }) })
+    expect(events).toEqual([{
+      ns: 'ui-theme',
+      next: { theme: 'light', fontSize: 14 },
+      prev: { theme: 'dark', fontSize: 14 },
+      source: 'update',
+    }])
+    release()
+    await written
+    // The post-persist fallback commit is idempotent: no second emission.
+    expect(events).toHaveLength(1)
+    await fiber.dispose()
+  })
 })
 
 describe('deepEqualJson', () => {

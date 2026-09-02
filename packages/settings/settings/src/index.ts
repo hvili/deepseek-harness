@@ -419,8 +419,18 @@ export abstract class SettingsProvider extends Service {
    * Durably store one namespace's merged user section.
    * @param ns - the namespace being written.
    * @param section - the complete merged user section to store.
+   * @param commit - idempotent sink landing the write in memory; call it
+   *   synchronously with the moment the section first becomes durable in
+   *   storage, so a reader served off that moment (an index render embedding
+   *   the persisted preference) never observes the stale mirror. A provider
+   *   whose storage commits only when the returned promise resolves may
+   *   return without calling it — the base class calls it then.
    */
-  protected abstract persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void>
+  protected abstract persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    commit: () => void,
+  ): Promise<void>
 
   /**
    * Register a namespace schema and receive its owner scope. The registration
@@ -631,17 +641,23 @@ export abstract class SettingsProvider extends Service {
           ? snapshot
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
       const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
-      await this.persist(ns, section)
-      // The write reached storage either way; the cache must say so. Commit
-      // only when this registration is still the namespace owner — a fiber
-      // disposed (or replaced) mid-persist must not receive the notification.
-      this.document[ns] = section
-      // TODO(settings-replacement-resync): Re-resolve any replacement registration
-      // from this persisted section so an old in-flight write cannot leave it stale.
-      if (this.registrations.get(ns) === registration && !this.isStopped()) {
-        this.bumpRevision(registration, current, section)
-        this.commit(registration, next, 'update')
+      let stored = false
+      const commit = (): void => {
+        if (stored) return
+        stored = true
+        // The write reached storage either way; the cache must say so. Commit
+        // only when this registration is still the namespace owner — a fiber
+        // disposed (or replaced) mid-persist must not receive the notification.
+        this.document[ns] = section
+        // TODO(settings-replacement-resync): Re-resolve any replacement registration
+        // from this persisted section so an old in-flight write cannot leave it stale.
+        if (this.registrations.get(ns) === registration && !this.isStopped()) {
+          this.bumpRevision(registration, current, section)
+          this.commit(registration, next, 'update')
+        }
       }
+      await this.persist(ns, section, commit)
+      commit()
     })
     this.writeQueues.set(ns, run)
     return run
