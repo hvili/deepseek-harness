@@ -30,6 +30,7 @@ sync-pack-deps`。electron-builder hook 会复制 Koffi、Sharp、Codex 和 ripg
 验证后，在其旁边写入 `SHA256SUMS.txt`。
 
 最终的打包 boot probe 会打开真实的未封装可执行文件并等待
-`app://dsh/index.html`。若出现 TCP listener、C 盘 Electron 状态、
-`Home`／`DesktopData` 之外的写入、安装目录或 Harness 变化、非零退出，或任何
-已观测到的 Electron、Host、PTY、Codex 进程残留，验证都会失败。
+`app://dsh/index.html`。若出现 TCP listener、四个预设 C 盘 Electron 数据目录被创建、
+`D:\DeepSeek` 下 `Home`／`DesktopData` 之外的意外写入、安装目录或 Harness
+变化、非零退出，或任何已观测到的 Electron、Host、PTY、Codex 进程残留，
+验证都会失败。机器上其他路径不在该 probe 的文件系统覆盖范围内。

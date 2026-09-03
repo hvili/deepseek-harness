@@ -185,7 +185,7 @@ try {
   $harnessDelta = @(Compare-Object -ReferenceObject $harnessBefore -DifferenceObject $harnessAfter)
   Assert-True ($harnessDelta.Count -eq 0) "Harness metadata changed during packaged boot: $($harnessDelta | Select-Object -First 20 | ConvertTo-Json -Compress)"
 
-  Write-Output "desktop packaged boot: $expectedUrl loaded; $($readyTree.Count) Electron processes, zero TCP listeners, bounded clean shutdown, D-drive-only data, and unchanged Harness verified."
+  Write-Output "desktop packaged boot: $expectedUrl loaded; $($readyTree.Count) Electron processes, zero TCP listeners, bounded clean shutdown, no unexpected writes under D:\DeepSeek or to four preset C-drive Electron data paths, and unchanged Harness verified."
 }
 finally {
   $watcher.EnableRaisingEvents = $false
