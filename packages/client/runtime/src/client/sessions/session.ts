@@ -721,7 +721,11 @@ export class Session implements SessionFace {
         this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
       }
     } catch (error) {
-      console.error('[web-runtime] gap repair failed:', error)
+      // A full resync supersedes the repair and its request rode the old connection;
+      // only a failure from the still-current open window is actionable.
+      if (generation === this.openGeneration && this.openState === 'open') {
+        console.error('[web-runtime] gap repair failed:', error)
+      }
     } finally {
       this.stitching = false
     }

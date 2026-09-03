@@ -868,6 +868,27 @@ describe('remaining branches', () => {
     expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([7, 9])
   })
 
+  it('silences a failed gap repair after full resync supersedes its connection generation', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b'))
+    await session.open()
+    const repairPull = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => repairPull.promise
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(9, '洞') })
+    api.onHistory = () => histResponse(plainTurn(6, 1, '新', '代'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const resynced = session.resync()
+      repairPull.reject(new TypeError('Failed to fetch'))
+      await resynced
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(errorSpy).not.toHaveBeenCalled()
+      expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([7, 9])
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('successful cancel leaves no promptError', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b'))
