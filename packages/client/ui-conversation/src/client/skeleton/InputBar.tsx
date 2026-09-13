@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Menu, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -535,6 +535,28 @@ export function InputBar({
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
 
+  // The paperclip attach affordance: a file picker and a folder picker, both
+  // routed through the same validation and intake path as paste and drop.
+  // Clearing each input's value after a pick lets the same file/folder be
+  // chosen again; a cancelled dialog leaves it empty, which intake ignores
+  // without erroring. A `webkitdirectory` picker yields all contained files
+  // (recursively); image media types still get previews, everything else rides
+  // as a raw file card.
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const folderInputRef = useRef<HTMLInputElement | null>(null)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const onPickFiles = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = event.target.files
+    if (files !== null && files.length > 0) intakeImages([...files])
+    event.target.value = ''
+  }
+  const onAttachSelect = (id: string): void => {
+    setAttachMenuOpen(false)
+    if (id === 'folder') folderInputRef.current?.click()
+    else fileInputRef.current?.click()
+  }
+  const attachDisabled = !canAcceptDrop
+
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
@@ -768,6 +790,49 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className={css.fileInput}
+              data-testid="composer-attach-input"
+              onChange={onPickFiles}
+            />
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              {...({ webkitdirectory: '' } as { webkitdirectory?: string })}
+              className={css.fileInput}
+              data-testid="composer-folder-input"
+              onChange={onPickFiles}
+            />
+            <Menu
+              open={attachMenuOpen}
+              side="top"
+              items={[
+                { id: 'files', label: t('input.attachFiles') },
+                { id: 'folder', label: t('input.attachFolder') },
+              ]}
+              onSelect={onAttachSelect}
+              onClose={() => { setAttachMenuOpen(false) }}
+              anchor={(
+                <Tooltip label={t('input.attach')} side="top" delayMs={500}>
+                  <button
+                    type="button"
+                    className={css.add}
+                    aria-label={t('input.attach')}
+                    aria-haspopup="menu"
+                    aria-expanded={attachMenuOpen}
+                    disabled={attachDisabled}
+                    onMouseDown={keepFocus}
+                    onClick={() => { if (!attachDisabled) setAttachMenuOpen(open => !open) }}
+                  >
+                    <IconPaperclipOutline16 size={14} />
+                  </button>
+                </Tooltip>
+              )}
+            />
             <Tooltip label={t('input.commands')} side="top" delayMs={500}>
               <button
                 type="button"

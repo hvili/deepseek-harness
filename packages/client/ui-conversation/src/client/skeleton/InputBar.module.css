@@ -313,6 +313,20 @@
   gap: 12px;
 }
 
+/* Hidden host for the paperclip's file picker. The trigger button owns the
+   affordance; the input stays off-screen but focusable-neutral. */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Attach circle (figma + control): 28px, selector fill, primary glyph. */
 .add {
   display: grid;

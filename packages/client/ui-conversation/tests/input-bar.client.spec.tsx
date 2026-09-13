@@ -1642,4 +1642,31 @@ describe('command launcher chrome and control seats', () => {
     const live = bench({ running: true, permissions })
     expect((live.view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('attach affordance stays visible with file and folder pickers, and a picked file routes through addImages', () => {
+    const addImages = vi.fn(() => null)
+    const { view } = bench({ addImages })
+    const button = view.getByLabelText('添加附件') as HTMLButtonElement
+    expect(button).toBeTruthy()
+    expect(button.disabled).toBe(false)
+    expect(button.querySelector('svg')).toBeTruthy()
+    const fileInput = view.getByTestId('composer-attach-input') as HTMLInputElement
+    expect(fileInput.type).toBe('file')
+    expect(fileInput.multiple).toBe(true)
+    expect(fileInput.hasAttribute('accept')).toBe(false)
+    const folderInput = view.getByTestId('composer-folder-input') as HTMLInputElement
+    expect(folderInput.type).toBe('file')
+    expect(folderInput.multiple).toBe(true)
+    expect(folderInput.hasAttribute('webkitdirectory')).toBe(true)
+    const file = new File([Uint8Array.of(1, 2, 3)], 'notes.txt', { type: 'text/plain' })
+    fireEvent.change(fileInput, { target: { files: [file] } })
+    expect(addImages).toHaveBeenCalledWith([file])
+    cleanup()
+  })
+
+  it('disables the attach button while the composer is locked', () => {
+    const { view } = bench({ disabled: true, addImages: () => null })
+    expect((view.getByLabelText('添加附件') as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+  })
 })
