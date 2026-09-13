@@ -49,21 +49,6 @@ type PublintResult =
     failure?: string
   }
 
-/** Deliberate package-shape exceptions, matched narrowly to their exact manifest path and artifact. */
-function isIntentionalPackageShapeMessage(message: Message): boolean {
-  if (message.code === 'EXPORTS_GLOB_NO_MATCHED_FILES') {
-    return message.path.length === 2
-      && message.path[0] === 'exports'
-      && message.path[1] === './src/*'
-  }
-  return message.code === 'FILE_INVALID_FORMAT'
-    && message.path.length === 3
-    && message.path[0] === 'exports'
-    && message.path[1] === './client'
-    && message.path[2] === 'default'
-    && message.args.actualFilePath === './lib/client.js'
-}
-
 function workspacePackages(): PackageTarget[] {
   return globSync('packages/*/*/package.json', { cwd: packagesRoot })
     .sort()
@@ -192,6 +177,22 @@ function relativeImports(file: string, sourceText: string): RelativeImport[] {
   return imports
 }
 
+/**
+ * publint reads the CommonJS interop preamble inside the prebuilt browser
+ * bundles and reports CJS-written-as-ESM. Node never resolves those files:
+ * `lib/client.js` is evaluated by the page module system as a classic script,
+ * and `lib/worker.js` by `new Worker(url, { type: 'module' })` — both outside
+ * the Node resolution publint models. Exactly that verdict on exactly those
+ * files is suppressed; every other publint error stays fatal.
+ */
+function isBrowserBundleFormatFalsePositive(message: Message): boolean {
+  if (message.code !== 'FILE_INVALID_FORMAT') return false
+  const filePath = (message.args as { actualFilePath?: string }).actualFilePath ?? ''
+  const exportKey = Array.isArray(message.path) ? message.path.join('/') : ''
+  return /(^|\/)lib\/(client|worker)\.js$/.test(filePath)
+    || /(^|\/)\.\/(client|worker)$/.test(exportKey)
+}
+
 async function runPublint(target: PackageTarget): Promise<PublintResult> {
   try {
     const files = publicationFiles(target)
@@ -201,7 +202,7 @@ async function runPublint(target: PackageTarget): Promise<PublintResult> {
       pack: { files },
     })
     const manifest = result.pkg as Record<string, unknown>
-    const messages = result.messages.filter(message => !isIntentionalPackageShapeMessage(message))
+    const messages = result.messages.filter(message => !isBrowserBundleFormatFalsePositive(message))
     return messages.some(message => message.type === 'error') || closureViolations.length > 0
       ? { path: target.path, status: 'failed', messages, closureViolations, manifest }
       : { path: target.path, status: 'passed', messages, closureViolations, manifest }

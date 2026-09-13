@@ -1,44 +1,41 @@
 // Boots the shipped Web composition over the built dist this lane already uses
 // and asserts what that composition produces: the model-visible tool catalog
-// and file-reference guidance plus its retry, sandbox, and approval defaults.
+// and file-reference guidance plus its HTTP, retry, sandbox, and approval defaults.
 // No browser and no model call — these are composition facts, and the browser
 // scenarios in this lane cover the surface itself.
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-// Empty type imports carry the tools/sandboxPolicy/approval Context merges.
-import type {} from '@deepseek-ai/dsh-tools'
+// These imports carry the tools/sandboxPolicy/approval Context merges.
+import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { launchWebScaffold, liveShellToolName, type WebScaffold } from './scaffold.ts'
+import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
 const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
-  './snapshots/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
+  './expected/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
 ))
 
 /**
  * The catalog the shipped Web composition puts in front of the model, minus the
  * ripgrep-dependent pair below. The absences are deliberate, not incidental
  * gaps: the `cordis_*` toolset executes model-written JavaScript that no
- * sandbox row confines, `web_fetch` chooses its own request target, and
- * `mcp_*` servers spawn outside `ctx.shell`. The composition Agent Note owns the
- * rationale and its sources.
+ * sandbox row confines, and `mcp_*` servers spawn outside `ctx.shell`.
+ * `web_fetch` is present because public-address enforcement and one-shot
+ * approval now confine its model-selected request target. The composition
+ * Agent Note owns the rationale and its sources.
  */
 const EXPECTED_TOOLS = [
   'ask_user_question',
-  // The shell row follows the platform: the standard preset disables bash on
-  // win32 and mounts pwsh instead, so the roster asserts whichever this host
-  // ships (sorted below — pwsh lands between list_agents and ralph).
-  liveShellToolName,
+  'bash',
   'create_goal',
   'edit',
   'exit_plan_mode',
@@ -48,6 +45,7 @@ const EXPECTED_TOOLS = [
   'job_list',
   'job_output',
   'list_agents',
+  'present',
   'ralph',
   'read',
   'read_image',
@@ -57,10 +55,11 @@ const EXPECTED_TOOLS = [
   'subagent_fork',
   'todo_write',
   'update_goal',
+  'web_fetch',
   'web_search',
   'workflow',
   'write',
-].sort()
+]
 
 /**
  * `glob` and `grep` come from `dsh-tool-fs-search`, which spawns the PACKAGED
@@ -77,9 +76,15 @@ afterEach(async () => {
   scaffold = undefined
 })
 
-it('assembles the shipped Web catalog, file-reference guidance, retry policy, and confined access default', async () => {
+it('assembles the shipped Web transport, catalog, guidance, and defaults', async () => {
   scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
   const ctx = scaffold.ctx
+  const index = await fetch(`http://127.0.0.1:${String(ctx.webServer.port)}`, {
+    headers: { 'accept-encoding': 'gzip' },
+  })
+  expect(index.headers.get('content-encoding')).toBe('gzip')
+  expect(index.headers.get('vary')).toContain('Accept-Encoding')
+  await index.body?.cancel()
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
@@ -96,7 +101,7 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
       ],
     }
   `)
-  await ctx.settings.update(settingsNamespace('llm-deepseek'), {
+  await ctx.settings.update('llm-deepseek', {
     retryPolicy: { mode: 'always', maxRetries: 5 },
   })
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
@@ -107,7 +112,7 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
       "mode": "always",
     }
   `)
-  await ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+  await ctx.settings.update('llm-pi-ai', {
     providers: {
       openai: {},
       anthropic: { retryPolicy: { mode: 'always' } },
@@ -178,12 +183,31 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
   })
   try {
     expect(scaffold.ctx.commands.list(commandHandle.agent)).toContainEqual({
+      definitionId: '@deepseek-ai/dsh-command-feedback',
       name: 'feedback',
-      description: 'record feedback about this session',
+      description: 'Record feedback about this session',
       input: { hint: '<text>' },
     })
   } finally {
     await commandHandle.dispose()
+  }
+}, 120_000)
+
+it('ships PTC with run_code but without the general workflow SDK binding', async () => {
+  scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
+  const ctx = scaffold.ctx
+  const handle = await ctx.agents.create({
+    sessionId: SessionId('shipped-ptc-composition'),
+    setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'ptc').then(() => undefined),
+  })
+  try {
+    const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+    expect(assembly.tools.map(tool => tool.name)).toEqual([RUN_CODE_NAME])
+    const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
+    expect(sdk).toContain('  ralph: {')
+    expect(sdk).not.toContain('  workflow: {')
+  } finally {
+    await handle.dispose()
   }
 }, 120_000)
 
@@ -197,53 +221,46 @@ it('lets a preset producer reach the background-job registry', async () => {
   })
   try {
     const signal = new AbortController().signal
-    // The platform's shell tool is a preset row and `tasks` is a host
-    // registry; the producer resolves it with `ctx.get`, so a registry hidden
-    // behind a preset realm fails here — with every task control still listed
-    // in the catalog above.
+    // `tool-bash` is a preset row and `tasks` is a host registry; the producer
+    // resolves it with `ctx.get`, so a registry hidden behind a preset realm
+    // fails here — with every task control still listed in the catalog above.
     const started = await ctx.tools.execute({
       signal,
-      callId: CallId('shipped-bash-background'),
-      name: liveShellToolName,
+      callId: ToolCallId('shipped-bash-background'),
+      name: 'bash',
       arguments: {
-        // printf is POSIX-only; Write-Output is the PowerShell spelling of the
-        // same probe text.
-        command: liveShellToolName === 'bash'
-          ? 'printf SHIPPED_BACKGROUND_OK'
-          : 'Write-Output SHIPPED_BACKGROUND_OK',
+        command: 'printf SHIPPED_BACKGROUND_OK',
         description: 'shipped background probe',
         run_in_background: true,
       },
       agent: handle.agent,
     })
-    // The registry issues `<kind>-N` ids and the kind is the live shell's own name.
-    const jobId = `${liveShellToolName}-1`
     expect({ isError: started.isError, content: started.content }).toEqual({
       isError: false,
-      content: [{ type: 'text', text: `started background job ${jobId}` }],
+      content: [{ type: 'text', text: 'started background job bash-1' }],
     })
 
     // The controller reads what the producer started: same registry, one
     // owner. A per-preset registry would list nothing here even on success.
     const listed = await ctx.tools.execute({
       signal,
-      callId: CallId('shipped-task-list'),
+      callId: ToolCallId('shipped-task-list'),
       name: 'job_list',
       arguments: {},
       agent: handle.agent,
     })
     expect(listed.isError).toBe(false)
     expect(listed.content).toEqual([
-      { type: 'text', text: expect.stringContaining(`${jobId} [${liveShellToolName}]`) as unknown as string },
+      { type: 'text', text: expect.stringContaining('bash-1 [bash]') as unknown as string },
     ])
 
     // The full round trip: the output a host-plane producer wrote is collected
     // through a preset-plane control, which is the linkage the realm severed.
     const collected = await ctx.tools.execute({
       signal,
-      callId: CallId('shipped-task-output'),
+      callId: ToolCallId('shipped-task-output'),
       name: 'job_output',
-      arguments: { job_id: jobId, wait: true },
+      arguments: { job_id: 'bash-1', wait: true },
       agent: handle.agent,
     })
     expect(collected.isError).toBe(false)

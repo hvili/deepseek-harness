@@ -1,20 +1,22 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import type { TerminalSendOperation } from '@deepseek-ai/dsh-terminal'
 import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local/src/resolve.ts'
 import * as ptyLocal from '@deepseek-ai/dsh-terminal-bash'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -37,8 +39,8 @@ function stubAgent(ctx: Context, rawId: string): Agent {
   const id = SessionId(rawId)
   const scope = ctx.plugin(() => {})
   const session = Session.create(id)
-  return {
-    id, options: {}, session, inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+  const agent: Agent = {
+    id, options: {}, session, inbox: unsupportedInbox(),
     status: 'idle',
     ctx: scope.ctx,
     send: () => {},
@@ -46,6 +48,7 @@ function stubAgent(ctx: Context, rawId: string): Agent {
     runMaintenance: task => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   }
+  return agent
 }
 
 async function harness(
@@ -60,6 +63,7 @@ async function harness(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(TerminalSessionService)
   await ctx.plugin(PassthroughSandbox)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SandboxPolicyService, { mode, workspaceRoot: root })
   await ctx.plugin(LocalSubprocessRuntime)
   const fiber = await ctx.plugin(ptyLocal, {
@@ -118,6 +122,17 @@ function processIsRunning(pid: number): boolean {
   }
 }
 
+function canReadLinuxProcessSyscall(pid: number): boolean {
+  try {
+    readFileSync(`/proc/${pid}/task/${pid}/syscall`, 'utf8')
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EACCES' || code === 'EPERM') return false
+    throw error
+  }
+}
+
 // The real-shell suite drives a POSIX bash over the actual node-pty terminal;
 // Windows has no bash, and its pwsh counterpart lives in the describe below.
 describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => {
@@ -160,6 +175,31 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     const result = await after.done
     expect(result.waitReason).toBe('stdin_read')
     expect(result.viewport).toContain('healed=[dsh> ]')
+    await ctx.terminals.kill(agent, created.sessionId)
+  }, 20_000)
+
+  it.skipIf(process.platform !== 'linux')('recognizes a foreground read opened through /dev/tty', async () => {
+    const { ctx, root, agent } = await harness('danger-full-access', {
+      idleSilenceMs: 5_000,
+      timeoutMs: 8_000,
+    })
+    const created = await ctx.terminals.spawn(agent, { type: 'shell' })
+    const readerPidFile = join(root, 'tty-reader.pid')
+
+    const waiting = ctx.terminals.startSend(agent, created.sessionId, {
+      text: `bash -c 'exec </dev/tty; printf "%s" "$BASHPID" > "$1"; printf "WAITING\\n"; read -r answer; printf "ANSWER=%s\\n" "$answer"' dsh "${readerPidFile}"`,
+      submit: true,
+    })
+    await waitForOutput(waiting, 'WAITING')
+    const result = await waiting.done
+    const readerPid = Number(readFileSync(readerPidFile, 'utf8'))
+    expect(readerPid).toBeGreaterThan(0)
+    expect(result.waitReason).toBe(canReadLinuxProcessSyscall(readerPid) ? 'stdin_read' : 'inferred_idle')
+
+    const answer = ctx.terminals.startSend(agent, created.sessionId, { text: 'accepted', submit: true })
+    const answered = await answer.done
+    expect(answered.waitReason).toBe('stdin_read')
+    expect(answered.viewport).toContain('ANSWER=accepted')
     await ctx.terminals.kill(agent, created.sessionId)
   }, 20_000)
 
@@ -280,41 +320,45 @@ const hasPwsh = spawnSync(
 ).status === 0
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
-  it('bootstraps a persistent pwsh, persists state, and scrubs secrets', async () => {
+  it.each([false, true])('bootstraps a persistent pwsh, persists state, and scrubs secrets (hold command: %s)', async (holdCommand) => {
     const previous = process.env.DSH_TEST_SECRET
     process.env.DSH_TEST_SECRET = 'must-not-leak'
     try {
       const { ctx, root, agent } = await harness('danger-full-access', {
         idleSilenceMs: 300,
         handoffGraceMs: 300,
-        timeoutMs: 20_000,
+        timeoutMs: 8_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      // POSIX pwsh is driven by the explicit reader loop, which renders the
-      // controlled prompt instead of the native one; Windows retains the
-      // in-session bootstrap whose MOTD is the native prompt banner.
-      expect(created.motd).toContain(process.platform === 'win32' ? 'PS ' : 'dsh> ')
-      expect(created.motd).not.toContain('function prompt')
+      expect(created.motd).toContain('dsh> ')
 
+      const releaseFile = join(root, 'release-command')
+      // Hold the command across the silence settlement without relying on host load.
+      const barrier = holdCommand
+        ? `while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
+        : ''
       const first = ctx.terminals.startSend(agent, created.sessionId, {
-        text: '$env:KEEP = "ok"; Set-Location /',
+        text: barrier + '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
-      // The POSIX explicit-reader loop warms up its console input on the first
-      // command (a one-time ~1.5s delay before the post-command marker), so the
-      // first send can settle on the idle fallback before the marker lands.
-      // Both reasons mean "the session accepted input and is ready again".
-      expectReadyForNextSend((await first.done).waitReason)
-      const second = ctx.terminals.startSend(agent, created.sessionId, {
-        text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
-        submit: true,
-      })
+      expect(['stdin_read', 'inferred_idle']).toContain((await first.done).waitReason)
+      const expected = 'keep=ok cwd=/ secret=END'
+      const command = "Write-Output ('keep={0} cwd={1} secret={2}END' -f $env:KEEP, (Get-Location).Path, $env:DSH_TEST_SECRET)"
+      expect(command).not.toContain(expected)
+      const second = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
       const result = await second.done
-      expect(result.viewport).toContain('keep=ok')
-      expect(result.viewport).toContain('secret=')
-      expect(result.viewport).not.toContain('must-not-leak')
+      expect(['stdin_read', 'inferred_idle']).toContain(result.waitReason)
+      if (holdCommand) {
+        expect(result.waitReason).toBe('inferred_idle')
+        expect(result.viewport).not.toContain(expected)
+        writeFileSync(releaseFile, '')
+      }
 
-      expect(ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text).toContain('keep=ok')
+      // A silence-settled send stops collecting output; scrollback still receives
+      // the command's later output. Only the child can produce this formatted token.
+      const read = () => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text
+      await expect.poll(read, { timeout: 8_000 }).toContain(expected)
+      expect(read()).not.toContain('must-not-leak')
       expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
       expect(ctx.terminals.list(agent)).toEqual([])
     } finally {
@@ -327,7 +371,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     const { ctx, root, agent } = await harness('danger-full-access', {
       idleSilenceMs: 300,
       handoffGraceMs: 300,
-      timeoutMs: 20_000,
+      timeoutMs: 8_000,
     }, 'pwsh')
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
     // The bootstrap itself must have pinned both encodings: the session byte

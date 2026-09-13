@@ -13,8 +13,11 @@
  * in `./types.ts`): such a log was likely written by a newer harness, and
  * silently skipping a required event would reconstruct a wrong session.
  * Downstream (out-of-repo) plugin events are outside this list by
- * construction; a registration surface for them is deferred until such a
- * consumer exists.
+ * construction. The persisted `SessionEvent.ignorable` marker is the
+ * compatibility mechanism; event-name registration was rejected because
+ * it does not classify omission safety and would make reads
+ * composition-dependent. The rationale is in
+ * `.agents/notes/implemented/architecture/2026-08-30-retain-ignorable-external-session-events.md`.
  */
 export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected',
@@ -22,35 +25,40 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'approval/asked',
   'approval/decided',
   'approval/policy',
-  'assistant/chunk',
+  'assistant/attempt',
   'assistant/message',
-  'codex/thread-reference',
-  'codex/thread-start-wal',
   'command/done',
   'command/run',
   'compaction/end',
   'compaction/prune',
   'compaction/start',
   'compaction/summary',
+  'deliverables/presented',
+  'feedback/message-delete',
+  'feedback/message-put',
   'feedback/record',
   'goal/change',
   'hook/invoked',
   'hook/result',
   'llm/retry',
   'llm/retry-started',
+  'model/selection',
   'permission/preset',
-  'plan/approved',
   'plan/mode',
   'request/context',
   'request/header',
   'sandbox/mode',
   'schedule/change',
+  'session-log-deepseek/delivery-accepted',
   'session/end-seed',
   'session/title',
   'session/title-llm-request',
   'step/end',
   'step/start',
+  'subagent/catalog',
   'subagent/descriptor',
+  'subagent/model-selection-policy',
+  'system/message',
   'team/member',
   'team/message/delivered',
   'team/message/queued',
@@ -61,8 +69,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'tool-workflow/run-end',
   'tool-workflow/run-start',
   'tool/call',
-  'tool/code-dispatch',
-  'tool/code-dispatch-start',
+  'tool/ptc-dispatch',
+  'tool/ptc-dispatch-start',
   'tool/result',
   'turn/end',
   'turn/start',

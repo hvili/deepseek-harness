@@ -6,6 +6,7 @@
  * card's save is the single point where a draft becomes a document mutation.
  */
 
+import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './fields.module.css'
 
 /** What every field control needs regardless of its value type. */
@@ -36,28 +37,6 @@ export interface FieldProps {
   onReset: () => void
 }
 
-/** Shared label, override badge, and reset action for editable value fields. */
-function FieldHead(props: Pick<
-  FieldProps,
-  'id' | 'label' | 'overridden' | 'overriddenLabel' | 'resetLabel' | 'disabled' | 'onReset'
->) {
-  return (
-    <div className={css.head}>
-      <label className={css.label} htmlFor={props.id}>{props.label}</label>
-      {props.overridden
-        ? (
-          <span className={css.badges}>
-            <span className={css.badge}>{props.overriddenLabel}</span>
-            <button type="button" className={css.reset} disabled={props.disabled} onClick={props.onReset}>
-              {props.resetLabel}
-            </button>
-          </span>
-        )
-        : null}
-    </div>
-  )
-}
-
 /**
  * A staged value field. `numeric` only hints the keypad: which drafts a field
  * accepts is decided by its spec, so the control never silently rewrites what
@@ -73,7 +52,24 @@ export function ValueField(props: FieldProps & {
 }) {
   return (
     <div className={css.field}>
-      <FieldHead {...props} />
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <Tag tone="neutral">{props.overriddenLabel}</Tag>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
       <input
         id={props.id}
         className={props.invalid ? css.inputInvalid : css.input}
@@ -90,11 +86,6 @@ export function ValueField(props: FieldProps & {
       </p>
     </div>
   )
-}
-
-/** Value field with the numeric keypad hint enabled. */
-export function NumericValueField(props: FieldProps & { placeholder?: string }) {
-  return <ValueField {...props} numeric />
 }
 
 /**
@@ -115,7 +106,7 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
       <div className={css.head}>
         <label className={css.label} htmlFor={props.id}>{props.label}</label>
         <span className={css.badges}>
-          <span className={props.configured ? css.badge : css.badgeMuted}>{props.stateLabel}</span>
+          <Tag tone={props.configured ? 'neutral' : 'quiet'}>{props.stateLabel}</Tag>
         </span>
       </div>
       <input
@@ -128,59 +119,6 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
       <p className={css.hint}>{props.hint}</p>
-    </div>
-  )
-}
-
-/** A checkbox control backed by a boolean CardForm field. */
-export function ToggleField(props: FieldProps) {
-  return (
-    <div className={css.field}>
-      <FieldHead {...props} />
-      <label>
-        <input
-          id={props.id}
-          type="checkbox"
-          checked={props.text === 'true'}
-          disabled={props.disabled}
-          onChange={(event) => { props.onEdit(String(event.target.checked)) }}
-        />
-      </label>
-      <p className={props.invalid ? css.invalid : css.hint}>
-        {props.invalid ? props.invalidLabel : props.hint}
-      </p>
-    </div>
-  )
-}
-
-/** A bounded-choice control backed by a select CardForm field. */
-export function SelectField(props: FieldProps & {
-  /** Selectable option values (also used as the option labels when `optionLabels` is absent). */
-  options: readonly string[]
-  /** Optional display labels aligned with `options`; defaults to the raw values. */
-  optionLabels?: readonly string[]
-}) {
-  return (
-    <div className={css.field}>
-      <FieldHead {...props} />
-      <select
-        id={props.id}
-        className={props.invalid ? css.inputInvalid : css.input}
-        {...props.invalid ? { 'aria-invalid': true } : {}}
-        value={props.text}
-        disabled={props.disabled}
-        onChange={(event) => { props.onEdit(event.target.value) }}
-      >
-        <option value="">{''}</option>
-        {props.options.map((option, index) => (
-          <option key={option} value={option}>
-            {props.optionLabels?.[index] ?? option}
-          </option>
-        ))}
-      </select>
-      <p className={props.invalid ? css.invalid : css.hint}>
-        {props.invalid ? props.invalidLabel : props.hint}
-      </p>
     </div>
   )
 }

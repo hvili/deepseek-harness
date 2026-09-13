@@ -21,22 +21,13 @@
       "path": "../../core/agent"
     },
     {
-      "path": "../../util/brand"
-    },
-    {
       "path": "../../llm/llm"
     },
     {
       "path": "../../sdk/protocol"
     },
     {
-      "path": "../codex-app-server"
-    },
-    {
       "path": "../../core/session"
-    },
-    {
-      "path": "../../session/session-persistence-jsonl"
     },
     {
       "path": "../subagent"
@@ -46,9 +37,6 @@
     },
     {
       "path": "../../util/timeout"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

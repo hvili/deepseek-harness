@@ -13,8 +13,8 @@
  * override equal to the composition default is still an override.
  */
 
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** The write one field's staged text performs when the card is saved. */
 export type FieldWrite =
@@ -141,45 +141,6 @@ export function textField(field: string): CardFieldSpec {
     parse: (text) => {
       const trimmed = text.trim()
       return trimmed === '' ? { kind: 'clear' } : { kind: 'set', value: trimmed }
-    },
-  }
-}
-
-/**
- * A boolean field represented as the strings consumed by the card controls.
- * @param field - the form field key.
- * @returns the boolean card field specification.
- */
-export function booleanField(field: string): CardFieldSpec {
-  return {
-    field,
-    format: value => typeof value === 'boolean' ? String(value) : '',
-    parse: (text) => {
-      const trimmed = text.trim().toLowerCase()
-      if (trimmed === '') return { kind: 'clear' }
-      if (trimmed === 'true') return { kind: 'set', value: true }
-      if (trimmed === 'false') return { kind: 'set', value: false }
-      return undefined
-    },
-  }
-}
-
-/**
- * A bounded-choice field rendered as a native select. An empty draft clears
- * the field; any value outside `options` blocks the save.
- * @param field - field name inside the namespace section.
- * @param options - allowed string values.
- * @returns the field's conversion spec.
- */
-export function selectField(field: string, options: readonly string[]): CardFieldSpec {
-  const allowed = new Set(options)
-  return {
-    field,
-    format: value => typeof value === 'string' && allowed.has(value) ? value : '',
-    parse: (text) => {
-      const trimmed = text.trim()
-      if (trimmed === '') return { kind: 'clear' }
-      return allowed.has(trimmed) ? { kind: 'set', value: trimmed } : undefined
     },
   }
 }

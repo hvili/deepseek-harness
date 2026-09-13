@@ -1,12 +1,13 @@
 /**
  * The workspace domain declaration: record schema and the `defineDomain` spec
- * the registry opens. The zod schema is the durable-boundary validator today
- * and the direct source of the RPC wire projection in a later phase.
+ * the registry opens. The zod schema validates the shipped format at the
+ * durability boundary and is the direct source of a future RPC wire projection.
  * @module @deepseek-ai/dsh-workspace/src/spec
  */
 
 import { z } from 'zod'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceId } from './types.ts'
 
@@ -21,7 +22,7 @@ const workspaceId = z.string().transform(value => value as WorkspaceId)
 export const workspaceRecord = z.object({
   path: z.string(),
   title: z.string(),
-  sessionIds: z.array(z.string().transform(SessionId)),
+  sessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -42,8 +43,7 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
 /**
  * Durable registry state. `initialized` distinguishes a valid empty registry
  * from one that still needs the header-only history bootstrap;
- * `workspaceIds` is the authoritative display order. `archivedSessionIds` and
- * `favoriteSessionIds`, `workspaceTagsById`, and `sessionTagsById` are
+ * `workspaceIds` is the authoritative display order. `archivedSessionIds` is
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
@@ -52,10 +52,7 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
-  archivedSessionIds: z.array(z.string().transform(SessionId)).default([]),
-  favoriteSessionIds: z.array(z.string().transform(SessionId)).default([]),
-  workspaceTagsById: z.record(z.string(), z.array(z.string())).default({}),
-  sessionTagsById: z.record(z.string(), z.array(z.string())).default({}),
+  archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,16 +67,10 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  // This is an additive, defaulted global-state field: old v2 media parses
-  // without a physical-domain migration, so keeping the storage descriptor at
-  // v2 is required for in-place upgrade compatibility.
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: {
-      initialized: false, workspaceIds: [], archivedSessionIds: [], favoriteSessionIds: [],
-      workspaceTagsById: {}, sessionTagsById: {},
-    },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

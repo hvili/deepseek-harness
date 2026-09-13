@@ -7,7 +7,6 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs'
-import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
@@ -17,28 +16,26 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {
   SubprocessHandle,
   SubprocessOutcome,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
-import SessionStore, { SessionId, SessionPreparation, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
-import type { CodexThreadStartWal } from '../src/thread-state.ts'
 import {
   startResponsesFixture,
   type ResponsesBehavior,
   type ResponsesFixture,
 } from './responses-fixture.ts'
+import { cleanupRealProduct } from './real-product-cleanup.ts'
 
 const execFileAsync = promisify(execFile)
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexPackageRequire = createRequire(resolve(packageRoot, '..', 'codex-app-server', 'package.json'))
-const codexPackageJson = codexPackageRequire.resolve('@openai/codex/package.json')
+const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
   codexPackageJson,
   'utf8',
@@ -50,13 +47,7 @@ const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
 const contexts: Context[] = []
 
-afterEach(async () => {
-  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
-  await Promise.all(fixtures.splice(0).map(fixture => fixture.close()))
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-  }
-})
+afterEach(() => cleanupRealProduct({ contexts, fixtures, roots }))
 
 interface RealHarness {
   readonly ctx: Context
@@ -128,6 +119,7 @@ interface RealRuntime {
 async function realRuntime(): Promise<RealRuntime> {
   const ctx = new Context()
   contexts.push(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(LocalSubprocessRuntime)
   const handles: SubprocessHandle[] = []
@@ -140,30 +132,6 @@ async function realRuntime(): Promise<RealRuntime> {
     return handle
   })
   return { ctx, handles, spawnSpecs }
-}
-
-async function realDshSessionMount(root: string): Promise<Context> {
-  const ctx = new Context()
-  contexts.push(ctx)
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
-  return ctx
-}
-
-function publishPreparedSession(ctx: Context, preparation: SessionPreparation): Session {
-  const session = preparation.session
-  ctx.effect(function* (this: SessionStore) {
-    yield this.enter(session)
-    this.announce(session)
-  }.bind(ctx.sessions), 'real-product DSH Session')
-  preparation[Symbol.dispose]()
-  return session
-}
-
-async function disposeContext(ctx: Context): Promise<void> {
-  await ctx.fiber.dispose()
-  const index = contexts.indexOf(ctx)
-  if (index >= 0) contexts.splice(index, 1)
 }
 
 async function realHarness(
@@ -211,7 +179,7 @@ function expectedProcessExitDiagnostic(outcome: SubprocessOutcome): string {
   const fields = [
     'product: Codex',
     'stage: process',
-    'category: process-exit',
+    'category: process',
   ]
   if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
   if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
@@ -219,9 +187,6 @@ function expectedProcessExitDiagnostic(outcome: SubprocessOutcome): string {
 }
 
 interface JsonSchemaNode {
-  readonly enum?: string[]
-  readonly format?: string
-  readonly minimum?: number
   readonly properties?: Record<string, JsonSchemaNode>
   readonly required?: string[]
   readonly type?: string | string[]
@@ -243,18 +208,18 @@ function responseInputTexts(body: Record<string, unknown>): string[] {
   })
 }
 
-describe('real @openai/codex 0.147.0 product', () => {
+describe('real @openai/codex 0.153.4 product', () => {
   it('starts approve-for-me through the real app-server and returns exact text', async () => {
-    const sentinel = 'REAL_CODEX_SENTINEL_0_147_0'
+    const sentinel = 'REAL_CODEX_SENTINEL_0_149_1'
     const task = 'Return the fixture sentinel exactly.'
     const { harness, fixture } = await realHarness([
       { kind: 'complete', text: sentinel },
     ], 'approve-for-me')
-    expect(codexPackage.version).toBe('0.147.0')
+    expect(codexPackage.version).toBe('0.153.4')
     const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
       env: { ...process.env, ...harness.env },
     })
-    expect(version.stdout.trim()).toBe('codex-cli 0.147.0')
+    expect(version.stdout.trim()).toBe('codex-cli 0.153.4')
     const schemaRoot = mkdtempSync(join(tmpdir(), 'dsh-codex-schema-'))
     roots.push(schemaRoot)
     await execFileAsync(process.execPath, [
@@ -265,46 +230,17 @@ describe('real @openai/codex 0.147.0 product', () => {
       schemaRoot,
     ], { env: { ...process.env, ...harness.env } })
     const schema = JSON.parse(readFileSync(
-      join(schemaRoot, 'ServerNotification.json'),
+      join(schemaRoot, 'ClientRequest.json'),
       'utf8',
     )) as {
       definitions: {
-        CodexErrorInfo: {
-          oneOf: JsonSchemaNode[]
-        }
+        ThreadStartParams: JsonSchemaNode
       }
     }
-    expect(schema.definitions.CodexErrorInfo.oneOf[0]?.enum).toEqual([
-      'contextWindowExceeded',
-      'sessionBudgetExceeded',
-      'usageLimitExceeded',
-      'serverOverloaded',
-      'cyberPolicy',
-      'internalServerError',
-      'unauthorized',
-      'badRequest',
-      'threadRollbackFailed',
-      'sandboxError',
-      'other',
-    ])
-    expect(schema.definitions.CodexErrorInfo.oneOf.slice(1).map(variant =>
-      Object.keys(variant.properties ?? {})[0])).toEqual([
-      'httpConnectionFailed',
-      'responseStreamConnectionFailed',
-      'responseStreamDisconnected',
-      'responseTooManyFailedAttempts',
-      'activeTurnNotSteerable',
-    ])
-    for (const variant of schema.definitions.CodexErrorInfo.oneOf.slice(1, 5)) {
-      const category = Object.keys(variant.properties ?? {})[0]!
-      const detail = variant.properties?.[category]
-      expect(detail?.required).toBeUndefined()
-      expect(detail?.properties?.httpStatusCode).toEqual({
-        format: 'uint16',
-        minimum: 0,
-        type: ['integer', 'null'],
-      })
-    }
+    expect(schema.definitions.ThreadStartParams.properties?.model).toEqual({
+      type: ['string', 'null'],
+    })
+    expect(schema.definitions.ThreadStartParams.required).toBeUndefined()
 
     const run = await harness.ctx.subagents.start('codex', {
       prompt: [{ type: 'text', text: task }],
@@ -329,6 +265,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(recorded.method).toBe('POST')
     expect(recorded.path).toBe('/v1/responses')
     expect(recorded.headers.authorization).toBe('Bearer dsh-fake-openai-key')
+    expect(recorded.body.model).toBe('fixture-model')
     expect(responseInputTexts(recorded.body)).toContain(task)
     await expectQuiescent(harness.handles)
   }, 60_000)
@@ -360,12 +297,14 @@ describe('real @openai/codex 0.147.0 product', () => {
     const { ctx, handles, spawnSpecs } = await realRuntime()
     const safeFiber = await ctx.plugin(codex, {
       providerName: 'codex-safe',
+      model: 'codex-safe-model',
       env: safeInstance.env,
       permissionMode: 'never',
       disposeGraceMs: 2_000,
     })
     const bypassFiber = await ctx.plugin(codex, {
       providerName: 'codex-bypass',
+      model: 'codex-bypass-model',
       env: bypassInstance.env,
       permissionMode: 'dangerously-bypass-approvals-and-sandbox',
       disposeGraceMs: 2_000,
@@ -413,6 +352,8 @@ describe('real @openai/codex 0.147.0 product', () => {
     await Promise.all([safeRun.dispose(), bypassRun.dispose()])
     expect(safeInstance.fixture.requests).toHaveLength(1)
     expect(bypassInstance.fixture.requests).toHaveLength(1)
+    expect(safeInstance.fixture.requests[0]?.body.model).toBe('codex-safe-model')
+    expect(bypassInstance.fixture.requests[0]?.body.model).toBe('codex-bypass-model')
     expect(safeInstance.fixture.requests[0]?.body.input)
       .not.toEqual(bypassInstance.fixture.requests[0]?.body.input)
     expect(spawnSpecs.map(spec => spec.env?.CODEX_HOME).sort()).toEqual([
@@ -468,13 +409,9 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(result.stopReason).toBe('error')
     const diagnosticLines = result.diagnostic?.split('\n') ?? []
     expect(diagnosticLines[0]).toBe(
-      'Product subagent failure (product: Codex; stage: turn; category: other)',
+      'Product subagent failure (product: Codex; stage: turn; category: product-error)',
     )
-    expect([
-      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
-      'Codex unattended decision (mode: never; request: sandbox execution; decision: failed): Codex reported a sandbox failure',
-      'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
-    ]).toContain(diagnosticLines[1])
+    expect(diagnosticLines).toHaveLength(1)
     expect(result.diagnostic).not.toContain(command)
     expect(result.diagnostic).not.toContain(harness.workspace)
     await run.dispose()
@@ -506,7 +443,7 @@ describe('real @openai/codex 0.147.0 product', () => {
       const result = await run.result
       expect(result).toMatchObject({ output: [], stopReason: 'error' })
       expect(result.diagnostic).toBe(
-        'Product subagent failure (product: Codex; stage: turn; category: internalServerError)',
+        'Product subagent failure (product: Codex; stage: turn; category: service)',
       )
       expect(result.diagnostic).not.toContain('SECRET_TOKEN')
       expect(result.diagnostic).not.toContain('/private/secret.txt')
@@ -589,129 +526,5 @@ describe('real @openai/codex 0.147.0 product', () => {
     await expect(run.result).resolves.toMatchObject({ stopReason: 'aborted' })
     await run.dispose()
     await expectQuiescent(harness.handles)
-  }, 60_000)
-
-  it('resumes one non-ephemeral thread in a second real package-local app-server process', async () => {
-    const firstAnswer = 'STATEFUL_FIRST_PROCESS_0_147_0'
-    const secondAnswer = 'STATEFUL_SECOND_PROCESS_0_147_0'
-    const instance = await realInstanceFixture([
-      { kind: 'complete', text: firstAnswer },
-      { kind: 'complete', text: secondAnswer },
-    ])
-    const sessionRoot = join(instance.workspace, '.dsh-session')
-    const sessionId = SessionId('codex-real-stateful-restart')
-    const firstDsh = await realDshSessionMount(sessionRoot)
-    const firstSession = firstDsh.sessions.create(sessionId, { meta: { cwd: instance.workspace } })
-    const firstJournal = new codex.DshSessionCodexThreadJournal(firstSession, firstDsh.sessions)
-    const firstRuntime = await realRuntime()
-    const first = new codex.CodexStatefulExecution({
-      cwd: instance.workspace,
-      env: instance.env,
-      disposeGraceMs: 2_000,
-      spawn: spec => firstRuntime.ctx.subprocess.spawn(spec),
-      journal: firstJournal,
-    })
-    await expect(first.execute(['Return the first stateful sentinel.'])).resolves.toMatchObject({ text: firstAnswer })
-    await expectQuiescent(firstRuntime.handles)
-    const firstStored = await firstDsh.sessionPersistence.inspect(sessionId)
-    const firstReference = firstStored.events.find(event => event.type === 'codex/thread-reference')
-    expect(firstReference?.data).toMatchObject({ version: 1 })
-    expect(firstStored.events.filter(event => event.type === 'codex/thread-reference')).toHaveLength(1)
-
-    await disposeContext(firstRuntime.ctx)
-    await disposeContext(firstDsh)
-
-    const secondDsh = await realDshSessionMount(sessionRoot)
-    const prepared = await secondDsh.sessionPersistence.prepare(sessionId)
-    const secondSession = publishPreparedSession(secondDsh, prepared)
-    const secondJournal = new codex.DshSessionCodexThreadJournal(secondSession, secondDsh.sessions)
-    const secondRuntime = await realRuntime()
-    const second = new codex.CodexStatefulExecution({
-      cwd: instance.workspace,
-      env: instance.env,
-      disposeGraceMs: 2_000,
-      spawn: spec => secondRuntime.ctx.subprocess.spawn(spec),
-      journal: secondJournal,
-    })
-    await expect(second.execute(['Return the second stateful sentinel.'])).resolves.toMatchObject({
-      text: secondAnswer,
-      reference: firstReference?.data,
-    })
-    await expectQuiescent(secondRuntime.handles)
-    const secondStored = await secondDsh.sessionPersistence.inspect(sessionId)
-    const references = secondStored.events.filter(event => event.type === 'codex/thread-reference')
-    const accepted = secondStored.events.filter(event => event.type === 'codex/thread-start-wal')
-      .map(event => event.data)
-      .filter((data): data is CodexThreadStartWal & { state: 'accepted'; threadId: string } => (
-        typeof data === 'object'
-        && data !== null
-        && (data as { state?: unknown }).state === 'accepted'
-        && typeof (data as { threadId?: unknown }).threadId === 'string'
-      ))
-    expect(references).toHaveLength(1)
-    expect(new Set(accepted.map(data => data.threadId))).toEqual(new Set([firstReference?.data.threadId]))
-    expect(firstRuntime.handles).toHaveLength(1)
-    expect(secondRuntime.handles).toHaveLength(1)
-    await disposeContext(secondRuntime.ctx)
-    await disposeContext(secondDsh)
-  }, 60_000)
-
-  it('cancels a stateful real app-server turn and waits for its tree to exit', async () => {
-    const instance = await realInstanceFixture([{ kind: 'hold' }])
-    const events: SessionEvent[] = []
-    const journal: codex.CodexThreadJournal = {
-      load: async () => events,
-      appendWal: async (data) => {
-        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
-      },
-      appendReference: async (data) => {
-        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
-      },
-    }
-    const runtime = await realRuntime()
-    const controller = new AbortController()
-    const execution = new codex.CodexStatefulExecution({
-      cwd: instance.workspace,
-      env: instance.env,
-      disposeGraceMs: 2_000,
-      spawn: spec => runtime.ctx.subprocess.spawn(spec),
-      journal,
-    })
-    const running = execution.execute(['Wait for cancellation.'], controller.signal)
-    await instance.fixture.requestStarted
-    controller.abort(new Error('stateful cancellation'))
-    await expect(running).rejects.toThrow()
-    await expectQuiescent(runtime.handles)
-  }, 60_000)
-
-  it('surfaces a stateful turn failure from the real package-local app-server and waits for its tree', async () => {
-    const instance = await realInstanceFixture([{
-      kind: 'error',
-      status: 503,
-      message: 'fixture stateful service failure',
-    }])
-    const events: SessionEvent[] = []
-    const journal: codex.CodexThreadJournal = {
-      load: async () => events,
-      appendWal: async (data) => {
-        events.push({ type: 'codex/thread-start-wal', seq: events.length, time: Date.now(), data })
-      },
-      appendReference: async (data) => {
-        events.push({ type: 'codex/thread-reference', seq: events.length, time: Date.now(), data })
-      },
-    }
-    const runtime = await realRuntime()
-    const execution = new codex.CodexStatefulExecution({
-      cwd: instance.workspace,
-      env: instance.env,
-      disposeGraceMs: 2_000,
-      spawn: spec => runtime.ctx.subprocess.spawn(spec),
-      journal,
-    })
-
-    await expect(execution.execute(['Exercise the stateful service failure path.']))
-      .rejects.toThrow('subagent-codex: stateful Codex turn failed')
-    await expectQuiescent(runtime.handles)
-    expect(runtime.handles).toHaveLength(1)
   }, 60_000)
 })

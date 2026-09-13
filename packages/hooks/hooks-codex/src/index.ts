@@ -4,22 +4,21 @@
  * matchers, snake_case payloads without a trailing newline, no hook environment
  * or command substitution, and no pre-tool approval or rewrite path; only
  * blocking decisions are honored. Shared execution and parsing live in
- * `dsh-hook-protocol`; see the
- * [hook-bridges Agent Note](../../../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md).
+ * `dsh-hook-protocol`.
  * @module @deepseek-ai/dsh-hooks-codex
  */
 
 // Each dialect bridge keeps its complete dependency list visible at the entry
 // point; a cross-package facade for imports alone would add indirection.
 /* jscpd:ignore-start */
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { PostToolDecision, PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import {
   appendHookInvoked,
@@ -34,23 +33,21 @@ import {
   type MatcherGroup,
   type MergedHookOutcome,
 } from '@deepseek-ai/dsh-hook-protocol'
-import { parseCodexConfig, mergeCodexConfigs, defaultCodexHookPaths, type CodexHookConfig } from './config.ts'
+import { parseCodexConfig, type CodexHookConfig } from './config.ts'
 /* jscpd:ignore-end */
 
 export const name = 'hooks-codex'
-export const inject = ['shell']
+export const inject = ['shell', 'sessionProjections']
 
 /** Plugin config: where the Codex hooks.json lives + the model name for payloads. */
 export interface Config {
   /**
-   * Path to a Codex `hooks.json`. Optional: when omitted, the bridge discovers
-   * Codex's standard locations — `<cwd>/.codex/hooks.json` (project, resolved
-   * from the process launch cwd) then `~/.codex/hooks.json` (user), merged with
-   * project hooks running before user hooks. Process-level: read once at load.
+   * Path to a Codex `hooks.json`. Process-level: read once at load, a relative
+   * path resolves against the process launch cwd.
    * TODO(per-session-hook-config): per-session project-local discovery from each
    * `session/new.cwd`.
    */
-  configPath?: string
+  configPath: string
   /** The model name stamped on every payload (Codex includes `model` on each event). */
   model?: string
   /** Default per-hook timeout in ms when a hook sets none (Codex default: 600000). */
@@ -60,7 +57,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  configPath: z.string(),
+  configPath: z.string().required(),
   model: z.string().default(''),
   defaultTimeoutMs: z.number().default(DEFAULT_HOOK_TIMEOUT_MS),
   stderrSummaryMaxChars: z.number().default(DEFAULT_STDERR_SUMMARY_MAX_CHARS),
@@ -86,28 +83,16 @@ export function apply(ctx: Context, config: Config): void {
   assertPositiveInteger('stderrSummaryMaxChars', stderrSummaryMaxChars)
   const defaultTimeoutMs = config.defaultTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
   let parsed: CodexHookConfig = {}
-  // An explicit `configPath` is authoritative: it must exist and parse, and a
-  // failure means "no hooks registered" (the previous behavior). Without one,
-  // discover Codex's standard files; a discovered file that is simply absent is
-  // skipped quietly, while a present-but-invalid file is warned and skipped so
-  // one broken layer never blanks the hooks a user did configure.
-  const layers = config.configPath !== undefined
-    ? [config.configPath]
-    : defaultCodexHookPaths()
-  const explicit = config.configPath !== undefined
-  for (const file of layers) {
-    if (!explicit && !existsSync(file)) continue
-    try {
-      const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
-      const result = parseCodexConfig(raw)
-      for (const s of result.skipped) {
-        ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
-      }
-      parsed = mergeCodexConfigs(parsed, result.config)
-    } catch (error: unknown) {
-      ctx.logger.warn(`hooks-codex: could not load hook config "${file}": ${String(error)} — no hooks registered`)
-      if (explicit) return
+  try {
+    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
+    const result = parseCodexConfig(raw)
+    parsed = result.config
+    for (const s of result.skipped) {
+      ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
     }
+  } catch (error: unknown) {
+    ctx.logger.warn(`hooks-codex: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
+    return
   }
 
   const model = config.model ?? ''
@@ -200,7 +185,7 @@ export function apply(ctx: Context, config: Config): void {
   // hook may miss the first request.
   // TODO(session-start-gating): add a startup gate before promising first-turn delivery.
   ctx.on('agent/session-start', ({ agent, source }) => {
-    detached.track(runPoint('SessionStart', source, { ...base(ctx, agent, 'SessionStart', model), source }, { agent, plainStdoutAsContext: true, signal: detached.signal })
+    detached.track(runPoint('SessionStart', source, { ...base(agent, 'SessionStart', model), source }, { agent, plainStdoutAsContext: true, signal: detached.signal })
       .then((merged) => {
         const context = contextFrom(merged)
         if (context) agent.inject(context)
@@ -213,7 +198,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/pre-step', async ({ agent, messages, turn, signal }, next): Promise<PreStepDecision> => {
     if (messages.length === 0) return next()
     const payload = {
-      ...base(ctx, agent, 'UserPromptSubmit', model),
+      ...base(agent, 'UserPromptSubmit', model),
       turn_id: String(turn),
       prompt: blocksToText(messages.flatMap(message => message.content)),
     }
@@ -230,14 +215,14 @@ export function apply(ctx: Context, config: Config): void {
     const ours = contextFrom(merged)
     if (!ours || downstream.kind !== 'enter') return downstream
     return {
-      kind: 'enter',
+      ...downstream,
       messages: [...downstream.messages, ours],
     }
   })
 
   // PreToolUse → PreToolDecision. Codex blocks only (no allow/ask honored).
   ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
-    const turn = lastTurn(exec.agent)
+    const turn = lastTurn(ctx, exec.agent)
     const merged = await runPoint('PreToolUse', exec.name, preToolPayload(ctx, exec, model), { ...exec.agent ? { agent: exec.agent } : {}, turn, signal: exec.signal })
     /* jscpd:ignore-end */
     if (merged.decision === 'deny') return { kind: 'deny', reason: merged.reason ?? 'blocked by PreToolUse hook' }
@@ -246,7 +231,7 @@ export function apply(ctx: Context, config: Config): void {
 
   // PostToolUse → PostToolDecision (block with feedback, or attach context).
   ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
-    const turn = lastTurn(exec.agent)
+    const turn = lastTurn(ctx, exec.agent)
     /* jscpd:ignore-start */
     const merged = await runPoint('PostToolUse', exec.name, postToolPayload(ctx, exec, result, model), { ...exec.agent ? { agent: exec.agent } : {}, turn, signal: exec.signal })
     const context = contextFrom(merged)
@@ -290,11 +275,10 @@ export function apply(ctx: Context, config: Config): void {
 // These small payload helpers intentionally remain next to the dialect shape;
 // sharing them would pull bridge-only agent/LLM dependencies into hook-protocol.
 /* jscpd:ignore-start */
-function lastTurn(agent: Agent | undefined): number {
+function lastTurn(ctx: Context, agent: Agent | undefined): number {
   if (!agent) return 0
-  const last = [...agent.session.events].findLast(e => e.type === 'turn/start')
-  /* v8 ignore next -- agent-present turnBase callers are tool/stop extension points inside an open turn. */
-  return last?.type === 'turn/start' ? last.data.turn : 0
+  /* v8 ignore next -- agent-present hook points run inside AgentLoop, which owns this projection. */
+  return ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')?.lastTurn ?? 0
 }
 
 function blocksToText(content: ContentBlock[]): string {
@@ -303,12 +287,12 @@ function blocksToText(content: ContentBlock[]): string {
 /* jscpd:ignore-end */
 
 /** Base fields on every Codex payload (no turn_id). */
-function base(ctx: Context, agent: Agent | undefined, event: string, model: string): Record<string, unknown> {
+function base(agent: Agent | undefined, event: string, model: string): Record<string, unknown> {
   return {
     session_id: agent?.session.header.id ?? '',
-    transcript_path: agent === undefined
-      ? null
-      : ctx.get('sessionPersistence')?.locate(agent.session.header)?.path ?? null,
+    // The persistence seam exposes no artifact path; the field stays null
+    // (a durable consumer gap recorded in this package's README).
+    transcript_path: null,
     cwd: agent?.session.header.cwd ?? process.cwd(),
     hook_event_name: event,
     model,
@@ -318,7 +302,7 @@ function base(ctx: Context, agent: Agent | undefined, event: string, model: stri
 
 /** Base + turn_id, for the turn-scoped events (PreToolUse/PostToolUse/UserPromptSubmit/Stop). */
 function turnBase(ctx: Context, agent: Agent | undefined, event: string, model: string): Record<string, unknown> {
-  return { ...base(ctx, agent, event, model), turn_id: String(lastTurn(agent)) }
+  return { ...base(agent, event, model), turn_id: String(lastTurn(ctx, agent)) }
 }
 
 /** Extract a `command` string from a tool call's parsed arguments, else ''. */

@@ -7,7 +7,6 @@
 
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -16,7 +15,7 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
@@ -82,20 +81,6 @@ const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): b
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
-/** Canonical user-managed labels: trimmed, non-blank, unique, and stable-order. */
-function normalizeTags(tags: readonly string[]): string[] {
-  const normalized: string[] = []
-  const seen = new Set<string>()
-  for (const raw of tags) {
-    const tag = raw.trim()
-    if (tag === '' || seen.has(tag)) continue
-    if (tag.length > 64) throw new RangeError('workspace tags must be at most 64 characters')
-    seen.add(tag)
-    normalized.push(tag)
-  }
-  return normalized
-}
-
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
  * one canonical-cwd header index, and completes the one-time history
@@ -113,8 +98,6 @@ export class WorkspaceRegistry extends Service {
   private readonly headers = new Map<SessionId, SessionHeader>()
   private readonly sessionPaths = new Map<SessionId, string>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
-  /** Process-lifetime tombstones stop a detached idle session from resurfacing after its durable record is erased. */
-  private readonly removedSessionIds = new Set<SessionId>()
   private operationTail: Promise<void> = Promise.resolve()
 
   private readonly host: WorkspaceEntityHost = {
@@ -142,11 +125,11 @@ export class WorkspaceRegistry extends Service {
     await this.recoverPendingMutation()
     this.validateStoredState(this.state)
     if (!this.state.initialized) {
-      const headers = await this.ctx.sessionPersistence.list()
+      const headers = await this.listStoredHeaders()
       await this.replaceHeaderIndex(headers)
       await this.bootstrap(headers)
     } else if (this.table.size > 0) {
-      await this.replaceHeaderIndex(await this.ctx.sessionPersistence.list())
+      await this.replaceHeaderIndex(await this.listStoredHeaders())
     }
 
     await this.indexLiveSessions()
@@ -156,19 +139,19 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Create or reuse a workspace for an existing directory. The path is
-   * canonicalized through `fs.realpath`; a nonexistent path rejects with the
-   * original error and a non-directory rejects. Repeated calls for the same
-   * canonical path return the existing entity without changing its title.
+   * Create or reuse a workspace for an existing directory. The fully qualified
+   * path is canonicalized through `fs.realpath`; a relative, nonexistent, or
+   * non-directory path rejects. Repeated calls for the same canonical path
+   * return the existing entity without changing its title.
    * A newly created workspace is prepended to the durable registry order.
    * Different canonical paths may share a display title.
-   * @param path - Existing directory to own, in any path spelling.
+   * @param path - Existing directory to own, in a fully qualified path spelling.
    * @param title - Display title used only when a new record is created.
    * @returns the existing or newly durable workspace.
    */
   // TODO: `title` lost its last production caller when the gateway's
   // create-by-name branch was deleted
-  // (.agents/notes/implemented/simplification/2026-07-31-one-route-to-add-a-workspace.md);
+  // (.agents/notes/archived/simplification/2026-07-31-one-route-to-add-a-workspace.md);
   // drop the parameter with its @param clause and the `create(path, title?)`
   // lines in this package's README pair.
   async create(path: string, title?: string): Promise<Workspace> {
@@ -250,115 +233,6 @@ export class WorkspaceRegistry extends Service {
     return this.requireState().archivedSessionIds
   }
 
-  /** Registry-global durable favorites in user-selected order. */
-  get favoriteSessionIds(): readonly SessionId[] {
-    return this.requireState().favoriteSessionIds
-  }
-
-  /**
-   * Add one existing session to the durable favorites set.
-   * @param sessionId - the session to favorite.
-   * @returns resolves once the favorite is persisted.
-   */
-  favoriteSession(sessionId: SessionId): Promise<void> {
-    return this.enqueueOperation(async () => {
-      if (this.requireState().favoriteSessionIds.includes(sessionId)) return
-      if (!(await this.sessionKnown(sessionId))) throw new WorkspaceUnknownSessionError(sessionId)
-      const state = this.requireState()
-      await this.setState({ ...state, favoriteSessionIds: [...state.favoriteSessionIds, sessionId] })
-    })
-  }
-
-  /**
-   * Remove one session from the durable favorites set.
-   * @param sessionId - the session to unfavorite.
-   * @returns resolves once the favorite is persisted.
-   */
-  unfavoriteSession(sessionId: SessionId): Promise<void> {
-    return this.enqueueOperation(async () => {
-      const state = this.requireState()
-      if (!state.favoriteSessionIds.includes(sessionId)) return
-      await this.setState({ ...state, favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId) })
-    })
-  }
-
-  /**
-   * Durable tags attached to one registered workspace.
-   * @param workspaceId - the workspace to read tags for.
-   * @returns the workspace's tags.
-   */
-  workspaceTags(workspaceId: WorkspaceId): readonly string[] {
-    return this.requireState().workspaceTagsById[workspaceId] ?? []
-  }
-
-  /** Complete workspace tag snapshot for reconnect and cross-client projection. */
-  get workspaceTagsById(): Readonly<Record<string, readonly string[]>> {
-    return this.requireState().workspaceTagsById
-  }
-
-  /**
-   * Durable tags attached to one known session.
-   * @param sessionId - the session to read tags for.
-   * @returns the session's tags.
-   */
-  sessionTags(sessionId: SessionId): readonly string[] {
-    return this.requireState().sessionTagsById[sessionId] ?? []
-  }
-
-  /** Complete session tag snapshot for reconnect and cross-client projection. */
-  get sessionTagsById(): Readonly<Record<string, readonly string[]>> {
-    return this.requireState().sessionTagsById
-  }
-
-  /**
-   * Replace one registered workspace's tag set with normalized user input.
-   * @param workspaceId - the workspace to retag.
-   * @param tags - the normalized tag list.
-   * @returns resolves once the tags are persisted.
-   */
-  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void> {
-    return this.enqueueOperation(async () => {
-      if (!this.entities.has(workspaceId)) throw new WorkspaceOrderInvalidError(workspaceId)
-      const state = this.requireState()
-      const nextTags = normalizeTags(tags)
-      const previous = state.workspaceTagsById[workspaceId] ?? []
-      if (previous.length === nextTags.length && previous.every((tag, index) => tag === nextTags[index])) return
-      const workspaceTagsById = nextTags.length === 0
-        ? Object.fromEntries(Object.entries(state.workspaceTagsById).filter(([id]) => id !== workspaceId))
-        : { ...state.workspaceTagsById, [workspaceId]: nextTags }
-      await this.setState({ ...state, workspaceTagsById })
-    })
-  }
-
-  /**
-   * Replace one known session's tag set with normalized user input.
-   * @param sessionId - the session to retag.
-   * @param tags - the normalized tag list.
-   * @returns resolves once the tags are persisted.
-   */
-  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void> {
-    return this.enqueueOperation(async () => {
-      if (!(await this.sessionKnown(sessionId))) throw new WorkspaceUnknownSessionError(sessionId)
-      const state = this.requireState()
-      const nextTags = normalizeTags(tags)
-      const previous = state.sessionTagsById[sessionId] ?? []
-      if (previous.length === nextTags.length && previous.every((tag, index) => tag === nextTags[index])) return
-      const sessionTagsById = nextTags.length === 0
-        ? Object.fromEntries(Object.entries(state.sessionTagsById).filter(([id]) => id !== sessionId))
-        : { ...state.sessionTagsById, [sessionId]: nextTags }
-      await this.setState({ ...state, sessionTagsById })
-    })
-  }
-
-  /**
-   * Whether this process has permanently deleted the session's durable record.
-   * @param sessionId - The session identity to check.
-   * @returns whether the session's durable record was permanently removed.
-   */
-  isPermanentlyRemoved(sessionId: SessionId): boolean {
-    return this.removedSessionIds.has(sessionId)
-  }
-
   /**
    * Archive one session durably. The session must exist (live or in session
    * persistence); its workspace accounting — or lack of one — is irrelevant.
@@ -380,53 +254,6 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Restore an archived session to its previous grouping position.
-   * @param sessionId - The archived session to unarchive.
-   */
-  unarchiveSession(sessionId: SessionId): Promise<void> {
-    return this.enqueueOperation(async () => {
-      const state = this.requireState()
-      if (!state.archivedSessionIds.includes(sessionId)) return
-      await this.setState({
-        ...state,
-        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-      })
-    })
-  }
-
-  /**
-   * Permanently remove an archived idle session's durable log and all workspace
-   * references. A live in-memory copy may remain until the host restarts, but
-   * it is detached from every workspace and cannot be resumed once its log is
-   * gone. Attachments intentionally remain in their independent store: another
-   * session may still reference the same object.
-   * @param sessionId - The archived session to remove durably.
-   * @returns whether a durable session record was removed.
-   */
-  removeArchivedSession(sessionId: SessionId): Promise<boolean> {
-    return this.enqueueOperation(async () => {
-      const state = this.requireState()
-      if (!state.archivedSessionIds.includes(sessionId)) return false
-      // Delete durable conversation bytes before erasing the sole UI index.
-      // If a later registry write faults, the still-archived id makes a retry
-      // safe and discoverable after restart.
-      await this.ctx.sessionPersistence.remove(sessionId)
-      this.removedSessionIds.add(sessionId)
-      for (const entity of this.entities.values()) await entity.detachSession(sessionId)
-      this.headers.delete(sessionId)
-      this.sessionPaths.delete(sessionId)
-      this.invalidSessionPaths.delete(sessionId)
-      await this.setState({
-        ...state,
-        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-        favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
-        sessionTagsById: Object.fromEntries(Object.entries(state.sessionTagsById).filter(([id]) => id !== sessionId)),
-      })
-      return true
-    })
-  }
-
-  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never
@@ -435,7 +262,7 @@ export class WorkspaceRegistry extends Service {
   private async sessionKnown(id: SessionId): Promise<boolean> {
     if (this.ctx.get('sessions')?.get(id) !== undefined) return true
     if (this.headers.has(id)) return true
-    await this.indexHeaders(await this.ctx.sessionPersistence.list())
+    await this.indexHeaders(await this.listStoredHeaders())
     return this.headers.has(id)
   }
 
@@ -443,7 +270,7 @@ export class WorkspaceRegistry extends Service {
    * Resolve by canonical directory path without creating or mutating a
    * workspace. A missing path rejects during `realpath`; an existing unowned
    * directory returns `undefined`.
-   * @param path - Existing directory path in any spelling.
+   * @param path - Existing directory path in a fully qualified spelling.
    * @returns the workspace owning the canonical path, when one exists.
    */
   async resolveByPath(path: string): Promise<Workspace | undefined> {
@@ -459,7 +286,7 @@ export class WorkspaceRegistry extends Service {
       if (entity.path === canonical) return entity
     }
 
-    const workspaceName = title ?? basename(canonical)
+    const workspaceName = title ?? defaultWorkspaceTitle(canonical)
     const table = this.requireTable()
     const state = this.requireState()
     const id = WorkspaceId(randomUUID())
@@ -502,8 +329,7 @@ export class WorkspaceRegistry extends Service {
       await this.setState({
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
-        archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
-        workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
+        archivedSessionIds: state.archivedSessionIds,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -532,14 +358,10 @@ export class WorkspaceRegistry extends Service {
     const entity = this.entities.get(id)
     if (entity === undefined) return false
     const state = this.requireState()
-    const workspaceTagsById = Object.fromEntries(
-      Object.entries(state.workspaceTagsById).filter(([workspaceId]) => workspaceId !== id),
-    )
     const nextState = {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
-      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
-      workspaceTagsById, sessionTagsById: state.sessionTagsById,
+      archivedSessionIds: state.archivedSessionIds,
     }
     await this.setState({
       ...nextState,
@@ -596,8 +418,7 @@ export class WorkspaceRegistry extends Service {
     await this.setState({
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
-      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
-      workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
+      archivedSessionIds: state.archivedSessionIds,
     })
   }
 
@@ -637,7 +458,7 @@ export class WorkspaceRegistry extends Service {
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
           path: group.path,
-          title: basename(group.path),
+          title: defaultWorkspaceTitle(group.path),
           sessionIds,
           createdAt,
           updatedAt: createdAt,
@@ -680,17 +501,9 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({
-        initialized: false, workspaceIds,
-        archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
-        workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
-      })
+      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
     }
-    await this.setState({
-      initialized: true, workspaceIds,
-      archivedSessionIds: state.archivedSessionIds, favoriteSessionIds: state.favoriteSessionIds,
-      workspaceTagsById: state.workspaceTagsById, sessionTagsById: state.sessionTagsById,
-    })
+    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
@@ -775,6 +588,12 @@ export class WorkspaceRegistry extends Service {
     }
   }
 
+  /** Every stored session's header, projected from the persistence snapshot listing. */
+  private async listStoredHeaders(): Promise<SessionHeader[]> {
+    const snapshots = await this.ctx.sessionPersistence.list()
+    return snapshots.map(snapshot => snapshot.header)
+  }
+
   private async indexLiveSessions(): Promise<void> {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) return
@@ -807,7 +626,7 @@ export class WorkspaceRegistry extends Service {
     const cached = this.headers.get(id)
     if (cached !== undefined) return cached
 
-    const headers = await this.ctx.sessionPersistence.list()
+    const headers = await this.listStoredHeaders()
     await this.indexHeaders(headers)
     const header = this.headers.get(id)
     if (header === undefined) {

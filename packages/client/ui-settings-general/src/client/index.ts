@@ -7,23 +7,25 @@
  * Feature-owned rows and sections stay with their features.
  * Export discipline: packages/client/AGENTS.md.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: pulls the ctx.remote merge and its fixed Host facts.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings slot declarations plus the ctx.settingsScope Context
 // merge. Cross-plugin collaboration goes through the service, never a value
 // import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls ctx.locale into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
 import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
-import { DiagnosticsSection } from './DiagnosticsSection.tsx'
-import { createDiagnosticsStore } from './diagnostics-store.ts'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
@@ -55,7 +57,7 @@ const NS = 'settings'
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registrations depend on their slots through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -64,16 +66,15 @@ export const inject = ['slots', 'locale', 'connection', 'settingsScope']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')
+  const connection = ctx.get('connection') as ConnectionHandle
 
   // Copy freshness is framework-owned: components read the standard `t`
   // seat, and the nav label is a thunk the owner resolves per render — no
   // locale/change re-registration wiring.
   const t = ctx.locale.bind(NS)
-  const connection = ctx.get('connection') as ConnectionHandle
-  // The action follows the shared describe mirror, whose owning plugin
-  // already refreshes it on document commits and reconnects.
-  const documentController = connection.isLoopback
-    ? new SettingsDocumentStore(connection.api, ctx.settingsScope.describe())
+  // The shared SettingsScope mirror updates after document commits and reconnects.
+  const documentController = ctx.remote.$host.isLoopback
+    ? new SettingsDocumentStore(ctx, ctx.settingsScope.describe())
     : undefined
   const documentInjected = documentController === undefined
     ? undefined
@@ -93,7 +94,9 @@ export function apply(ctx: ClientContext): void {
   let onboardingVersion = -1
   let onboardingSteps: readonly SettingsOnboardingStep[] = []
   const shellInjected = (): SettingsRootInjected => ({
+    reconnect: () => { connection.reconnect() },
     hooks: {
+      connectionState: connection.state,
       sections: {
         getSnapshot: () => {
           const version = ctx.slots.getVersion('settings.section')
@@ -142,6 +145,7 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.slots.inject('sidebar.settings', () => ctx.slots.register({
     name: 'sidebar.settings',
+    locale: NS,
     children: {
       'settings.trigger': { kind: 'single', scope: 'root' },
       'settings.header': { kind: 'single', scope: 'root' },
@@ -176,46 +180,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
-
-  // Diagnostics section: the "我是谁、由什么组成" surface. It mirrors the same
-  // host-description identity as the General version row, plus the observable
-  // capability assembly snapshot (the runtime's slot-seam tree). The assembly
-  // service is optional — compositions without the runtime render the section
-  // with an empty assembly rather than fail.
-  const diagnosticsStore = createDiagnosticsStore()
-  const assembly = ctx.get('assembly')
-  let boundDiagnostics: BoundActions<typeof diagnosticsStore> | undefined
-  const syncDiagnostics = (): void => {
-    const description = connection.hostDescription.getSnapshot()
-    const snapshot = assembly?.getSnapshot()
-    boundDiagnostics?.sync({
-      status: description === undefined ? 'idle' : 'ready',
-      version: description?.version ?? '',
-      commit: description?.commit,
-      buildHash: description?.buildHash,
-      schemaVersion: description?.schemaVersion,
-      seams: snapshot?.seams ?? [],
-      seamCount: snapshot?.seamCount ?? 0,
-      occupantCount: snapshot?.occupantCount ?? 0,
-    })
-  }
-  ctx.effect(() => connection.hostDescription.subscribe(syncDiagnostics),
-    'ui-settings-general: diagnostics host-description subscription')
-  if (assembly !== undefined) {
-    ctx.effect(() => assembly.subscribe(syncDiagnostics),
-      'ui-settings-general: diagnostics assembly subscription')
-  }
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'diagnostics',
-    order: 5,
-    label: () => t('diagnostics.nav'),
-    locale: NS,
-    store: diagnosticsStore,
-    inject: (actions) => {
-      boundDiagnostics = actions
-      syncDiagnostics()
-      return {}
-    },
-  }, DiagnosticsSection))
 }

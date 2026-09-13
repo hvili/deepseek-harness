@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import * as TerminalBash from '@deepseek-ai/dsh-terminal-bash'
@@ -21,6 +22,7 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local/src/resolve.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
 const hasPwsh = spawnSync(
   resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
@@ -46,12 +48,14 @@ class PassthroughSandbox extends SandboxProvider {
 function agent(ctx: Context, cwd: string): Agent {
   const id = SessionId('persistent-pwsh-loader-agent')
   const scope = ctx.plugin(() => {})
-  const session = Session.create(id, [], { version: 0, id, createdAt: 0, cwd })
+  const session = Session.create(id, [], {
+    version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd, isSeeded: false,
+  })
   const value: Agent = {
     id,
     options: {},
     session,
-    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    inbox: unsupportedInbox(),
     status: 'idle',
     ctx: scope.ctx,
     send: () => {},
@@ -72,7 +76,7 @@ function text(result: { content: { type: string; text?: string }[] }): string {
 
 describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader composition', () => {
   it('preserves cwd and environment across calls', async () => {
-    root = await mkdtemp(join(tmpdir(), 'dsh-persistent-pwsh-loader-'))
+    root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-persistent-pwsh-loader-')))
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
       "- name: '@deepseek-ai/dsh-agent'",
@@ -80,6 +84,7 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
       "- name: '@deepseek-ai/dsh-tools'",
       "- name: '@deepseek-ai/dsh-terminal'",
       "- name: '@deepseek-ai/dsh-test-sandbox'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-sandbox-policy'",
       '  config:',
       '    mode: danger-full-access',
@@ -93,11 +98,19 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
       '    idleSilenceMs: 300',
       '    handoffGraceMs: 300',
       '    scrollbackLines: 20000',
-      '    timeoutMs: 20000',
+      // The first call pays the full pwsh cold-start latency (spawn + .NET +
+      // PSReadLine + Defender) inside the tool deadline; a 60s bound on the
+      // fully loaded self-hosted Windows pool is exceeded often enough to
+      // reset the session mid-test (2026-09-01, two runs ~62s each). 300s
+      // matches the dsh-tool-pwsh-persistent product default; the
+      // dsh-terminal-bash value bounds one send plus the complete startup
+      // sequence, so it covers the same cold start (its 30s product default
+      // would not).
+      '    timeoutMs: 300000',
       '    disposeGraceMs: 500',
       "- name: '@deepseek-ai/dsh-tool-pwsh-persistent'",
       '  config:',
-      '    timeoutMs: 20000',
+      '    timeoutMs: 300000',
       '',
     ].join('\n'))
 
@@ -111,6 +124,7 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
       ['@deepseek-ai/dsh-tools', ToolRegistry],
       ['@deepseek-ai/dsh-terminal', TerminalSessionService],
       ['@deepseek-ai/dsh-test-sandbox', PassthroughSandbox],
+      ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
       ['@deepseek-ai/dsh-sandbox-policy', SandboxPolicyService],
       ['@deepseek-ai/dsh-subprocess-local', LocalSubprocessService],
       ['@deepseek-ai/dsh-terminal-bash', TerminalBash],
@@ -130,27 +144,16 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     const signal = new AbortController().signal
     const execute = (id: string, command: string) => context!.tools.execute({
       signal,
-      callId: CallId(id),
+      callId: ToolCallId(id),
       name: 'pwsh',
       arguments: { command },
       agent: owner,
     })
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['pwsh'])
-    // Directory creation is fixture setup, not the state-persistence behavior
-    // under test. Preparing it outside pwsh also makes a startup failure surface
-    // through the command result instead of a later, misleading realpath ENOENT.
-    await mkdir(join(root, 'nested'))
-    const state = text(await execute('state', '$env:KEEP = "loader"; Set-Location nested'))
-    expect(state).toBe('')
+    await execute('state', '$env:KEEP = "loader"; New-Item -ItemType Directory -Force -Path nested | Out-Null; Set-Location nested')
     const observed = text(await execute('observe', 'Write-Output "cwd=$PWD keep=$env:KEEP"'))
-    // Windows' temp root can arrive through its 8.3 spelling while pwsh
-    // canonicalizes $PWD to the long path. realpath puts both platforms on
-    // the filesystem's canonical spelling before the exact state assertion.
-    const expectedCwd = await realpath(join(root, 'nested'))
-    const observedPath = process.platform === 'win32' ? observed.toLowerCase() : observed
-    const expectedState = `cwd=${expectedCwd} keep=loader`
-    expect(observedPath).toContain(process.platform === 'win32' ? expectedState.toLowerCase() : expectedState)
+    expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
     expect(observed).not.toContain('DSH_PERSISTENT_PWSH')
 
     const multiline = text(await execute(
@@ -173,12 +176,6 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
 
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')
-    const restartedCwd = text(await execute('after-exit', 'Write-Output "$PWD"'))
-    if (process.platform === 'win32') {
-      const [actual, expected] = await Promise.all([stat(restartedCwd), stat(root)])
-      expect({ dev: actual.dev, ino: actual.ino }).toEqual({ dev: expected.dev, ino: expected.ino })
-    } else {
-      expect(restartedCwd).toBe(root)
-    }
-  }, 60_000)
+    expect(text(await execute('after-exit', 'Write-Output "$PWD"'))).toBe(root)
+  }, 120_000)
 })

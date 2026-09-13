@@ -144,7 +144,7 @@ function emitPluginDisposed(context: Context, fiber: Fiber) {
  * config threw; `UNLOADING` — disposers are running; `DISPOSED` — the fiber
  * was removed and cannot restart.
  */
-export enum FiberState {
+export const enum FiberState {
   PENDING,
   LOADING,
   ACTIVE,
