@@ -7,6 +7,10 @@
  * description, and lets the ordinary text model continue. The replacement is
  * therefore both model-visible and durable in the session log.
  *
+ * A session whose own model natively accepts image input is left untouched:
+ * native vision has priority, and the proxy is only the fallback for text-only
+ * routes — enabling it never converts a natively vision-capable request.
+ *
  * @module @deepseek-ai/dsh-vision-proxy
  */
 
@@ -18,6 +22,7 @@ import type {
   ContentBlock,
   GenerateOptions,
   ImageBlock,
+  LlmResolvedModelInfo,
   StreamChunk,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -355,9 +360,33 @@ export function apply(ctx: Context, config: Config): void {
     /* v8 ignore stop */
   })
 
-  ctx.on('agent/pre-step', async ({ messages, signal }, next): Promise<PreStepDecision> => {
+  ctx.on('agent/pre-step', async ({ agent, messages, signal }, next): Promise<PreStepDecision> => {
     const resolved = resolveConfig(current())
     if (!resolved.enabled || !messages.some(message => contentHasImage(message.content))) return next()
+    // Native vision has priority: when the session's own model accepts image
+    // input, the image rides that model's vision path untouched. The proxy is
+    // the fallback for text-only routes only, so enabling it never converts
+    // (and thereby degrades) a natively vision-capable request. The adapter
+    // gate in apiproxy's session.prompt already opted text-only sessions in;
+    // this guard is what keeps a native route free of proxy preprocessing.
+    const { provider, model } = agent.options
+    if (provider !== undefined && model !== undefined) {
+      // Best-effort native-capability check. It is a static metadata read (no
+      // turn signal) so an abort racing it cannot block preprocessing; when
+      // the route resolves as image-capable the message rides it untouched,
+      // and a route we cannot classify passes through — the adapter reports
+      // the authoritative fate.
+      let mainInfo: LlmResolvedModelInfo
+      try {
+        mainInfo = await ctx.llm.resolveModelInfo(provider, model)
+      } catch (error) {
+        // The reason is a diagnostic for the operator; the route is one we
+        // cannot classify, so the message passes through untouched.
+        void error
+        return next()
+      }
+      if (mainInfo.inputModalities === undefined || mainInfo.inputModalities.includes('image')) return next()
+    }
     const transformed: UserMessage[] = []
     for (const message of messages) {
       transformed.push(await transformMessage(ctx, resolved, message, signal, descriptionCache))

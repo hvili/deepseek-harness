@@ -71,13 +71,17 @@ class ResponseAdapter extends FixtureAdapter {
   constructor(
     private readonly chunks: readonly StreamChunk[],
     private readonly beforeStream?: (options: GenerateOptions) => void | Promise<void>,
-    private readonly modalities: readonly ('text' | 'image')[] = ['text', 'image'],
+    private readonly modalities: readonly ('text' | 'image')[] = ['text'],
   ) {
     super()
   }
 
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-    return Promise.resolve({ provider, id: model, name: model, inputModalities: this.modalities })
+    // The vision route must accept images so the description call reaches the
+    // stream (and can fail there); the main route defaults to text-only so the
+    // proxy path is the one under test.
+    const modalities = provider === DEFAULT_VISION_PROVIDER ? ['text', 'image'] as const : this.modalities
+    return Promise.resolve({ provider, id: model, name: model, inputModalities: modalities })
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -223,29 +227,16 @@ describe('vision-proxy composition', () => {
     await ctx.root.fiber.dispose()
   })
 
-  it('passes the original image through when errorMode is pass and the vision call fails', async () => {
+  it('skips the vision proxy when the main model already accepts images', async () => {
+    // PassThroughMainAdapter resolves the main route as image-capable and its
+    // vision route as down. Native vision must win: no description call is
+    // attempted and the original image reaches the main model untouched.
     const adapter = new PassThroughMainAdapter()
-    const ctx = await harness(adapter, { errorMode: 'pass' })
-    const agent = ctx.agentLoop.create(SessionId('vision-proxy-pass'), { provider: 'text', model: 'text' })
-    const idle = waitForIdle(ctx, agent)
-    agent.followup(createUserMessage({
-      content: [{
-        type: 'image',
-        attachment: {
-          attachmentId: AttachmentId('fixture-image-pass'),
-          mediaType: 'image/png',
-          bytes: 1,
-          width: 1,
-          height: 1,
-        },
-      }],
-      source: { kind: 'user' },
-    }))
-    await idle
-    // The vision request failed, but the original image still reaches the main model.
-    expect(adapter.requests).toHaveLength(2)
-    expect(adapter.requests[0]?.provider).toBe(DEFAULT_VISION_PROVIDER)
-    expect(adapter.requests[1]?.messages[0]?.content.some(block => block.type === 'image')).toBe(true)
+    const ctx = await harness(adapter)
+    const original = imageMessage('native-image')
+    const decision = await intercept(ctx, [original])
+    expect(decision).toMatchObject({ kind: 'enter', messages: [original] })
+    expect(adapter.requests.length).toBe(0)
     await ctx.root.fiber.dispose()
   })
 
@@ -412,9 +403,12 @@ describe('vision-proxy composition', () => {
       await streamCtx.root.fiber.dispose()
 
       const duringResolve = new AbortController()
+      // The race under test is the auxiliary vision resolution: aborting on a
+      // non-vision route resolve would fire on the proxy's own native-capability
+      // check instead and change what the pass-through is proving.
       class ResolveRaceAdapter extends ResponseAdapter {
         override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-          duringResolve.abort(new Error('cancel during resolve'))
+          if (provider === DEFAULT_VISION_PROVIDER) duringResolve.abort(new Error('cancel during resolve'))
           return super.resolveModel(provider, model)
         }
       }
