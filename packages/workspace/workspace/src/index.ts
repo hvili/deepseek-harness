@@ -62,6 +62,74 @@ export class WorkspaceOrderInvalidError extends Error {
   }
 }
 
+/** A tag list exceeded the stored-shape limits (too many tags or one too long). */
+export class WorkspaceTagLimitError extends Error {
+  /**
+   * @param reason - Which bound was crossed.
+   */
+  constructor(readonly reason: 'too-many-tags' | 'tag-too-long') {
+    super(`tag list rejected: ${reason}`)
+    this.name = 'WorkspaceTagLimitError'
+  }
+}
+
+/** A set-tags request named a workspace absent from the durable registry. */
+export class WorkspaceUnknownWorkspaceError extends Error {
+  /**
+   * @param workspaceId - The unknown workspace id.
+   */
+  constructor(readonly workspaceId: WorkspaceId) {
+    super(`cannot tag unknown workspace '${workspaceId}'`)
+    this.name = 'WorkspaceUnknownWorkspaceError'
+  }
+}
+
+/** Upper bound on one target's stored tag list. */
+export const MAX_WORKSPACE_TAGS = 24
+
+/** Upper bound on one stored tag's length in UTF-16 code units. */
+export const MAX_WORKSPACE_TAG_LENGTH = 64
+
+/**
+ * Normalize one proposed tag list: trim surrounding whitespace, drop blanks,
+ * dedupe case-sensitively preserving first occurrence, and enforce the
+ * list-count and per-tag length bounds.
+ * @param tags - proposed tag strings.
+ * @returns the normalized list, in input order.
+ * @throws WorkspaceTagLimitError when a bound is crossed.
+ */
+export function normalizeWorkspaceTags(tags: readonly string[]): string[] {
+  const normalized: string[] = []
+  for (const raw of tags) {
+    const tag = raw.trim()
+    if (tag === '') continue
+    if (tag.length > MAX_WORKSPACE_TAG_LENGTH) throw new WorkspaceTagLimitError('tag-too-long')
+    if (!normalized.includes(tag)) normalized.push(tag)
+    if (normalized.length === MAX_WORKSPACE_TAGS) {
+      if (tags.some(candidate => candidate.trim() !== '' && !normalized.includes(candidate.trim()))) {
+        throw new WorkspaceTagLimitError('too-many-tags')
+      }
+      break
+    }
+  }
+  return normalized
+}
+
+/** Replace one id's entry in a durable tag map; an empty list removes the entry. */
+function withTags(
+  map: Readonly<Record<string, readonly string[]>>,
+  id: string,
+  tags: readonly string[],
+): Record<string, string[]> {
+  const next: Record<string, string[]> = {}
+  for (const [key, list] of Object.entries(map)) {
+    if (key === id) continue
+    next[key] = [...(list ?? [])]
+  }
+  if (tags.length > 0) next[id] = [...tags]
+  return next
+}
+
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -254,6 +322,109 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * The registry-global favorites set: sessions the operator marked for quick
+   * recall. A pure annotation — it never affects accounting, order, or
+   * visibility anywhere.
+   * @returns the favorite session ids in favoriting order.
+   */
+  get favoriteSessionIds(): readonly SessionId[] {
+    return this.requireState().favoriteSessionIds
+  }
+
+  /**
+   * Mark one session as a favorite durably. The session must exist (live or in
+   * session persistence); an already-favorited id resolves without writing.
+   * @param sessionId - The session to favorite.
+   * @returns resolution after durability.
+   */
+  favoriteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (this.requireState().favoriteSessionIds.includes(sessionId)) return
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId)
+      }
+      const state = this.requireState()
+      await this.setState({ ...state, favoriteSessionIds: [...state.favoriteSessionIds, sessionId] })
+    })
+  }
+
+  /**
+   * Unmark one favorite session durably. An absent id resolves without
+   * writing: removal needs no existence proof, so unfavorite stays available
+   * even after the underlying session log disappeared.
+   * @param sessionId - The session to unfavorite.
+   * @returns resolution after durability.
+   */
+  unfavoriteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.favoriteSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * The durable Session tag map: ordered tag lists per Session id, detached
+   * from registry-owned records so a tag never implies membership.
+   * @returns a copy of the Session id to tags map.
+   */
+  get sessionTagsById(): Readonly<Record<string, readonly string[]>> {
+    const tags = this.requireState().sessionTagsById
+    return Object.fromEntries(Object.entries(tags).map(([id, list]) => [id, [...list]]))
+  }
+
+  /**
+   * The durable Workspace tag map: ordered tag lists per Workspace id.
+   * @returns a copy of the Workspace id to tags map.
+   */
+  get workspaceTagsById(): Readonly<Record<string, readonly string[]>> {
+    const tags = this.requireState().workspaceTagsById
+    return Object.fromEntries(Object.entries(tags).map(([id, list]) => [id, [...list]]))
+  }
+
+  /**
+   * Replace one Session's complete tag list durably. The session must exist
+   * (live or in session persistence); a normalized empty list removes the
+   * entry so the map stays compact.
+   * @param sessionId - The tagged Session.
+   * @param tags - proposed tag list; normalized before durability.
+   * @returns the normalized stored list.
+   */
+  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.enqueueOperation(async () => {
+      const normalized = normalizeWorkspaceTags(tags)
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId)
+      }
+      const state = this.requireState()
+      await this.setState({ ...state, sessionTagsById: withTags(state.sessionTagsById, sessionId, normalized) })
+      return normalized
+    })
+  }
+
+  /**
+   * Replace one Workspace's complete tag list durably. The workspace must
+   * exist; a normalized empty list removes the entry.
+   * @param workspaceId - The tagged Workspace.
+   * @param tags - proposed tag list; normalized before durability.
+   * @returns the normalized stored list.
+   */
+  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.enqueueOperation(async () => {
+      const normalized = normalizeWorkspaceTags(tags)
+      if (this.entities.get(workspaceId) === undefined) {
+        throw new WorkspaceUnknownWorkspaceError(workspaceId)
+      }
+      const state = this.requireState()
+      await this.setState({ ...state, workspaceTagsById: withTags(state.workspaceTagsById, workspaceId, normalized) })
+      return normalized
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never
@@ -330,6 +501,9 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
+        favoriteSessionIds: state.favoriteSessionIds,
+        sessionTagsById: state.sessionTagsById,
+        workspaceTagsById: state.workspaceTagsById,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -362,6 +536,9 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
+      favoriteSessionIds: state.favoriteSessionIds,
+      sessionTagsById: state.sessionTagsById,
+      workspaceTagsById: state.workspaceTagsById,
     }
     await this.setState({
       ...nextState,
@@ -419,6 +596,9 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
+      favoriteSessionIds: state.favoriteSessionIds,
+      sessionTagsById: state.sessionTagsById,
+      workspaceTagsById: state.workspaceTagsById,
     })
   }
 
@@ -501,9 +681,23 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({
+        initialized: false,
+        workspaceIds,
+        archivedSessionIds: state.archivedSessionIds,
+        favoriteSessionIds: state.favoriteSessionIds,
+        sessionTagsById: state.sessionTagsById,
+        workspaceTagsById: state.workspaceTagsById,
+      })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+      favoriteSessionIds: state.favoriteSessionIds,
+      sessionTagsById: state.sessionTagsById,
+      workspaceTagsById: state.workspaceTagsById,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {

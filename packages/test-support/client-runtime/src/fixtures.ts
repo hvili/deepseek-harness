@@ -110,6 +110,9 @@ export function workspaceSnapshot(): WorkspaceSnapshot {
   return {
     items: [],
     archivedSessionIds: [],
+    favoriteSessionIds: [],
+    sessionTagsById: {},
+    workspaceTagsById: {},
     state: 'idle',
     phase: 'ready',
     error: null,

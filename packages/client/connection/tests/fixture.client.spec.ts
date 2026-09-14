@@ -1362,6 +1362,9 @@ describe('createFixtureApi', () => {
     expect(await readWorkspaceBaseline(api.workspaceRemote)).toEqual({
       items: [],
       archivedSessionIds: [],
+      favoriteSessionIds: [],
+      sessionTagsById: {},
+      workspaceTagsById: {},
     })
 
     const made = await api.workspace.create(req({ path: '/tmp/fixture-workspaces/nova' }))

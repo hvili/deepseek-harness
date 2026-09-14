@@ -254,7 +254,7 @@ describe('WorkspaceController follow', () => {
     const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'baseline',
-      value: { items: [], archivedSessionIds: [] },
+      value: { items: [], archivedSessionIds: [], favoriteSessionIds: [], sessionTagsById: {}, workspaceTagsById: {} },
     })
 
     const first = await controller.create({ path: stageDir(root, 'first') })

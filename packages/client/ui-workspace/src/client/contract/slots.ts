@@ -134,6 +134,20 @@ export type WorkspaceBrowserInjected = {
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
+  /** Add a Session to the durable registry-global favorites set. */
+  favoriteSession: (sessionId: SessionId) => Promise<void>
+  /** Remove a Session from the durable registry-global favorites set. */
+  unfavoriteSession: (sessionId: SessionId) => Promise<void>
+  /**
+   * Replace one Session's complete durable tag list (host-normalized:
+   * trimmed, deduped, bounded; empty removes the entry).
+   */
+  setSessionTags: (sessionId: SessionId, tags: readonly string[]) => Promise<readonly string[]>
+  /**
+   * Replace one Workspace's complete durable tag list (host-normalized;
+   * empty removes the entry).
+   */
+  setWorkspaceTags: (workspaceId: WorkspaceId, tags: readonly string[]) => Promise<readonly string[]>
   /**
    * Reorder a session inside its Workspace account (DOM-insertBefore
    * semantics: omitted anchor appends to the end). The view refreshes from

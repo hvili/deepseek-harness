@@ -84,6 +84,22 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     request: WorkspaceArchiveSessionRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
     Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
+  onFavoriteSession: (
+    request: import('../src/types.ts').WorkspaceFavoriteSessionRequest,
+  ) => Promise<RemoteResult<import('../src/types.ts').WorkspaceFavoriteValue>> = request =>
+    Promise.resolve(remoteOk({ favoriteSessionIds: [request.sessionId] }))
+  onUnfavoriteSession: (
+    request: import('../src/types.ts').WorkspaceUnfavoriteSessionRequest,
+  ) => Promise<RemoteResult<import('../src/types.ts').WorkspaceFavoriteValue>> = () =>
+    Promise.resolve(remoteOk({ favoriteSessionIds: [] }))
+  onSetSessionTags: (
+    request: import('../src/types.ts').WorkspaceSetSessionTagsRequest,
+  ) => Promise<RemoteResult<import('../src/types.ts').WorkspaceSessionTagsValue>> = request =>
+    Promise.resolve(remoteOk({ sessionTagsById: { [request.sessionId]: [...request.tags] } }))
+  onSetWorkspaceTags: (
+    request: import('../src/types.ts').WorkspaceSetWorkspaceTagsRequest,
+  ) => Promise<RemoteResult<import('../src/types.ts').WorkspaceWorkspaceTagsValue>> = request =>
+    Promise.resolve(remoteOk({ workspaceTagsById: { [request.workspaceId]: [...request.tags] } }))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -115,6 +131,34 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     return this.onArchiveSession(request)
   }
 
+  favoriteSession(
+    request: import('../src/types.ts').WorkspaceFavoriteSessionRequest,
+  ): Promise<RemoteResult<import('../src/types.ts').WorkspaceFavoriteValue>> {
+    this.record('favoriteSession', request)
+    return this.onFavoriteSession(request)
+  }
+
+  unfavoriteSession(
+    request: import('../src/types.ts').WorkspaceUnfavoriteSessionRequest,
+  ): Promise<RemoteResult<import('../src/types.ts').WorkspaceFavoriteValue>> {
+    this.record('unfavoriteSession', request)
+    return this.onUnfavoriteSession(request)
+  }
+
+  setSessionTags(
+    request: import('../src/types.ts').WorkspaceSetSessionTagsRequest,
+  ): Promise<RemoteResult<import('../src/types.ts').WorkspaceSessionTagsValue>> {
+    this.record('setSessionTags', request)
+    return this.onSetSessionTags(request)
+  }
+
+  setWorkspaceTags(
+    request: import('../src/types.ts').WorkspaceSetWorkspaceTagsRequest,
+  ): Promise<RemoteResult<import('../src/types.ts').WorkspaceWorkspaceTagsValue>> {
+    this.record('setWorkspaceTags', request)
+    return this.onSetWorkspaceTags(request)
+  }
+
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
 
   private record(method: string, request: unknown): void {
@@ -131,7 +175,7 @@ function baseline(
   items: readonly WorkspaceView[] = [],
   archivedSessionIds: readonly SessionId[] = [],
 ): void {
-  model.replaceBaseline({ items, archivedSessionIds })
+  model.replaceBaseline({ items, archivedSessionIds, favoriteSessionIds: [], sessionTagsById: {}, workspaceTagsById: {} })
 }
 
 describe('ClientWorkspaceModel', () => {

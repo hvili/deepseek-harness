@@ -2,16 +2,17 @@
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
  * time->ellipsis, action buttons) are CSS-only. Row ... menus are visual-only
- * except workspace Rename/Delete and session Rename/Fork/Archive; the session
- * and workspace hover cards are suppressed while a menu is open.
+ * except workspace Rename/Delete/Edit-tags and session
+ * Rename/Fork/Archive/Favorite/Edit-tags; the session and workspace hover
+ * cards are suppressed while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
   IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
-  StateDot,
+  IconPlusOutline16, IconStarFill16, IconStarOutline16, IconTagOutline16,
+  IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
@@ -114,7 +115,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
-  actions?: { rename: () => void; delete: () => void } | undefined
+  actions?: { rename: () => void; delete: () => void; editTags?: () => void } | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
@@ -128,6 +129,9 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
+    ...(actions?.editTags === undefined
+      ? []
+      : [{ id: 'editTags', label: t('menu.editTags'), icon: <IconTagOutline16 /> }]),
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
   const ownRow = (
@@ -154,6 +158,11 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
       </span>
       <span className={css.projectText}>
         <span className={css.title}>{label}</span>
+        {group.tags.length > 0 && (
+          <span className={css.tagRow}>
+            {group.tags.map(tag => <span className={css.tag} key={tag}>{tag}</span>)}
+          </span>
+        )}
       </span>
       <span className={css.rowActions}>
         {actions !== undefined && (
@@ -165,9 +174,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
               setMenuOpen(false)
               // Unknown ids leave before the dispatch: a future menu row must
               // not inherit the destructive branch as an else fallback.
-              /* v8 ignore next -- Menu can emit only the rename and delete rows supplied above. */
-              if (id !== 'rename' && id !== 'delete') return
+              /* v8 ignore next -- Menu can emit only the rows supplied above. */
+              if (id !== 'rename' && id !== 'delete' && id !== 'editTags') return
               if (id === 'rename') actions.rename()
+              else if (id === 'editTags') actions.editTags?.()
               else actions.delete()
             }}
             portal
@@ -330,6 +340,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
   onOpen: (id: SearchResultNode['id']) => void
   t: RowTranslate
 }) {
+  /* v8 ignore next -- result rows always arrive with the annotation fields from the derivation. */
   const selected = result.id === currentId
   const statuses = sessionStatuses(result, t)
   const primaryStatus = statuses[0]
@@ -348,6 +359,16 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
           )}
         </span>
         <span className={css.searchResultTitle}>{result.title}</span>
+        {result.tags.length > 0 && (
+          <span className={css.tagRow}>
+            {result.tags.map(tag => <span className={css.tag} key={tag}>{tag}</span>)}
+          </span>
+        )}
+        {result.favorite && (
+          <span className={css.favoriteMark} role="img" aria-label={t('favorite.aria')}>
+            <IconStarFill16 size={12} />
+          </span>
+        )}
         {result.hasActiveSchedule && <ActiveScheduleIndicator t={t} search />}
       </span>
       <span className={css.searchResultMeta}>
@@ -377,7 +398,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal,
+  onFavorite, onEditTags, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -389,6 +411,10 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Change durable favorites membership (row menu action). */
+  onFavorite?: (id: SessionNode['id'], favorite: boolean) => void
+  /** Open the browser-owned tag editor for this session (row menu action). */
+  onEditTags?: (id: SessionNode['id'], currentTags: readonly string[]) => void
   /** Scroll this row into view after search navigation, then acknowledge it. */
   onReveal?: (() => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
@@ -416,6 +442,16 @@ export function SessionNodeItem({
   const sessionMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+    ...(onFavorite === undefined
+      ? []
+      : [{
+        id: 'favorite',
+        label: node.favorite ? t('menu.unfavoriteSession') : t('menu.favoriteSession'),
+        icon: node.favorite ? <IconStarFill16 /> : <IconStarOutline16 />,
+      }]),
+    ...(onEditTags === undefined
+      ? []
+      : [{ id: 'editTags', label: t('menu.editTags'), icon: <IconTagOutline16 /> }]),
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -465,6 +501,16 @@ export function SessionNodeItem({
         </span>
       )}
       <span className={css.title}>{title}</span>
+      {row.tags.length > 0 && (
+        <span className={css.tagRow}>
+          {row.tags.map(tag => <span className={css.tag} key={tag}>{tag}</span>)}
+        </span>
+      )}
+      {!row.blank && row.favorite && (
+        <span className={css.favoriteMark} role="img" aria-label={t('favorite.aria')}>
+          <IconStarFill16 size={12} />
+        </span>
+      )}
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -481,6 +527,8 @@ export function SessionNodeItem({
               setMenuOpen(false)
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
+              if (id === 'favorite') onFavorite?.(node.id, !row.favorite)
+              if (id === 'editTags') onEditTags?.(node.id, row.tags)
               if (id === 'archive') onArchive(node.id)
             }}
             portal

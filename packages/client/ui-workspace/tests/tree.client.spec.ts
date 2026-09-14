@@ -396,6 +396,8 @@ describe('deriveSearchResults', () => {
         {
           id: titleHit.id,
           title: 'Needle title',
+          favorite: false,
+          tags: [],
           workspace: 'Alpha',
           running: false,
           runningSubagentCount: 0,
@@ -407,6 +409,8 @@ describe('deriveSearchResults', () => {
         {
           id: workspaceHit.id,
           title: 'Ordinary title',
+          favorite: false,
+          tags: [],
           workspace: 'Needle Workspace',
           running: false,
           runningSubagentCount: 0,
@@ -416,6 +420,8 @@ describe('deriveSearchResults', () => {
         {
           id: contentHit.id,
           title: 'content-hit',
+          favorite: false,
+          tags: [],
           workspace: 'c',
           running: false,
           runningSubagentCount: 0,

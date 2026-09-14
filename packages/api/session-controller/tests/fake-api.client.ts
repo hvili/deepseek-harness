@@ -165,6 +165,9 @@ export class FakeApiClient {
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
     items: [],
     archivedSessionIds: [],
+    favoriteSessionIds: [],
+    sessionTagsById: {},
+    workspaceTagsById: {},
   }
   lastSearchSignal: AbortSignal | undefined
 
@@ -193,6 +196,32 @@ export class FakeApiClient {
 
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+
+  onWorkspaceFavoriteSession: (payload: unknown) => Promise<RemoteResult<{ favoriteSessionIds: SessionId[] }>> =
+    payload => Promise.resolve(ok({ favoriteSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+
+  onWorkspaceUnfavoriteSession: (payload: unknown) => Promise<RemoteResult<{ favoriteSessionIds: SessionId[] }>> =
+    () => Promise.resolve(ok({ favoriteSessionIds: [] }))
+
+  onWorkspaceSetSessionTags: (
+    payload: unknown,
+  ) => Promise<RemoteResult<{ sessionTagsById: Record<string, string[]> }>> =
+    payload => Promise.resolve(ok({
+      sessionTagsById: {
+        [(payload as { sessionId: SessionId }).sessionId]:
+          (payload as { tags: string[] }).tags.map(tag => tag.trim()).filter(tag => tag !== ''),
+      },
+    }))
+
+  onWorkspaceSetWorkspaceTags: (
+    payload: unknown,
+  ) => Promise<RemoteResult<{ workspaceTagsById: Record<string, string[]> }>> =
+    payload => Promise.resolve(ok({
+      workspaceTagsById: {
+        [(payload as { workspaceId: string }).workspaceId]:
+          (payload as { tags: string[] }).tags.map(tag => tag.trim()).filter(tag => tag !== ''),
+      },
+    }))
 
   /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
   sessionRemotes(): RuntimeRemotes {
@@ -271,6 +300,26 @@ export class FakeApiClient {
           'workspace.archiveSession',
           payload,
           this.onWorkspaceArchiveSession(payload),
+        ),
+        favoriteSession: payload => this.record(
+          'workspace.favoriteSession',
+          payload,
+          this.onWorkspaceFavoriteSession(payload),
+        ),
+        unfavoriteSession: payload => this.record(
+          'workspace.unfavoriteSession',
+          payload,
+          this.onWorkspaceUnfavoriteSession(payload),
+        ),
+        setSessionTags: payload => this.record(
+          'workspace.setSessionTags',
+          payload,
+          this.onWorkspaceSetSessionTags(payload),
+        ),
+        setWorkspaceTags: payload => this.record(
+          'workspace.setWorkspaceTags',
+          payload,
+          this.onWorkspaceSetWorkspaceTags(payload),
         ),
         follow: signal => this.openWorkspace(signal),
       },

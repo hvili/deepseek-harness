@@ -359,6 +359,19 @@ interface WorkspaceInsertSessionBeforeRequest {
 }
 interface WorkspaceArchiveSessionRequest { readonly sessionId: SessionId }
 interface WorkspaceArchiveValue { readonly archivedSessionIds: readonly SessionId[] }
+interface WorkspaceFavoriteSessionRequest { readonly sessionId: SessionId }
+interface WorkspaceUnfavoriteSessionRequest { readonly sessionId: SessionId }
+interface WorkspaceFavoriteValue { readonly favoriteSessionIds: readonly SessionId[] }
+interface WorkspaceSetSessionTagsRequest {
+  readonly sessionId: SessionId
+  readonly tags: readonly string[]
+}
+interface WorkspaceSetWorkspaceTagsRequest {
+  readonly workspaceId: WorkspaceId
+  readonly tags: readonly string[]
+}
+interface WorkspaceSessionTagsValue { readonly sessionTagsById: Readonly<Record<string, readonly string[]>> }
+interface WorkspaceWorkspaceTagsValue { readonly workspaceTagsById: Readonly<Record<string, readonly string[]>> }
 
 type WorkspaceFollowFrame =
   | {
@@ -366,12 +379,18 @@ type WorkspaceFollowFrame =
     readonly value: {
       readonly items: readonly WorkspaceView[]
       readonly archivedSessionIds: readonly SessionId[]
+      readonly favoriteSessionIds: readonly SessionId[]
+      readonly sessionTagsById: Readonly<Record<string, readonly string[]>>
+      readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>
     }
   }
   | { readonly type: 'upsert'; readonly workspace: WorkspaceView }
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
   | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | { readonly type: 'favorites'; readonly favoriteSessionIds: readonly SessionId[] }
+  | { readonly type: 'sessionTags'; readonly sessionTagsById: Readonly<Record<string, readonly string[]>> }
+  | { readonly type: 'workspaceTags'; readonly workspaceTagsById: Readonly<Record<string, readonly string[]>> }
 
 interface FixtureWorkspaceApi {
   create(request: WorkspaceCreateRequest): Promise<ConnectionRpcResult<WorkspaceCreateValue>>
@@ -380,6 +399,10 @@ interface FixtureWorkspaceApi {
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<ConnectionRpcResult<WorkspaceOrderValue>>
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<ConnectionRpcResult<WorkspaceValue>>
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
+  favoriteSession(request: WorkspaceFavoriteSessionRequest): Promise<ConnectionRpcResult<WorkspaceFavoriteValue>>
+  unfavoriteSession(request: WorkspaceUnfavoriteSessionRequest): Promise<ConnectionRpcResult<WorkspaceFavoriteValue>>
+  setSessionTags(request: WorkspaceSetSessionTagsRequest): Promise<ConnectionRpcResult<WorkspaceSessionTagsValue>>
+  setWorkspaceTags(request: WorkspaceSetWorkspaceTagsRequest): Promise<ConnectionRpcResult<WorkspaceWorkspaceTagsValue>>
 }
 
 interface FixtureWorkspace {
@@ -2002,15 +2025,38 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
+  // Registry-global favorites and durable tag maps, mirroring the host.
+  const favoriteSessionIds: SessionId[] = []
+  let sessionTagsById: Record<string, string[]> = {}
+  let workspaceTagsById: Record<string, string[]> = {}
   const workspaceSnapshot = (workspace: FixtureWorkspace): WorkspaceView => ({
     ...workspace,
     sessionIds: [...workspace.sessionIds],
   })
+  const tagSnapshot = (map: Readonly<Record<string, string[]>>): Record<string, readonly string[]> =>
+    Object.fromEntries(Object.keys(map).sort().map(key => [key, [...map[key] ?? []]]))
+  /** Replace one id's entry in a tag map; an empty list removes the entry. */
+  const setTagEntry = (
+    map: Readonly<Record<string, string[]>>,
+    id: string,
+    tags: readonly string[],
+  ): Record<string, string[]> => {
+    const next: Record<string, string[]> = {}
+    for (const [key, list] of Object.entries(map)) {
+      if (key === id) continue
+      next[key] = [...(list ?? [])]
+    }
+    if (tags.length > 0) next[id] = [...tags]
+    return next
+  }
   const workspaceBaseline = (): Extract<WorkspaceFollowFrame, { type: 'baseline' }> => ({
     type: 'baseline',
     value: {
       items: workspaces.map(workspaceSnapshot),
       archivedSessionIds: [...archivedSessionIds],
+      favoriteSessionIds: [...favoriteSessionIds],
+      sessionTagsById: tagSnapshot(sessionTagsById),
+      workspaceTagsById: tagSnapshot(workspaceTagsById),
     },
   })
 
@@ -3803,6 +3849,55 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
     },
+    favoriteSession: (request) => {
+      if (summaryOf(request.sessionId) === undefined) {
+        return sessionErr({
+          code: 'session/not-found',
+          message: `no session ${request.sessionId}`,
+          details: { sessionId: request.sessionId },
+        })
+      }
+      if (!favoriteSessionIds.includes(request.sessionId)) {
+        favoriteSessionIds.push(request.sessionId)
+        emitWorkspace({ type: 'favorites', favoriteSessionIds: [...favoriteSessionIds] })
+      }
+      return sessionOk({ favoriteSessionIds: [...favoriteSessionIds] })
+    },
+    unfavoriteSession: (request) => {
+      const index = favoriteSessionIds.indexOf(request.sessionId)
+      if (index !== -1) {
+        favoriteSessionIds.splice(index, 1)
+        emitWorkspace({ type: 'favorites', favoriteSessionIds: [...favoriteSessionIds] })
+      }
+      return sessionOk({ favoriteSessionIds: [...favoriteSessionIds] })
+    },
+    setSessionTags: (request) => {
+      if (summaryOf(request.sessionId) === undefined) {
+        return sessionErr({
+          code: 'session/not-found',
+          message: `no session ${request.sessionId}`,
+          details: { sessionId: request.sessionId },
+        })
+      }
+      const normalized = [...new Set(request.tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+      sessionTagsById = setTagEntry(sessionTagsById, request.sessionId, normalized)
+      emitWorkspace({ type: 'sessionTags', sessionTagsById: tagSnapshot(sessionTagsById) })
+      return sessionOk({ sessionTagsById: tagSnapshot(sessionTagsById) })
+    },
+    setWorkspaceTags: (request) => {
+      const workspace = workspaces.find(w => w.workspaceId === request.workspaceId)
+      if (workspace === undefined) {
+        return sessionErr({
+          code: 'workspace/not-found',
+          message: `no workspace ${request.workspaceId}`,
+          details: { workspaceId: request.workspaceId },
+        })
+      }
+      const normalized = [...new Set(request.tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+      workspaceTagsById = setTagEntry(workspaceTagsById, request.workspaceId, normalized)
+      emitWorkspace({ type: 'workspaceTags', workspaceTagsById: tagSnapshot(workspaceTagsById) })
+      return sessionOk({ workspaceTagsById: tagSnapshot(workspaceTagsById) })
+    },
   }
 
   const rpc: ClientConnectionRpc = {
@@ -3996,6 +4091,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        case 'workspace/favoriteSession': return workspaceApi.favoriteSession(
+          request as WorkspaceFavoriteSessionRequest,
+        )
+        case 'workspace/unfavoriteSession': return workspaceApi.unfavoriteSession(
+          request as WorkspaceUnfavoriteSessionRequest,
+        )
+        case 'workspace/setSessionTags': return workspaceApi.setSessionTags(
+          request as WorkspaceSetSessionTagsRequest,
+        )
+        case 'workspace/setWorkspaceTags': return workspaceApi.setWorkspaceTags(
+          request as WorkspaceSetWorkspaceTagsRequest,
+        )
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }

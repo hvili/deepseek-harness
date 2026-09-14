@@ -366,3 +366,33 @@
     transition: none;
   }
 }
+
+/* Durable tag chips: one row of bounded capsules after the row title. */
+.tagRow {
+  display: inline-flex;
+  gap: 4px;
+  overflow: hidden;
+  flex: none;
+  max-width: 100%;
+}
+
+.tag {
+  display: inline-block;
+  max-width: 84px;
+  overflow: hidden;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Durable favorites marker: filled star pinned after the title/tags. */
+.favoriteMark {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-state-warn-primary);
+}

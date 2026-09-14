@@ -6,7 +6,9 @@ import {
   WorkspaceId,
   WorkspaceMoveInvalidError,
   WorkspaceOrderInvalidError,
+  WorkspaceTagLimitError,
   WorkspaceUnknownSessionError,
+  WorkspaceUnknownWorkspaceError,
 } from '@deepseek-ai/dsh-workspace'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
@@ -17,11 +19,18 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceFavoriteSessionRequest,
+  WorkspaceFavoriteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceSessionTagsValue,
+  WorkspaceSetSessionTagsRequest,
+  WorkspaceSetWorkspaceTagsRequest,
+  WorkspaceUnfavoriteSessionRequest,
   WorkspaceValue,
+  WorkspaceWorkspaceTagsValue,
 } from './types.ts'
 
 /** Implements Workspace mutations against the authoritative registry. */
@@ -160,6 +169,76 @@ export class WorkspaceCommands {
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
   }
 
+  /**
+   * Add one known Session to the registry-global favorites set.
+   * @param request - Session identity to favorite.
+   * @returns the complete resulting favorites set.
+   */
+  async favoriteSession(request: WorkspaceFavoriteSessionRequest): Promise<WorkspaceFavoriteValue> {
+    try {
+      await this.ctx.workspaceRegistry.favoriteSession(request.sessionId)
+    } catch (error) {
+      if (!(error instanceof WorkspaceUnknownSessionError)) throw error
+      throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+    }
+    return { favoriteSessionIds: [...this.ctx.workspaceRegistry.favoriteSessionIds] }
+  }
+
+  /**
+   * Remove one Session from the registry-global favorites set.
+   * @param request - Session identity to unfavorite.
+   * @returns the complete resulting favorites set.
+   */
+  async unfavoriteSession(request: WorkspaceUnfavoriteSessionRequest): Promise<WorkspaceFavoriteValue> {
+    await this.ctx.workspaceRegistry.unfavoriteSession(request.sessionId)
+    return { favoriteSessionIds: [...this.ctx.workspaceRegistry.favoriteSessionIds] }
+  }
+
+  /**
+   * Replace one Session's complete tag list.
+   * @param request - Session identity and proposed tags.
+   * @returns the complete resulting Session tag map.
+   */
+  async setSessionTags(request: WorkspaceSetSessionTagsRequest): Promise<WorkspaceSessionTagsValue> {
+    try {
+      await this.ctx.workspaceRegistry.setSessionTags(request.sessionId, request.tags)
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownSessionError) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      if (error instanceof WorkspaceTagLimitError) {
+        throw new RemoteError('workspace/invalid-tags', error.message, { reason: error.reason }, { cause: error })
+      }
+      throw error
+    }
+    return { sessionTagsById: copyTags(this.ctx.workspaceRegistry.sessionTagsById) }
+  }
+
+  /**
+   * Replace one Workspace's complete tag list.
+   * @param request - Workspace identity and proposed tags.
+   * @returns the complete resulting Workspace tag map.
+   */
+  async setWorkspaceTags(request: WorkspaceSetWorkspaceTagsRequest): Promise<WorkspaceWorkspaceTagsValue> {
+    try {
+      await this.ctx.workspaceRegistry.setWorkspaceTags(request.workspaceId, request.tags)
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownWorkspaceError) {
+        throw new RemoteError(
+          'workspace/not-found',
+          error.message,
+          { workspaceId: request.workspaceId },
+          { cause: error },
+        )
+      }
+      if (error instanceof WorkspaceTagLimitError) {
+        throw new RemoteError('workspace/invalid-tags', error.message, { reason: error.reason }, { cause: error })
+      }
+      throw error
+    }
+    return { workspaceTagsById: copyTags(this.ctx.workspaceRegistry.workspaceTagsById) }
+  }
+
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {
     const workspace = this.ctx.workspaceRegistry.get(WorkspaceId(workspaceId))
     if (workspace === undefined) throw workspaceNotFound(workspaceId)
@@ -171,6 +250,11 @@ export class WorkspaceCommands {
     this.operationTail = result.then(() => undefined, () => undefined)
     return result
   }
+}
+
+/** Detach one durable tag map into fresh arrays for Remote transport. */
+function copyTags(map: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> {
+  return Object.fromEntries(Object.entries(map).map(([id, tags]) => [id, [...tags]]))
 }
 
 function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {

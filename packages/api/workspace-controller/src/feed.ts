@@ -49,6 +49,9 @@ export class WorkspaceFeed {
   private knownIds: Set<string>
   private order: readonly string[]
   private archived: readonly string[]
+  private favorites: readonly string[]
+  private sessionTags: string
+  private workspaceTags: string
 
   /** @param ctx - Host context containing the authoritative Workspace registry. */
   constructor(private readonly ctx: Context) {
@@ -56,6 +59,9 @@ export class WorkspaceFeed {
     this.knownIds = new Set(baseline.map(workspace => String(workspace.id)))
     this.order = baseline.map(workspace => String(workspace.id))
     this.archived = ctx.workspaceRegistry.archivedSessionIds.map(String)
+    this.favorites = ctx.workspaceRegistry.favoriteSessionIds.map(String)
+    this.sessionTags = stableStringifyTags(ctx.workspaceRegistry.sessionTagsById)
+    this.workspaceTags = stableStringifyTags(ctx.workspaceRegistry.workspaceTagsById)
     ctx.on('domain/changed', (change: DomainChanged) => { this.changed(change) })
     ctx.effect(() => () => {
       for (const follower of this.followers) follower.close()
@@ -65,12 +71,15 @@ export class WorkspaceFeed {
 
   /**
    * Read the complete current projection synchronously.
-   * @returns all active Workspaces and archived Session identities.
+   * @returns all active Workspaces and the registry-global annotation sets.
    */
   baseline(): WorkspaceBaseline {
     return {
       items: this.ctx.workspaceRegistry.list().map(workspaceView),
       archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
+      favoriteSessionIds: [...this.ctx.workspaceRegistry.favoriteSessionIds],
+      sessionTagsById: copyTags(this.ctx.workspaceRegistry.sessionTagsById),
+      workspaceTagsById: copyTags(this.ctx.workspaceRegistry.workspaceTagsById),
     }
   }
 
@@ -115,6 +124,21 @@ export class WorkspaceFeed {
         this.archived = nextArchived
         this.publish({ type: 'archived', archivedSessionIds: [...state.archivedSessionIds] })
       }
+      const nextFavorites = state.favoriteSessionIds.map(String)
+      if (!sameStrings(this.favorites, nextFavorites)) {
+        this.favorites = nextFavorites
+        this.publish({ type: 'favorites', favoriteSessionIds: [...state.favoriteSessionIds] })
+      }
+      const nextSessionTags = stableStringifyTags(state.sessionTagsById)
+      if (this.sessionTags !== nextSessionTags) {
+        this.sessionTags = nextSessionTags
+        this.publish({ type: 'sessionTags', sessionTagsById: copyTags(state.sessionTagsById) })
+      }
+      const nextWorkspaceTags = stableStringifyTags(state.workspaceTagsById)
+      if (this.workspaceTags !== nextWorkspaceTags) {
+        this.workspaceTags = nextWorkspaceTags
+        this.publish({ type: 'workspaceTags', workspaceTagsById: copyTags(state.workspaceTagsById) })
+      }
       return
     }
     if (change.table !== 'workspaces') return
@@ -137,6 +161,17 @@ export class WorkspaceFeed {
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+/** Deterministic JSON spelling of one tag map for change detection. */
+function stableStringifyTags(map: Readonly<Record<string, readonly string[]>>): string {
+  const keys = Object.keys(map).sort()
+  return JSON.stringify(keys.map(key => [key, [...map[key] ?? []]]))
+}
+
+/** Detach one tag map into fresh arrays for Remote transport. */
+function copyTags(map: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> {
+  return Object.fromEntries(Object.keys(map).sort().map(key => [key, [...map[key] ?? []]]))
 }
 
 class WorkspaceFollower {

@@ -49,6 +49,30 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId): Promise<void>
   /**
+   * Mark a Session as a durable favorite.
+   * @param sessionId - Session to favorite.
+   */
+  favoriteSession(sessionId: SessionId): Promise<void>
+  /**
+   * Remove a Session from the durable favorites set.
+   * @param sessionId - Session to unfavorite.
+   */
+  unfavoriteSession(sessionId: SessionId): Promise<void>
+  /**
+   * Replace one Session's complete durable tag list.
+   * @param sessionId - target Session.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]>
+  /**
+   * Replace one Workspace's complete durable tag list.
+   * @param workspaceId - target Workspace.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]>
+  /**
    * Open the Host-native directory picker.
    * @returns the selected directory, or null when cancelled.
    */
@@ -174,6 +198,22 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async archiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.archiveSession(sessionId)
+  }
+
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.favoriteSession(sessionId)
+  }
+
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.unfavoriteSession(sessionId)
+  }
+
+  async setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.workspaces.setSessionTags(sessionId, tags)
+  }
+
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.workspaces.setWorkspaceTags(workspaceId, tags)
   }
 
   async pickDirectory(): Promise<string | null> {

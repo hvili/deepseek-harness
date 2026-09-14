@@ -40,6 +40,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     }
     /** The verb needs an interaction the composed backend does not serve. */
     'directory-picker/unavailable': { readonly capability: string }
+    /** A tag list crossed the stored-shape bounds. */
+    'workspace/invalid-tags': { readonly reason: 'too-many-tags' | 'tag-too-long' }
     /** The target is not fully qualified, or the backend cannot list it. */
     'directory-picker/unreadable': { readonly path: string }
     /** A child of that name is already there. */
@@ -109,10 +111,50 @@ export interface WorkspaceArchiveValue {
   readonly archivedSessionIds: readonly SessionId[]
 }
 
+/** Session requested for the registry-global favorites set. */
+export interface WorkspaceFavoriteSessionRequest {
+  readonly sessionId: SessionId
+}
+
+/** Session requested for removal from the registry-global favorites set. */
+export interface WorkspaceUnfavoriteSessionRequest {
+  readonly sessionId: SessionId
+}
+
+/** Complete favorites set after a mutation. */
+export interface WorkspaceFavoriteValue {
+  readonly favoriteSessionIds: readonly SessionId[]
+}
+
+/** Session tag list replacement. */
+export interface WorkspaceSetSessionTagsRequest {
+  readonly sessionId: SessionId
+  readonly tags: readonly string[]
+}
+
+/** Complete Session tag map after a mutation. */
+export interface WorkspaceSessionTagsValue {
+  readonly sessionTagsById: Readonly<Record<string, readonly string[]>>
+}
+
+/** Workspace tag list replacement. */
+export interface WorkspaceSetWorkspaceTagsRequest {
+  readonly workspaceId: WorkspaceId
+  readonly tags: readonly string[]
+}
+
+/** Complete Workspace tag map after a mutation. */
+export interface WorkspaceWorkspaceTagsValue {
+  readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>
+}
+
 /** Complete reconnect baseline for Workspace browser state. */
 export interface WorkspaceBaseline {
   readonly items: readonly WorkspaceView[]
   readonly archivedSessionIds: readonly SessionId[]
+  readonly favoriteSessionIds: readonly SessionId[]
+  readonly sessionTagsById: Readonly<Record<string, readonly string[]>>
+  readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>
 }
 
 /** One ordered Workspace change after a generation's baseline. */
@@ -121,6 +163,9 @@ export type WorkspaceFollowIncrement =
   | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
   | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
   | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
+  | { readonly type: 'favorites'; readonly favoriteSessionIds: readonly SessionId[] }
+  | { readonly type: 'sessionTags'; readonly sessionTagsById: Readonly<Record<string, readonly string[]>> }
+  | { readonly type: 'workspaceTags'; readonly workspaceTagsById: Readonly<Record<string, readonly string[]>> }
 
 /** Workspace state stream; every generation starts with exactly one baseline. */
 export type WorkspaceFollowFrame =

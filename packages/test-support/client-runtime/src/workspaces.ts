@@ -142,4 +142,84 @@ export class TestWorkspaces implements IWorkspaces {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
     })
   }
+
+  /**
+   * Favorite a session (recorded). The default mirrors the production face's
+   * observable effect: the id joins the list state's favorites set.
+   * @param sessionId - session to favorite.
+   */
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'favoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('favoriteSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      draft.favoriteSessionIds = [...draft.favoriteSessionIds, sessionId]
+    })
+  }
+
+  /**
+   * Unfavorite a session (recorded). The default removes the id from the
+   * list state's favorites set.
+   * @param sessionId - session to unfavorite.
+   */
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'unfavoriteSession', args: [sessionId] })
+    const stub = this.stubs.get('unfavoriteSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      draft.favoriteSessionIds = draft.favoriteSessionIds.filter(id => id !== sessionId)
+    })
+  }
+
+  /**
+   * Replace one session's tag list (recorded). The default mirrors the
+   * production face's observable effect on the list state's tag map.
+   * @param sessionId - target session.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  async setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]> {
+    this.calls.push({ method: 'setSessionTags', args: [sessionId, tags] })
+    const stub = this.stubs.get('setSessionTags')
+    if (stub !== undefined) return await (stub(sessionId, tags) as Promise<readonly string[]>)
+    const normalized = [...new Set(tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+    await this.update((draft) => {
+      const next: Record<string, readonly string[]> = {}
+      for (const [key, list] of Object.entries(draft.sessionTagsById)) {
+        if (key !== sessionId) next[key] = list
+      }
+      if (normalized.length > 0) next[sessionId] = normalized
+      draft.sessionTagsById = next
+    })
+    return normalized
+  }
+
+  /**
+   * Replace one workspace's tag list (recorded). The default mirrors the
+   * production face's observable effect on the list state's tag map.
+   * @param workspaceId - target workspace.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]> {
+    this.calls.push({ method: 'setWorkspaceTags', args: [workspaceId, tags] })
+    const stub = this.stubs.get('setWorkspaceTags')
+    if (stub !== undefined) return await (stub(workspaceId, tags) as Promise<readonly string[]>)
+    const normalized = [...new Set(tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+    await this.update((draft) => {
+      const next: Record<string, readonly string[]> = {}
+      for (const [key, list] of Object.entries(draft.workspaceTagsById)) {
+        if (key !== workspaceId) next[key] = list
+      }
+      if (normalized.length > 0) next[workspaceId] = normalized
+      draft.workspaceTagsById = next
+    })
+    return normalized
+  }
 }

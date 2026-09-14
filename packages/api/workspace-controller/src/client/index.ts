@@ -107,6 +107,15 @@ function acceptIncrement(accept: WorkspaceFollowSink, frame: WorkspaceFollowIncr
     case 'archived':
       accept.replaceArchived(frame.archivedSessionIds)
       return
+    case 'favorites':
+      accept.replaceFavorites(frame.favoriteSessionIds)
+      return
+    case 'sessionTags':
+      accept.replaceSessionTags(frame.sessionTagsById)
+      return
+    case 'workspaceTags':
+      accept.replaceWorkspaceTags(frame.workspaceTagsById)
+      return
     /* v8 ignore next -- the generated Remote codec validates this closed union */
     default:
       return assertNever(frame)

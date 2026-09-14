@@ -126,6 +126,10 @@ export function apply(ctx: Context): void {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
     archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
+    favoriteSession: async (sessionId) => { await uiWorkspace.favoriteSession(sessionId) },
+    unfavoriteSession: async (sessionId) => { await uiWorkspace.unfavoriteSession(sessionId) },
+    setSessionTags: async (sessionId, tags) => uiWorkspace.setSessionTags(sessionId, tags),
+    setWorkspaceTags: async (workspaceId, tags) => uiWorkspace.setWorkspaceTags(workspaceId, tags),
     insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },

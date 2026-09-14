@@ -47,12 +47,21 @@ const workspacePendingMutation = z.discriminatedUnion('operation', [
  * the registry-global archive set layered over workspace accounting: an
  * archived session keeps its `sessionIds` slot (unarchiving must restore the
  * position), so the set never participates in the one-owner accounting
- * invariant. Defaulted so records written before the field parse unchanged.
+ * invariant. `favoriteSessionIds` is the registry-global favorites set — a
+ * pure operator annotation that never affects accounting, order, or
+ * visibility. `sessionTagsById` and `workspaceTagsById` are the durable tag
+ * maps (ordered tag lists per Session/Workspace id). All of these are
+ * additive, defaulted global-state fields: media written before they existed
+ * parses without a physical-domain migration, so the storage descriptor stays
+ * at v2 for in-place upgrade compatibility.
  */
 export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  favoriteSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  sessionTagsById: z.record(z.string(), z.array(z.string())).default({}),
+  workspaceTagsById: z.record(z.string(), z.array(z.string())).default({}),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,7 +79,14 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: {
+      initialized: false,
+      workspaceIds: [],
+      archivedSessionIds: [],
+      favoriteSessionIds: [],
+      sessionTagsById: {},
+      workspaceTagsById: {},
+    },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

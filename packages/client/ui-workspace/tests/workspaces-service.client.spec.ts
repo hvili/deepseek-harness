@@ -71,6 +71,9 @@ function workspaceState(
   return {
     items,
     archivedSessionIds,
+    favoriteSessionIds: [],
+    sessionTagsById: {},
+    workspaceTagsById: {},
     phase,
     state: phase === 'ready' ? 'idle' : 'loading',
     error: null,
@@ -135,6 +138,44 @@ class FakeWorkspaces implements IWorkspaces {
     }))
   }
 
+  readonly favoriteCalls: SessionId[] = []
+  onFavorite: IWorkspaces['favoriteSession'] = async (sessionId) => {
+    this.list.update(state => ({
+      ...state,
+      favoriteSessionIds: [...state.favoriteSessionIds, sessionId],
+    }))
+  }
+  onUnfavorite: IWorkspaces['unfavoriteSession'] = async (sessionId) => {
+    this.list.update(state => ({
+      ...state,
+      favoriteSessionIds: state.favoriteSessionIds.filter(id => id !== sessionId),
+    }))
+  }
+  onSetSessionTags: IWorkspaces['setSessionTags'] = async (sessionId, tags) => {
+    const normalized = [...new Set(tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+    this.list.update((state) => {
+      const next: Record<string, readonly string[]> = {}
+      for (const [key, list] of Object.entries(state.sessionTagsById)) {
+        if (key !== sessionId) next[key] = list
+      }
+      if (normalized.length > 0) next[sessionId] = normalized
+      return { ...state, sessionTagsById: next }
+    })
+    return normalized
+  }
+  onSetWorkspaceTags: IWorkspaces['setWorkspaceTags'] = async (workspaceId, tags) => {
+    const normalized = [...new Set(tags.map(tag => tag.trim()).filter(tag => tag !== ''))]
+    this.list.update((state) => {
+      const next: Record<string, readonly string[]> = {}
+      for (const [key, list] of Object.entries(state.workspaceTagsById)) {
+        if (key !== workspaceId) next[key] = list
+      }
+      if (normalized.length > 0) next[workspaceId] = normalized
+      return { ...state, workspaceTagsById: next }
+    })
+    return normalized
+  }
+
   declare readonly create: IWorkspaces['create']
   declare readonly rename: IWorkspaces['rename']
   declare readonly delete: IWorkspaces['delete']
@@ -148,6 +189,23 @@ class FakeWorkspaces implements IWorkspaces {
   archiveSession(sessionId: SessionId): Promise<void> {
     this.archiveCalls.push(sessionId)
     return this.onArchive(sessionId)
+  }
+
+  favoriteSession(sessionId: SessionId): Promise<void> {
+    this.favoriteCalls.push(sessionId)
+    return this.onFavorite(sessionId)
+  }
+
+  unfavoriteSession(sessionId: SessionId): Promise<void> {
+    return this.onUnfavorite(sessionId)
+  }
+
+  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.onSetSessionTags(sessionId, tags)
+  }
+
+  setWorkspaceTags(workspaceId: import('@deepseek-ai/dsh-api-workspace-controller/client').WorkspaceId, tags: readonly string[]): Promise<readonly string[]> {
+    return this.onSetWorkspaceTags(workspaceId, tags)
   }
 }
 

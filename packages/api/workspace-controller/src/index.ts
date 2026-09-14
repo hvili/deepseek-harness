@@ -12,12 +12,19 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceFavoriteSessionRequest,
+  WorkspaceFavoriteValue,
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceSessionTagsValue,
+  WorkspaceSetSessionTagsRequest,
+  WorkspaceSetWorkspaceTagsRequest,
+  WorkspaceUnfavoriteSessionRequest,
   WorkspaceValue,
+  WorkspaceWorkspaceTagsValue,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -107,6 +114,46 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Add one known Session to the registry-global favorites set.
+   * @param request - Session identity to favorite.
+   * @returns the complete resulting favorites set.
+   */
+  @Remote('favoriteSession')
+  favoriteSession(request: WorkspaceFavoriteSessionRequest): Promise<WorkspaceFavoriteValue> {
+    return this.commands.favoriteSession(request)
+  }
+
+  /**
+   * Remove one Session from the registry-global favorites set.
+   * @param request - Session identity to unfavorite.
+   * @returns the complete resulting favorites set.
+   */
+  @Remote('unfavoriteSession')
+  unfavoriteSession(request: WorkspaceUnfavoriteSessionRequest): Promise<WorkspaceFavoriteValue> {
+    return this.commands.unfavoriteSession(request)
+  }
+
+  /**
+   * Replace one Session's complete tag list.
+   * @param request - Session identity and proposed tags.
+   * @returns the complete resulting Session tag map.
+   */
+  @Remote('setSessionTags')
+  setSessionTags(request: WorkspaceSetSessionTagsRequest): Promise<WorkspaceSessionTagsValue> {
+    return this.commands.setSessionTags(request)
+  }
+
+  /**
+   * Replace one Workspace's complete tag list.
+   * @param request - Workspace identity and proposed tags.
+   * @returns the complete resulting Workspace tag map.
+   */
+  @Remote('setWorkspaceTags')
+  setWorkspaceTags(request: WorkspaceSetWorkspaceTagsRequest): Promise<WorkspaceWorkspaceTagsValue> {
+    return this.commands.setWorkspaceTags(request)
   }
 
   /**

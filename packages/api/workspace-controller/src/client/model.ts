@@ -11,8 +11,14 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteValue,
+  WorkspaceFavoriteSessionRequest,
+  WorkspaceFavoriteValue,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceSessionTagsValue,
+  WorkspaceSetSessionTagsRequest,
+  WorkspaceSetWorkspaceTagsRequest,
+  WorkspaceUnfavoriteSessionRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
@@ -29,6 +35,12 @@ export interface WorkspaceSnapshot {
   readonly items: readonly WorkspaceView[]
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
+  /** Complete registry-global favorites set in Host order. */
+  readonly favoriteSessionIds: WorkspaceFavoriteValue['favoriteSessionIds']
+  /** Complete Session tag map in Host order. */
+  readonly sessionTagsById: WorkspaceSessionTagsValue['sessionTagsById']
+  /** Complete Workspace tag map in Host order. */
+  readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>
   readonly state: 'idle' | 'loading' | 'error'
   readonly phase: WorkspaceListPhase
   readonly error: RemoteFailure | null
@@ -46,6 +58,12 @@ export interface WorkspaceFollowSink {
   replaceOrder(workspaceIds: readonly WorkspaceId[]): void
   /** Replace the complete archived Session set. */
   replaceArchived(sessionIds: WorkspaceArchiveValue['archivedSessionIds']): void
+  /** Replace the complete favorites set. */
+  replaceFavorites(sessionIds: WorkspaceFavoriteValue['favoriteSessionIds']): void
+  /** Replace the complete Session tag map. */
+  replaceSessionTags(sessionTagsById: WorkspaceSessionTagsValue['sessionTagsById']): void
+  /** Replace the complete Workspace tag map. */
+  replaceWorkspaceTags(workspaceTagsById: Readonly<Record<string, readonly string[]>>): void
 }
 
 /**
@@ -54,6 +72,9 @@ export interface WorkspaceFollowSink {
 export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
+  private favoriteSessionIds: WorkspaceFavoriteValue['favoriteSessionIds'] = []
+  private sessionTagsById: Readonly<Record<string, readonly string[]>> = {}
+  private workspaceTagsById: Readonly<Record<string, readonly string[]>> = {}
   private state: WorkspaceSnapshot['state'] = 'loading'
   private phase: WorkspaceListPhase = 'pending'
   private error: RemoteFailure | null = null
@@ -171,6 +192,62 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
+   * Favorite one Session and install the returned complete favorites set.
+   * @param sessionId - Session to favorite.
+   * @returns generated Remote result.
+   */
+  async favoriteSession(
+    sessionId: WorkspaceFavoriteSessionRequest['sessionId'],
+  ): Promise<RemoteResult<WorkspaceFavoriteValue>> {
+    const result = await this.remote.favoriteSession({ sessionId })
+    if (result.ok) this.installFavorites(result.value.favoriteSessionIds)
+    return result
+  }
+
+  /**
+   * Unfavorite one Session and install the returned complete favorites set.
+   * @param sessionId - Session to unfavorite.
+   * @returns generated Remote result.
+   */
+  async unfavoriteSession(
+    sessionId: WorkspaceUnfavoriteSessionRequest['sessionId'],
+  ): Promise<RemoteResult<WorkspaceFavoriteValue>> {
+    const result = await this.remote.unfavoriteSession({ sessionId })
+    if (result.ok) this.installFavorites(result.value.favoriteSessionIds)
+    return result
+  }
+
+  /**
+   * Replace one Session's tag list and install the returned complete map.
+   * @param sessionId - target Session.
+   * @param tags - proposed tag list.
+   * @returns generated Remote result.
+   */
+  async setSessionTags(
+    sessionId: WorkspaceSetSessionTagsRequest['sessionId'],
+    tags: readonly string[],
+  ): Promise<RemoteResult<WorkspaceSessionTagsValue>> {
+    const result = await this.remote.setSessionTags({ sessionId, tags: [...tags] })
+    if (result.ok) this.installSessionTags(result.value.sessionTagsById)
+    return result
+  }
+
+  /**
+   * Replace one Workspace's tag list and install the returned complete map.
+   * @param workspaceId - target Workspace.
+   * @param tags - proposed tag list.
+   * @returns generated Remote result.
+   */
+  async setWorkspaceTags(
+    workspaceId: WorkspaceSetWorkspaceTagsRequest['workspaceId'],
+    tags: readonly string[],
+  ): Promise<RemoteResult<import('../types.ts').WorkspaceWorkspaceTagsValue>> {
+    const result = await this.remote.setWorkspaceTags({ workspaceId, tags: [...tags] })
+    if (result.ok) this.installWorkspaceTags(result.value.workspaceTagsById)
+    return result
+  }
+
+  /**
    * Replace the projection from one complete stream-generation baseline.
    * @param baseline - complete Workspace and archive projection.
    */
@@ -178,6 +255,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.orderFrameGeneration++
     this.installViews(baseline.items)
     this.installArchived(baseline.archivedSessionIds)
+    this.installFavorites(baseline.favoriteSessionIds)
+    this.installSessionTags(baseline.sessionTagsById)
+    this.installWorkspaceTags(baseline.workspaceTagsById)
     this.state = 'idle'
     this.phase = 'ready'
     this.error = null
@@ -206,6 +286,21 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    */
   replaceArchived(archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']): void {
     this.installArchived(archivedSessionIds)
+  }
+
+  /** Replace the favorites set from the current follow generation. */
+  replaceFavorites(sessionIds: WorkspaceFavoriteValue['favoriteSessionIds']): void {
+    this.installFavorites(sessionIds)
+  }
+
+  /** Replace the Session tag map from the current follow generation. */
+  replaceSessionTags(sessionTagsById: WorkspaceSessionTagsValue['sessionTagsById']): void {
+    this.installSessionTags(sessionTagsById)
+  }
+
+  /** Replace the Workspace tag map from the current follow generation. */
+  replaceWorkspaceTags(workspaceTagsById: Readonly<Record<string, readonly string[]>>): void {
+    this.installWorkspaceTags(workspaceTagsById)
   }
 
   /** Keep the last complete projection visible while a lost carrier reconnects. */
@@ -249,6 +344,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return {
       items: this.items,
       archivedSessionIds: this.archivedSessionIds,
+      favoriteSessionIds: this.favoriteSessionIds,
+      sessionTagsById: this.sessionTagsById,
+      workspaceTagsById: this.workspaceTagsById,
       state: this.state,
       phase: this.phase,
       error: this.error,
@@ -259,6 +357,25 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     if (archivedSessionIds.length === this.archivedSessionIds.length
       && archivedSessionIds.every((id, index) => id === this.archivedSessionIds[index])) return
     this.archivedSessionIds = [...archivedSessionIds]
+    this.invalidate()
+  }
+
+  private installFavorites(sessionIds: WorkspaceFavoriteValue['favoriteSessionIds']): void {
+    if (sessionIds.length === this.favoriteSessionIds.length
+      && sessionIds.every((id, index) => id === this.favoriteSessionIds[index])) return
+    this.favoriteSessionIds = [...sessionIds]
+    this.invalidate()
+  }
+
+  private installSessionTags(sessionTagsById: Readonly<Record<string, readonly string[]>>): void {
+    if (sameTagMaps(this.sessionTagsById, sessionTagsById)) return
+    this.sessionTagsById = copyTagMap(sessionTagsById)
+    this.invalidate()
+  }
+
+  private installWorkspaceTags(workspaceTagsById: Readonly<Record<string, readonly string[]>>): void {
+    if (sameTagMaps(this.workspaceTagsById, workspaceTagsById)) return
+    this.workspaceTagsById = copyTagMap(workspaceTagsById)
     this.invalidate()
   }
 
@@ -343,6 +460,28 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.snapshotDirty = false
     this.snapshotCache = this.buildSnapshot()
   }
+}
+
+/** Structural tag-map equality (fresh arrays from every transport decode are not identity-equal). */
+function sameTagMaps(
+  left: Readonly<Record<string, readonly string[]>>,
+  right: Readonly<Record<string, readonly string[]>>,
+): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    if (!Object.hasOwn(right, key)) return false
+    const a = left[key] ?? []
+    const b = right[key] ?? []
+    if (a.length !== b.length || a.some((tag, index) => tag !== b[index])) return false
+  }
+  return true
+}
+
+/** Detach one decoded tag map into fresh arrays. */
+function copyTagMap(map: Readonly<Record<string, readonly string[]>>): Readonly<Record<string, readonly string[]>> {
+  return Object.fromEntries(Object.entries(map).map(([id, tags]) => [id, [...tags]]))
 }
 
 function insertIdBefore(

@@ -1,7 +1,8 @@
 /**
  * Derives the workspace browser tree from Host Workspace order and membership.
  * Unassigned Sessions trail under Ungrouped; only the selected blank Session
- * remains visible.
+ * remains visible. Registry-global favorites and durable tags are projected
+ * onto the rows without ever reordering them: a favorite is a pure annotation.
  */
 import {
   type SessionListState, type SessionSearchResultItem, type SessionSummary,
@@ -38,6 +39,16 @@ export function owningGroupKey(
 export type SessionPendingInteractionStatus = 'approval' | 'plan-review' | 'question'
 type SessionPendingInteractions = ReadonlyMap<SessionId, SessionPendingInteractionBase>
 
+/** Registry-global annotation facts projected onto the derivation rows. */
+export interface WorkspaceAnnotations {
+  /** Registry-global favorites set (marked rows). */
+  favoriteSessionIds: readonly SessionId[]
+  /** Durable Session tag map. */
+  sessionTagsById: Readonly<Record<string, readonly string[]>>
+  /** Durable Workspace tag map. */
+  workspaceTagsById: Readonly<Record<string, readonly string[]>>
+}
+
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
   id: SessionId
@@ -45,6 +56,10 @@ export interface SessionNode {
   title: string
   /** The provisional blank session (renderer shows the localized New Session title). */
   blank: boolean
+  /** Durable favorites membership, projected from the registry-global set. */
+  favorite: boolean
+  /** Durable Session tags in stored order. */
+  tags: readonly string[]
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
@@ -70,6 +85,8 @@ export interface GroupNode {
   /** Workspace creation time (epoch ms); absent only for the ungrouped bucket. */
   createdAt: number | undefined
   label: string
+  /** Durable Workspace tags in stored order; absent for the ungrouped bucket. */
+  tags: readonly string[]
   /** Total visible sessions in the group. */
   sessionCount: number
   expanded: boolean
@@ -84,6 +101,10 @@ export interface SearchResultNode {
   id: SessionId
   title: string
   workspace: string
+  /** Durable favorites membership, projected from the registry-global set. */
+  favorite: boolean
+  /** Durable Session tags in stored order. */
+  tags: readonly string[]
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
   running: boolean
@@ -134,6 +155,13 @@ export function workspaceLabel(cwd: string | undefined): string {
 function byRecency(a: SessionSummary, b: SessionSummary): number {
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
   return a.id < b.id ? -1 : 1
+}
+
+/** Annotation-free default for derivations whose caller has no annotation source yet. */
+const emptyAnnotations: WorkspaceAnnotations = {
+  favoriteSessionIds: [],
+  sessionTagsById: {},
+  workspaceTagsById: {},
 }
 
 /**
@@ -259,12 +287,15 @@ function sessionNode(
   s: SessionSummary,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
   pendingInteractions: SessionPendingInteractions,
+  annotations: WorkspaceAnnotations,
 ): SessionNode {
   const pendingInteraction = visiblePendingKind(pendingInteractions.get(s.id)?.kind)
   return {
     id: s.id,
     title: sessionTitle(s),
     blank: s.blank,
+    favorite: annotations.favoriteSessionIds.includes(s.id),
+    tags: [...(annotations.sessionTagsById[s.id] ?? [])],
     running: s.running,
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,
@@ -295,6 +326,7 @@ export function deriveGroups(
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
   view: TreeView,
+  annotations: WorkspaceAnnotations = emptyAnnotations,
 ): GroupNode[] {
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
@@ -311,11 +343,14 @@ export function deriveGroups(
       cwd: g.cwd,
       createdAt: g.createdAt,
       label: g.label,
+      tags: g.workspaceId === undefined
+        ? []
+        : [...(annotations.workspaceTagsById[g.workspaceId] ?? [])],
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded
-        ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions))
+        ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions, annotations))
         : [],
     })
   }
@@ -336,6 +371,7 @@ export function deriveFlat(
   list: SessionListState,
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
+  annotations: WorkspaceAnnotations = emptyAnnotations,
 ): SessionNode[] {
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
@@ -346,7 +382,7 @@ export function deriveFlat(
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants, pendingInteractions))
+  return rows.map(session => sessionNode(session, descendants, pendingInteractions, annotations))
 }
 
 /**
@@ -370,20 +406,27 @@ export function deriveSearchResults(
   pendingInteractions: SessionPendingInteractions,
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  annotations: WorkspaceAnnotations = emptyAnnotations,
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
 
-  const workspaceBySession = new Map<SessionId, string>()
+  const workspaceBySession = new Map<SessionId, { title: string; tags: readonly string[] }>()
   for (const workspace of workspaces) {
+    const tags = annotations.workspaceTagsById[workspace.workspaceId] ?? []
     for (const sessionId of workspace.sessionIds) {
-      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.title)
+      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, { title: workspace.title, tags })
     }
   }
   const labelOf = (summary: SessionSummary): string =>
-    workspaceBySession.get(summary.id) ?? workspaceLabel(summary.cwd)
+    workspaceBySession.get(summary.id)?.title ?? workspaceLabel(summary.cwd)
+  // Local matching covers the session title, its Workspace label, the
+  // Workspace's durable tags, and the Session's own durable tags.
+  const tagsMatch = (summary: SessionSummary): boolean =>
+    (workspaceBySession.get(summary.id)?.tags.some(tag => tag.toLowerCase().includes(q)) === true)
+    || ((annotations.sessionTagsById[summary.id] ?? []).some(tag => tag.toLowerCase().includes(q)))
   const contentBySession = new Map<SessionId, SessionSearchResultItem>()
   for (const item of content.items) {
     if (!contentBySession.has(item.sessionId)) contentBySession.set(item.sessionId, item)
@@ -398,6 +441,7 @@ export function deriveSearchResults(
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
+      || tagsMatch(summary)
     ) {
       local.push(summary)
     }
@@ -425,6 +469,8 @@ export function deriveSearchResults(
         id: summary.id,
         title: sessionTitle(summary),
         workspace: labelOf(summary),
+        favorite: annotations.favoriteSessionIds.includes(summary.id),
+        tags: [...(annotations.sessionTagsById[summary.id] ?? [])],
         running: summary.running,
         runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,
         ...(pendingInteraction === undefined

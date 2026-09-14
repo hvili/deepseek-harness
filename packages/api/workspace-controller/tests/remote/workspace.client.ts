@@ -63,7 +63,16 @@ export function workspace(id: string, overrides: Partial<WorkspaceView> = {}): W
  * @returns the frame.
  */
 export function baseline(...ids: readonly string[]): WorkspaceBaselineFrame {
-  return { type: 'baseline', value: { items: ids.map(id => workspace(id)), archivedSessionIds: [] } }
+  return {
+    type: 'baseline',
+    value: {
+      items: ids.map(id => workspace(id)),
+      archivedSessionIds: [],
+      favoriteSessionIds: [],
+      sessionTagsById: {},
+      workspaceTagsById: {},
+    },
+  }
 }
 
 /**
@@ -96,5 +105,15 @@ export const workspaceWorld: RemoteTable = {
       workspace: workspace(String(request.workspaceId), { sessionIds: [request.sessionId] }),
     }),
     'workspace/archiveSession': (request: WorkspaceArchiveSessionRequest): RemoteResult<WorkspaceArchiveValue> => ok({ archivedSessionIds: [request.sessionId] }),
+    'workspace/favoriteSession': (
+      request: import('../../src/types.ts').WorkspaceFavoriteSessionRequest,
+    ): RemoteResult<import('../../src/types.ts').WorkspaceFavoriteValue> => ok({ favoriteSessionIds: [request.sessionId] }),
+    'workspace/unfavoriteSession': (): RemoteResult<import('../../src/types.ts').WorkspaceFavoriteValue> => ok({ favoriteSessionIds: [] }),
+    'workspace/setSessionTags': (
+      request: import('../../src/types.ts').WorkspaceSetSessionTagsRequest,
+    ): RemoteResult<import('../../src/types.ts').WorkspaceSessionTagsValue> => ok({ sessionTagsById: { [request.sessionId]: [...request.tags] } }),
+    'workspace/setWorkspaceTags': (
+      request: import('../../src/types.ts').WorkspaceSetWorkspaceTagsRequest,
+    ): RemoteResult<import('../../src/types.ts').WorkspaceWorkspaceTagsValue> => ok({ workspaceTagsById: { [request.workspaceId]: [...request.tags] } }),
   },
 }

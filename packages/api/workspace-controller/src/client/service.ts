@@ -58,6 +58,30 @@ export interface IWorkspaces {
    */
   insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void>
   /**
+   * Mark a Session as a favorite in the registry-global set.
+   * @param sessionId - Session to favorite.
+   */
+  favoriteSession(sessionId: SessionId): Promise<void>
+  /**
+   * Remove a Session from the registry-global favorites set.
+   * @param sessionId - Session to unfavorite.
+   */
+  unfavoriteSession(sessionId: SessionId): Promise<void>
+  /**
+   * Replace one Session's complete tag list.
+   * @param sessionId - target Session.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]>
+  /**
+   * Replace one Workspace's complete tag list.
+   * @param workspaceId - target Workspace.
+   * @param tags - proposed tag list.
+   * @returns the normalized stored list.
+   */
+  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]>
+  /**
    * Archive a Session from Workspace grouping surfaces.
    * @param sessionId - Session to archive.
    */
@@ -114,6 +138,28 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async archiveSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.archiveSession(sessionId)
     if (!result.ok) throw commandError('session archive', result.error)
+  }
+
+  async favoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.favoriteSession(sessionId)
+    if (!result.ok) throw commandError('session favorite', result.error)
+  }
+
+  async unfavoriteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.unfavoriteSession(sessionId)
+    if (!result.ok) throw commandError('session unfavorite', result.error)
+  }
+
+  async setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]> {
+    const result = await this.model.setSessionTags(sessionId, tags)
+    if (!result.ok) throw commandError('session tags', result.error)
+    return result.value.sessionTagsById[sessionId] ?? []
+  }
+
+  async setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]> {
+    const result = await this.model.setWorkspaceTags(workspaceId, tags)
+    if (!result.ok) throw commandError('workspace tags', result.error)
+    return result.value.workspaceTagsById[workspaceId] ?? []
   }
 
   async insertSessionBefore(
