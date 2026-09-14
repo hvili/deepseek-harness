@@ -11,8 +11,6 @@
 - text: Show the local preview URL. {{clock}}
 - button "Copy":
   - img
-- button "Edit this message"
-- button "Return to before sending this message"
 - heading "Inline code links" [level=2]
 - paragraph:
   - text: "Preview:"

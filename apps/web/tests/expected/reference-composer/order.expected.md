@@ -11,8 +11,6 @@
 - text: Research notes what changed? Referenced session · Research notes {{clock}}
 - button "Copy":
   - img
-- button "Edit this message"
-- button "Return to before sending this message"
 - button "Session recall Research notes":
   - img
   - text: Session recall Research notes

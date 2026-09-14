@@ -30,7 +30,6 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-modules",
         "@deepseek-ai/dsh-client-ui-theme"
       ],

@@ -201,10 +201,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await branchButtons.first().focus()
     await expect.poll(() => page.getByRole('tooltip').textContent(), { timeout: 5_000 })
       .toBe('Available only on the last message of a completed turn')
-    // Exact name: turn-rewind portals 'Edit this message' onto user rows —
-    // a distinct feature — while this guard still catches a leaked
-    // message-chrome Edit action.
-    await expect.poll(() => page.getByRole('button', { name: 'Edit', exact: true }).count(), { timeout: 5_000 }).toBe(0)
+    await expect.poll(() => page.getByRole('button', { name: 'Edit' }).count(), { timeout: 5_000 }).toBe(0)
   }, 60_000)
 
   it.skipIf(MODE === 'record')('matches the conversation aria golden with IconActions and clocks', async () => {

@@ -389,9 +389,7 @@ describe('web e2e: agent-preset selection', () => {
     await page.locator('[role="treeitem"]').last().click()
     await page.getByText('Seeded turn.').waitFor({ timeout: 15_000 })
 
-    // Scope to the conversation column: the compact sidebar's group rows
-    // also carry a titleRow class and precede the header in the DOM.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"] [class*="titleRow"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[class*="titleRow"]', scaffold.workspaceCwd)
 
     await compareOrRefreshGolden(HEADER_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Minimal mode')

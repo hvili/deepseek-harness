@@ -4,9 +4,6 @@
     - button "General":
       - img
       - text: General
-    - button "Diagnostics":
-      - img
-      - text: Diagnostics
     - button "Models":
       - img
       - text: Models
@@ -16,9 +13,6 @@
     - button "Agent presets":
       - img
       - text: Agent presets
-    - button "Archived conversations":
-      - img
-      - text: Archived conversations
   - button "Open configuration file"
   - button "Close":
     - img

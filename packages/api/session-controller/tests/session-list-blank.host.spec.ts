@@ -23,7 +23,6 @@ async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote; att
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
-  ctx.provide('workspaceRegistry', { isPermanentlyRemoved: () => false } as never)
   return {
     ctx,
     remote: createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),
