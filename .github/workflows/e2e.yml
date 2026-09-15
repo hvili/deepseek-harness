@@ -19,11 +19,14 @@ name: E2E (real DeepSeek API)
 #
 # FORK POLICY — a fork that never holds the secret (no `DEEPSEEK_API_KEY_EXTERNAL`
 # configured) would otherwise fail the nightly preflight every day while the
-# suites would only have self-skipped anyway. The workflow-level
-# `DSH_E2E_KEY_PRESENT` env feeds the job-level `if:` so the job reports a
-# green SKIP on those forks instead. The trade-off is accepted here: a key that
-# silently disappears would skip green rather than fail loud — the origin repo
-# keeps the loud preflight semantics because it always configures the key.
+# suites would only have self-skipped anyway. The `key-gate` job translates
+# secret presence into a job output (steps can read the secrets context; job
+# `if:` expressions cannot, and workflow-level `env:` cannot either — using
+# `secrets` there is a workflow parse error). The e2e job keys off that output
+# and reports a green SKIP on keyless forks instead. The trade-off is accepted
+# here: a key that silently disappears would skip green rather than fail loud —
+# the origin repo keeps the loud preflight semantics because it always
+# configures the key.
 #
 # SECURITY — NEVER change this trigger to `pull_request_target`. `pull_request`
 # checks out and runs the PR's HEAD code WITHOUT secrets for forks, which is what
@@ -58,20 +61,35 @@ env:
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
-  # Boolean gate for the job-level `if:` below: workflow-level `env` can read
-  # the secrets context while a job-level `if` cannot, so this translation is
-  # what lets the job skip (green) instead of preflight-failing on keyless forks.
-  DSH_E2E_KEY_PRESENT: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL != '' }}
 
 jobs:
+  # Secret-presence probe. Steps can read the secrets context but job `if:`
+  # expressions cannot, so a tiny first job exposes the boolean as an output
+  # for the e2e job's condition. It costs one ~5s ubuntu runner.
+  key-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - id: check
+        env:
+          KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
+    needs: key-gate
     runs-on: ubuntu-latest
     name: e2e
     # Run on every trusted event when the key is configured. Skip untrusted PRs
     # (forks + Dependabot) where the secret is withheld, and skip whole on forks
     # that hold no key at all — both would otherwise hard-fail the preflight.
     if: >-
-      env.DSH_E2E_KEY_PRESENT == 'true'
+      needs.key-gate.outputs.present == 'true'
       && (github.event_name != 'pull_request'
         || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]'))
     # Profile e2e files can each own several complete dsh subprocess trees, so
