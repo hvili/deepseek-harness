@@ -45,6 +45,10 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+          # plugins/dsh-turn-rewind is a real submodule (gitlink 2ed365a): the
+          # workspace protocol in packages/bundle/web-app resolves it during
+          # install and pack, so both release jobs must check it out.
+          submodules: true
 
       - name: Configure runner-private caches
         run: |
@@ -107,6 +111,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           clean: true
+          submodules: true
 
       - name: Configure runner-private caches
         run: |
