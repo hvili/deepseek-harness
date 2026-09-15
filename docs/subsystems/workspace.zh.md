@@ -233,6 +233,34 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Add one known Session to the registry-global favorites set.
+ * @param request - Session identity to favorite.
+ * @returns the complete resulting favorites set.
+ */
+@Remote('favoriteSession') favoriteSession(request: WorkspaceFavoriteSessionRequest): Promise<WorkspaceFavoriteValue>
+
+/**
+ * Remove one Session from the registry-global favorites set.
+ * @param request - Session identity to unfavorite.
+ * @returns the complete resulting favorites set.
+ */
+@Remote('unfavoriteSession') unfavoriteSession(request: WorkspaceUnfavoriteSessionRequest): Promise<WorkspaceFavoriteValue>
+
+/**
+ * Replace one Session's complete tag list.
+ * @param request - Session identity and proposed tags.
+ * @returns the complete resulting Session tag map.
+ */
+@Remote('setSessionTags') setSessionTags(request: WorkspaceSetSessionTagsRequest): Promise<WorkspaceSessionTagsValue>
+
+/**
+ * Replace one Workspace's complete tag list.
+ * @param request - Workspace identity and proposed tags.
+ * @returns the complete resulting Workspace tag map.
+ */
+@Remote('setWorkspaceTags') setWorkspaceTags(request: WorkspaceSetWorkspaceTagsRequest): Promise<WorkspaceWorkspaceTagsValue>
+
+/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.
@@ -376,57 +404,6 @@ delete(id: WorkspaceId): Promise<boolean>
 insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>
 
 /**
- * Add one existing session to the durable favorites set.
- * @param sessionId - the session to favorite.
- * @returns resolves once the favorite is persisted.
- */
-favoriteSession(sessionId: SessionId): Promise<void>
-
-/**
- * Remove one session from the durable favorites set.
- * @param sessionId - the session to unfavorite.
- * @returns resolves once the favorite is persisted.
- */
-unfavoriteSession(sessionId: SessionId): Promise<void>
-
-/**
- * Durable tags attached to one registered workspace.
- * @param workspaceId - the workspace to read tags for.
- * @returns the workspace's tags.
- */
-workspaceTags(workspaceId: WorkspaceId): readonly string[]
-
-/**
- * Durable tags attached to one known session.
- * @param sessionId - the session to read tags for.
- * @returns the session's tags.
- */
-sessionTags(sessionId: SessionId): readonly string[]
-
-/**
- * Replace one registered workspace's tag set with normalized user input.
- * @param workspaceId - the workspace to retag.
- * @param tags - the normalized tag list.
- * @returns resolves once the tags are persisted.
- */
-setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<void>
-
-/**
- * Replace one known session's tag set with normalized user input.
- * @param sessionId - the session to retag.
- * @param tags - the normalized tag list.
- * @returns resolves once the tags are persisted.
- */
-setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<void>
-
-/**
- * Whether this process has permanently deleted the session's durable record.
- * @param sessionId - The session identity to check.
- * @returns whether the session's durable record was permanently removed.
- */
-isPermanentlyRemoved(sessionId: SessionId): boolean
-
-/**
  * Archive one session durably. The session must exist (live or in session
  * persistence); its workspace accounting — or lack of one — is irrelevant.
  * An already archived id resolves without writing.
@@ -436,21 +413,40 @@ isPermanentlyRemoved(sessionId: SessionId): boolean
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
- * Restore an archived session to its previous grouping position.
- * @param sessionId - The archived session to unarchive.
+ * Mark one session as a favorite durably. The session must exist (live or in
+ * session persistence); an already-favorited id resolves without writing.
+ * @param sessionId - The session to favorite.
+ * @returns resolution after durability.
  */
-unarchiveSession(sessionId: SessionId): Promise<void>
+favoriteSession(sessionId: SessionId): Promise<void>
 
 /**
- * Permanently remove an archived idle session's durable log and all workspace
- * references. A live in-memory copy may remain until the host restarts, but
- * it is detached from every workspace and cannot be resumed once its log is
- * gone. Attachments intentionally remain in their independent store: another
- * session may still reference the same object.
- * @param sessionId - The archived session to remove durably.
- * @returns whether a durable session record was removed.
+ * Unmark one favorite session durably. An absent id resolves without
+ * writing: removal needs no existence proof, so unfavorite stays available
+ * even after the underlying session log disappeared.
+ * @param sessionId - The session to unfavorite.
+ * @returns resolution after durability.
  */
-removeArchivedSession(sessionId: SessionId): Promise<boolean>
+unfavoriteSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Replace one Session's complete tag list durably. The session must exist
+ * (live or in session persistence); a normalized empty list removes the
+ * entry so the map stays compact.
+ * @param sessionId - The tagged Session.
+ * @param tags - proposed tag list; normalized before durability.
+ * @returns the normalized stored list.
+ */
+setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]>
+
+/**
+ * Replace one Workspace's complete tag list durably. The workspace must
+ * exist; a normalized empty list removes the entry.
+ * @param workspaceId - The tagged Workspace.
+ * @param tags - proposed tag list; normalized before durability.
+ * @returns the normalized stored list.
+ */
+setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

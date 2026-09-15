@@ -2909,6 +2909,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'favoriteSession\') favoriteSession(request: WorkspaceFavoriteSessionRequest): Promise<WorkspaceFavoriteValue>',
+        description: 'Add one known Session to the registry-global favorites set.',
+        parameters: [{ name: 'request', description: 'Session identity to favorite.' }],
+        returns: 'the complete resulting favorites set.',
+      },
+      {
+        signature: '@Remote(\'unfavoriteSession\') unfavoriteSession(request: WorkspaceUnfavoriteSessionRequest): Promise<WorkspaceFavoriteValue>',
+        description: 'Remove one Session from the registry-global favorites set.',
+        parameters: [{ name: 'request', description: 'Session identity to unfavorite.' }],
+        returns: 'the complete resulting favorites set.',
+      },
+      {
+        signature: '@Remote(\'setSessionTags\') setSessionTags(request: WorkspaceSetSessionTagsRequest): Promise<WorkspaceSessionTagsValue>',
+        description: 'Replace one Session\'s complete tag list.',
+        parameters: [{ name: 'request', description: 'Session identity and proposed tags.' }],
+        returns: 'the complete resulting Session tag map.',
+      },
+      {
+        signature: '@Remote(\'setWorkspaceTags\') setWorkspaceTags(request: WorkspaceSetWorkspaceTagsRequest): Promise<WorkspaceWorkspaceTagsValue>',
+        description: 'Replace one Workspace\'s complete tag list.',
+        parameters: [{ name: 'request', description: 'Workspace identity and proposed tags.' }],
+        returns: 'the complete resulting Workspace tag map.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -3005,6 +3029,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'favoriteSession(sessionId: SessionId): Promise<void>',
+        description: 'Mark one session as a favorite durably. The session must exist (live or in session persistence); an already-favorited id resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The session to favorite.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'unfavoriteSession(sessionId: SessionId): Promise<void>',
+        description: 'Unmark one favorite session durably. An absent id resolves without writing: removal needs no existence proof, so unfavorite stays available even after the underlying session log disappeared.',
+        parameters: [{ name: 'sessionId', description: 'The session to unfavorite.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]>',
+        description: 'Replace one Session\'s complete tag list durably. The session must exist (live or in session persistence); a normalized empty list removes the entry so the map stays compact.',
+        parameters: [{ name: 'sessionId', description: 'The tagged Session.' }, { name: 'tags', description: 'proposed tag list; normalized before durability.' }],
+        returns: 'the normalized stored list.',
+      },
+      {
+        signature: 'setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]>',
+        description: 'Replace one Workspace\'s complete tag list durably. The workspace must exist; a normalized empty list removes the entry.',
+        parameters: [{ name: 'workspaceId', description: 'The tagged Workspace.' }, { name: 'tags', description: 'proposed tag list; normalized before durability.' }],
+        returns: 'the normalized stored list.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -6424,7 +6472,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceBaseline',
-    declaration: 'export interface WorkspaceBaseline {\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n}',
+    declaration: 'export interface WorkspaceBaseline {\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly favoriteSessionIds: readonly SessionId[];\n    readonly sessionTagsById: Readonly<Record<string, readonly string[]>>;\n    readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>;\n}',
   },
   {
     name: 'WorkspaceByteRange',
@@ -6453,6 +6501,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceDirectoryListing',
     declaration: 'export interface WorkspaceDirectoryListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceFavoriteSessionRequest',
+    declaration: 'export interface WorkspaceFavoriteSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceFavoriteValue',
+    declaration: 'export interface WorkspaceFavoriteValue {\n    readonly favoriteSessionIds: readonly SessionId[];\n}',
   },
   {
     name: 'WorkspaceFileBytes',
@@ -6488,7 +6544,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceFollowIncrement',
-    declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n};',
+    declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n} | {\n    readonly type: \'favorites\';\n    readonly favoriteSessionIds: readonly SessionId[];\n} | {\n    readonly type: \'sessionTags\';\n    readonly sessionTagsById: Readonly<Record<string, readonly string[]>>;\n} | {\n    readonly type: \'workspaceTags\';\n    readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>;\n};',
   },
   {
     name: 'WorkspaceInsertBeforeRequest',
@@ -6507,12 +6563,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
   },
   {
+    name: 'WorkspaceSessionTagsValue',
+    declaration: 'export interface WorkspaceSessionTagsValue {\n    readonly sessionTagsById: Readonly<Record<string, readonly string[]>>;\n}',
+  },
+  {
+    name: 'WorkspaceSetSessionTagsRequest',
+    declaration: 'export interface WorkspaceSetSessionTagsRequest {\n    readonly sessionId: SessionId;\n    readonly tags: readonly string[];\n}',
+  },
+  {
+    name: 'WorkspaceSetWorkspaceTagsRequest',
+    declaration: 'export interface WorkspaceSetWorkspaceTagsRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly tags: readonly string[];\n}',
+  },
+  {
+    name: 'WorkspaceUnfavoriteSessionRequest',
+    declaration: 'export interface WorkspaceUnfavoriteSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
     name: 'WorkspaceValue',
     declaration: 'export interface WorkspaceValue {\n    readonly workspace: WorkspaceView;\n}',
   },
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorkspaceWorkspaceTagsValue',
+    declaration: 'export interface WorkspaceWorkspaceTagsValue {\n    readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>;\n}',
   },
 ]
 
