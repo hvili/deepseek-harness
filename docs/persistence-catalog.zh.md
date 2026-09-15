@@ -244,38 +244,6 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/session/src/types.ts:321`](../packages/core/session/src/types.ts)
 
-### `codex/*`
-
-<a id="codexthread-reference--log-only"></a>
-
-#### `codex/thread-reference` — log-only
-
-```ts persistence-catalog
-/**
- * The one external Codex execution identity attached to this DSH Session.
- * It is log-only and required: a runtime that cannot interpret this record
- * must not pretend it can safely resume the linked Codex conversation.
- */
-'codex/thread-reference': CodexThreadReference
-```
-
-来源：[`packages/subagent/subagent-codex/src/thread-state.ts:55`](../packages/subagent/subagent-codex/src/thread-state.ts)
-
-<a id="codexthread-start-wal--log-only"></a>
-
-#### `codex/thread-start-wal` — log-only
-
-```ts persistence-catalog
-/**
- * Durable write-ahead evidence for a persistent Codex `thread/start`.
- * A remaining `prepared` record is an unresolved external side effect and
- * makes automatic continuation unavailable until reconciliation.
- */
-'codex/thread-start-wal': CodexThreadStartWal
-```
-
-来源：[`packages/subagent/subagent-codex/src/thread-state.ts:61`](../packages/subagent/subagent-codex/src/thread-state.ts)
-
 ### `command/*`
 
 <a id="commanddone--log-only"></a>
@@ -607,22 +575,6 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 来源：[`packages/interaction/permission-presets/src/index.ts:54`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
-
-<a id="planapproved--log-only"></a>
-
-#### `plan/approved` — log-only
-
-```ts persistence-catalog
-/**
- * A plan was reviewed and approved through `exit_plan_mode` — log-only,
- * non-surface, last-wins. It marks the exact approved plan so resume,
- * fork, and review surfaces can reconstruct the approval without parsing
- * tool results.
- */
-'plan/approved': { heading: string; plan: string }
-```
-
-来源：[`packages/plan/plan-mode/src/index.ts:60`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="planmode--log-only"></a>
 
