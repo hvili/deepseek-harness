@@ -247,10 +247,10 @@ describe('CI workflow', () => {
     expect(windowsObservational.name).toBe('windows node 24 / observational')
     expect(windowsObservational['continue-on-error']).toBe(true)
 
-    // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
+    // The complete master lane uses the configured fork fallback or the standby pool.
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
-    expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
-    expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
+    expect(serialWindows['runs-on']).toBe('${{ vars.DSH_CI_RUNNER_FALLBACK_WINDOWS || fromJSON(\'["self-hosted", "dsh-win-ci", "windows"]\') }}')
+    expect(serialWindows.name).toBe('serial / windows')
     // Its store must share the ReFS workspace volume for clone; the install
     // must carry the same filesystem branch as the PR jobs.
     const serialSteps = serialWindows.steps as unknown[]

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   gitBlobHash,
   gitIndexPaths,
+  gitSubmodulePrefixes,
   readGitIndexBlob,
   storeGitBlob,
 } from './translation-pairing-git.ts'
@@ -33,6 +34,25 @@ import {
 } from './translation-pairing.ts'
 
 const fixturePairSource = (): boolean => true
+
+describe('submodule documentation ownership', () => {
+  it('excludes only indexed gitlinks, preserving ordinary sibling documents', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pairing-gitlinks-'))
+    try {
+      execFileSync('git', ['init', '--object-format=sha1', root])
+      mkdirSync(join(root, 'plugins', 'sample-extra'), { recursive: true })
+      writeFileSync(join(root, 'plugins', 'sample-extra', 'README.md'), '# Owned document\n')
+      execFileSync('git', ['-C', root, 'add', 'plugins/sample-extra/README.md'])
+      execFileSync('git', ['-C', root, 'update-index', '--add', '--cacheinfo', '160000,0123456789012345678901234567890123456789,plugins/sample'])
+      const prefixes = gitSubmodulePrefixes(root)
+      expect(prefixes).toEqual(['plugins/sample/'])
+      expect(prefixes.some(prefix => 'plugins/sample/README.md'.startsWith(prefix))).toBe(true)
+      expect(prefixes.some(prefix => 'plugins/sample-extra/README.md'.startsWith(prefix))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
 
 function signature(markdown: string) {
   return translationStructureSignature(

@@ -12,6 +12,12 @@ Fork 验证可通过 `DSH_CI_RUNNER_FALLBACK_LINUX` 和 `DSH_CI_RUNNER_FALLBACK_
 
 当 fallback runner 变量非空时，CI 保留全部验证门禁，但采用较小的资源配置：Linux static 使用 3 个 gate；coverage 使用 2 个 worker、2 个分区和 2 个 gate；consumers 使用 3 个 gate、2 个 Oxlint/Publint/浏览器 worker，以及 6 个快照 worker；原生 Windows 使用 2 个 worker、分区、gate 和 Publint worker。企业与自托管默认值保持不变。
 
+master 的 Linux 与 Windows 串行任务也采用这些回退变量，同时保留完整检查集合。托管 Linux 安装 Chromium 的系统依赖；托管 Windows 把 pnpm 数据保存在运行器临时目录中，而不是备用机器的 `F:` 卷。变量为空时，仍使用对应的自托管运行器池。
+
+已安装 wheel 的 CI 在每个选定目标上运行无密钥黑盒测试和平台检查。可信 fork 运行仅在配置 `DEEPSEEK_API_KEY_EXTERNAL` 时执行真实 API 检查；缺少密钥时，明确输出提示并跳过 API 步骤。上游仓库仍在缺少密钥时使预检失败。来自 fork 和 Dependabot 的拉取请求仍不能进入携带凭证的步骤。无密钥运行成功并不能证明真实 API 兼容性。
+
+本地 fork 验证可能包含 CI 未初始化的 Git 子模块。[配对范围](../../../../docs/i18n/README.zh.md)遵循父仓库索引的归属，因此嵌套文档不会使这两种环境产生不同结果；普通未跟踪文档仍会被检查。
+
 发布检查器只过滤位于 `exports["./src/*"]` 的 `EXPORTS_GLOB_NO_MATCHED_FILES`，以及位于 `exports["./client"].default` 且精确产物为 `./lib/client.js` 的 `FILE_INVALID_FORMAT`。其他 Publint 诊断仍然可见，并保留原有严重级别。包负载闭合检查与相对导入验证仍针对精确的 `files` 视图运行。
 
 ## 曾考虑的替代方案

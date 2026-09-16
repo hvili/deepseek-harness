@@ -15,6 +15,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import {
   gitBlobHash,
   gitIndexPaths,
+  gitSubmodulePrefixes,
   readGitIndexBlob,
   storeGitBlob,
 } from './translation-pairing-git.ts'
@@ -31,7 +32,7 @@ import {
   partitionGeneratedRegions,
   requiresSourceLanguageSwitcher,
   isTranslationPairingManifestExcluded,
-  isTranslationScopeFile,
+  isTranslationScopeFile as isSourceScopeFile,
   TRANSLATION_SCOPE_GLOB_EXCLUDES,
   translationPairSourcePredicate,
   translationStructureDiff,
@@ -55,6 +56,12 @@ const listMode = request.mode === 'list'
 const writeMode = request.mode === 'write'
 const indexMode = request.input === 'index'
 const indexFiles = indexMode ? gitIndexPaths(root) : undefined
+const submodulePrefixes = gitSubmodulePrefixes(root)
+
+/** Submodule documents belong to the nested repository's pairing policy. */
+function isTranslationScopeFile(file: string): boolean {
+  return isSourceScopeFile(file) && !submodulePrefixes.some(prefix => file.startsWith(prefix))
+}
 
 const contentCache = new Map<string, Buffer | undefined>()
 
@@ -88,7 +95,8 @@ if (manifestContent === undefined) {
   throw new Error('scripts/translation-pairing.manifest.json is missing from the selected content plane')
 }
 const manifest = parseTranslationPairingManifest(manifestContent.toString('utf8'))
-const isTranslationPairSource = translationPairSourcePredicate(manifest)
+const isPairSource = translationPairSourcePredicate(manifest)
+const isTranslationPairSource = (file: string): boolean => isTranslationScopeFile(file) && isPairSource(file)
 
 /**
  * An excluded entry ending in `/` excludes the whole directory. The trailing

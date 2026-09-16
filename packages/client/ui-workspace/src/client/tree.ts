@@ -318,6 +318,7 @@ function sessionNode(
  * @param archivedSessionIds - registry-global archive set.
  * @param pendingInteractions - pending UI interactions by Session.
  * @param view - local expansion arrays.
+ * @param annotations - session labels and workspace tags from settings.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -365,6 +366,7 @@ export function deriveGroups(
  * @param list - sessions list snapshot.
  * @param archivedSessionIds - registry-global archive set.
  * @param pendingInteractions - pending UI interactions by Session.
+ * @param annotations - session labels and workspace tags from settings.
  * @returns flat rows in render order.
  */
 export function deriveFlat(
@@ -396,6 +398,7 @@ export function deriveFlat(
  * @param pendingInteractions - pending UI interactions by Session.
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param annotations - session labels and workspace tags from settings.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(

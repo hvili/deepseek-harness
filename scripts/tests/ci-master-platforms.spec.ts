@@ -50,6 +50,52 @@ function evaluateCondition(expression: string, cancelled: boolean, results: stri
 }
 
 describe('master-only platform scheduling', () => {
+  it.each([
+    ['serial-linux-selfhosted', 'LINUX', 'ubuntu-latest', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'check:ci:linux-primary'],
+    ['serial-windows', 'WINDOWS', 'windows-latest', ['self-hosted', 'dsh-win-ci', 'windows'], 'check:ci:windows-complete'],
+  ] as const)('routes %s to the configured runner without dropping its complete aggregate', (id, platform, hosted, standby, aggregate) => {
+    const job = workflow('ci-master.yml').jobs[id]!
+    const expression = String(job['runs-on']).trim().replace(/^[$][{][{]|[}][}]$/g, '')
+    for (const fallback of ['', hosted]) {
+      expect(runInNewContext(expression, {
+        vars: { [`DSH_CI_RUNNER_FALLBACK_${platform}`]: fallback },
+        fromJSON: JSON.parse,
+      }, { timeout: 1000 })).toEqual(fallback || standby)
+    }
+    expect(commands(job).join('\n')).toContain(`pnpm run ${aggregate}`)
+    expect(job['continue-on-error']).toBeUndefined()
+  })
+
+  it.each(['Windows', 'Linux', 'macOS'])('keeps credential checks fail-loud upstream and skips only keyless fork API calls on %s', (os) => {
+    const build = workflow('build-exe-for-python-sdk.yml').jobs.build!
+    const apiSteps = build.steps!.filter(step => /^(Preflight installed-wheel real API|Run installed-wheel real API)/.test(step.name ?? ''))
+    expect(apiSteps).toHaveLength(4)
+    for (const step of apiSteps) {
+      const expression = step.if!.trim().replaceAll('steps.live-api.outputs.enabled', 'availability')
+      for (const repository of ['deepseek-ai/deepseek-harness', 'example/fork']) {
+        for (const enabled of ['true', 'false']) {
+          for (const ci of [true, false]) {
+            for (const event of ['push', 'trusted-pr', 'fork-pr', 'dependabot-pr']) {
+              const untrusted = event === 'fork-pr' || event === 'dependabot-pr'
+              const expected = ci && !untrusted
+                && (repository === 'deepseek-ai/deepseek-harness' || enabled === 'true')
+                && (step.name!.endsWith('(Windows)') ? os === 'Windows' : os !== 'Windows')
+              expect(runInNewContext(expression, {
+                inputs: { ci }, availability: enabled, runner: { os },
+                github: {
+                  repository, event_name: event === 'push' ? 'push' : 'pull_request',
+                  event: { pull_request: { head: { repo: { fork: event === 'fork-pr' } }, user: { login: event === 'dependabot-pr' ? 'dependabot[bot]' : 'maintainer' } } },
+                },
+              }, { timeout: 1000 })).toBe(expected)
+            }
+          }
+        }
+      }
+    }
+    expect(build.steps!.find(step => step.name === 'Run installed-wheel keyless black-box tests (Windows)')!.if).toBe("runner.os == 'Windows'")
+    expect(build.steps!.find(step => step.name === 'Run installed-wheel keyless black-box tests (POSIX)')!.if).toBe("runner.os != 'Windows'")
+  })
+
   it.each(['success', 'failure', 'skipped', 'cancelled'])(
     'reports %s dependencies in active runs but never starts a cancelled-run verdict', (result) => {
       const aggregate = workflow('ci.yml').jobs['all-checks-passed']!

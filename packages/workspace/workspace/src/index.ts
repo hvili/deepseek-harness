@@ -124,7 +124,7 @@ function withTags(
   const next: Record<string, string[]> = {}
   for (const [key, list] of Object.entries(map)) {
     if (key === id) continue
-    next[key] = [...(list ?? [])]
+    next[key] = [...list]
   }
   if (tags.length > 0) next[id] = [...tags]
   return next

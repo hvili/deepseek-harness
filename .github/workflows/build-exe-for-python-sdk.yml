@@ -361,9 +361,28 @@ jobs:
             Pop-Location
           }
 
+      - name: Determine installed-wheel API availability
+        id: live-api
+        if: >-
+          inputs.ci
+          && (github.event_name != 'pull_request'
+              || !(github.event.pull_request.head.repo.fork
+                   || github.event.pull_request.user.login == 'dependabot[bot]'))
+        shell: pwsh
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Output '::notice::Installed-wheel real API test has no configured key; keyless tests still run.'
+          } else {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Preflight installed-wheel real API test (POSIX)
         if: >-
           inputs.ci
+          && (github.repository == 'deepseek-ai/deepseek-harness' || steps.live-api.outputs.enabled == 'true')
           && runner.os != 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -380,6 +399,7 @@ jobs:
       - name: Preflight installed-wheel real API test (Windows)
         if: >-
           inputs.ci
+          && (github.repository == 'deepseek-ai/deepseek-harness' || steps.live-api.outputs.enabled == 'true')
           && runner.os == 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -395,6 +415,7 @@ jobs:
       - name: Run installed-wheel real API black-box test (POSIX)
         if: >-
           inputs.ci
+          && (github.repository == 'deepseek-ai/deepseek-harness' || steps.live-api.outputs.enabled == 'true')
           && runner.os != 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -415,6 +436,7 @@ jobs:
       - name: Run installed-wheel real API black-box test (Windows)
         if: >-
           inputs.ci
+          && (github.repository == 'deepseek-ai/deepseek-harness' || steps.live-api.outputs.enabled == 'true')
           && runner.os == 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork

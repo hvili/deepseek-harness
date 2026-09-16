@@ -62,6 +62,20 @@ export function gitIndexPaths(root: string): Set<string> {
 }
 
 /**
+ * Return directory prefixes owned by submodules in any index stage.
+ * @param root - Superproject root.
+ * @returns Slash-terminated prefixes, independent of submodule initialization.
+ */
+export function gitSubmodulePrefixes(root: string): string[] {
+  return runGit(root, ['ls-files', '--stage', '-z'], 'listing Git submodules')
+    .toString('utf8').split('\0')
+    .flatMap((entry) => {
+      const match = /^160000 [0-9a-f]+ [0-3]\t([\s\S]+)$/.exec(entry)
+      return match?.[1] === undefined ? [] : [`${match[1]}/`]
+    })
+}
+
+/**
  * Paths visible to a custom merge driver from the current index plus every
  * merge head Git advertises through `GITHEAD_<oid>` environment entries.
  *
