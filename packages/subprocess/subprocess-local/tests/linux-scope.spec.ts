@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { existsSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   launchLinuxScope,
   prepareLinuxTerminalScope,
@@ -57,6 +57,9 @@ class FakeChild extends EventEmitter {
 }
 
 const directories: string[] = []
+
+// FakeChild's pid must never reach a real host process group.
+beforeEach(denyProcessGroups)
 
 afterEach(() => {
   for (const directory of directories.splice(0)) {
@@ -218,13 +221,14 @@ describe('Linux scope establishment and quiescence', () => {
     const handle = bindManagedProcess({ ...spec(), signal: controller.signal }, result)
     if (action === 'abort') controller.abort(new Error('cancelled'))
     else handle.terminate()
-    expect(child.kills).toEqual(['SIGTERM'])
+    const signals = [...child.kills]
     child.exit(null, 'SIGTERM')
     child.stdout.end()
     child.stderr.end()
     await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     await expect(handle.waitForExit()).resolves.toBe(true)
     expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+    expect(signals).toEqual(['SIGTERM'])
   })
 
   it.each([
@@ -476,7 +480,6 @@ describe('Linux scope establishment and quiescence', () => {
 
   it('releases an active scope left with no processes once its client has gone', async () => {
     // Regression: the manager's empty cgroup never ends this unit on its own.
-    denyProcessGroups()
     const spawnSync = recordingSystemctl()
     const launched = launch(async () => activeUnitWithTasks('0'), { spawnSync: spawnSync as never })
     launched.result.owner.signal('SIGKILL')
@@ -490,7 +493,6 @@ describe('Linux scope establishment and quiescence', () => {
   })
 
   it('concludes the empty range even when releasing the leftover scope fails', async () => {
-    denyProcessGroups()
     const spawnSync = recordingSystemctl()
       .mockImplementationOnce(() => ({ status: 0, stdout: '', stderr: '' }))
       .mockImplementationOnce(() => { throw new Error('systemctl is gone') })
@@ -502,7 +504,6 @@ describe('Linux scope establishment and quiescence', () => {
   })
 
   it('keeps waiting while the client still owns an active scope with no processes', async () => {
-    denyProcessGroups()
     const spawnSync = recordingSystemctl()
     const states = [activeUnitWithTasks('0'), unloadedUnit()]
     const launched = launch(async () => states.shift() ?? unloadedUnit(), {

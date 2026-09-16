@@ -13,7 +13,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
-export interface UiWorkspace {
+export interface UiWorkspace extends Pick<IWorkspaces,
+  'favoriteSession' | 'unfavoriteSession' | 'setSessionTags' | 'setWorkspaceTags'> {
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param sessionId - listed or retained Session to display.
@@ -48,30 +49,6 @@ export interface UiWorkspace {
    * @param sessionId - Session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
-  /**
-   * Mark a Session as a durable favorite.
-   * @param sessionId - Session to favorite.
-   */
-  favoriteSession(sessionId: SessionId): Promise<void>
-  /**
-   * Remove a Session from the durable favorites set.
-   * @param sessionId - Session to unfavorite.
-   */
-  unfavoriteSession(sessionId: SessionId): Promise<void>
-  /**
-   * Replace one Session's complete durable tag list.
-   * @param sessionId - target Session.
-   * @param tags - proposed tag list.
-   * @returns the normalized stored list.
-   */
-  setSessionTags(sessionId: SessionId, tags: readonly string[]): Promise<readonly string[]>
-  /**
-   * Replace one Workspace's complete durable tag list.
-   * @param workspaceId - target Workspace.
-   * @param tags - proposed tag list.
-   * @returns the normalized stored list.
-   */
-  setWorkspaceTags(workspaceId: WorkspaceId, tags: readonly string[]): Promise<readonly string[]>
   /**
    * Open the Host-native directory picker.
    * @returns the selected directory, or null when cancelled.

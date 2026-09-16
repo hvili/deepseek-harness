@@ -326,6 +326,7 @@ describe('BashTerminalBackend startup rollback', () => {
 
   it('composes the default local session around a spawned terminal', async () => {
     const ctx = new Context()
+    await ctx.plugin(StubSubprocessRuntime)
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -344,10 +345,10 @@ describe('BashTerminalBackend startup rollback', () => {
       },
     }
     queueMicrotask(() => { output.write(Buffer.from('\x1b]133;D;0\x07dsh> ')) })
+    vi.spyOn(ctx.subprocess, 'spawnTerminal').mockResolvedValue(terminal)
     const backend = new BashTerminalBackend(
       ctx,
       config(),
-      async () => terminal,
     )
     const session = await backend.spawn(spec(agent(ctx)))
     expect(session.motd).toBe('dsh> ')
@@ -392,7 +393,11 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
   })
 
-  it('keeps waiting for stdin_read when the first settled output only echoes the prompt literal', async () => {
+  it.each([
+    { initialOutput: "function prompt { 'dsh> ' }\ndsh> ", finalOutput: 'dsh> ' },
+    { initialOutput: "function prompt { 'dsh> ' }\ndsh> ", finalOutput: '' },
+    { initialOutput: '', finalOutput: 'dsh> ' },
+  ])('submits setup once and retains output across startup settlements: %j', async ({ initialOutput, finalOutput }) => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SessionProjectionRegistry)
@@ -405,7 +410,7 @@ describe('BashTerminalBackend startup rollback', () => {
         const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : "function prompt { 'dsh> ' }\n",
+            viewport: second ? finalOutput : initialOutput,
             waitReason: second ? 'stdin_read' as const : 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
@@ -424,7 +429,7 @@ describe('BashTerminalBackend startup rollback', () => {
     await backend.spawn(spec(agent(ctx)))
     expect(sends).toHaveLength(2)
     expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe('dsh> ')
+    expect(session.motd).toBe(finalOutput || initialOutput)
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {

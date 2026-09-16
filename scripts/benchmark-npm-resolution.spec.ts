@@ -42,7 +42,10 @@ function processCanExecute(pid: number): boolean {
   }
 }
 
-describe('npm resolution benchmark', () => {
+// Cold npm process startup under Windows coverage shares the lane's 90s case
+// budget. Keep 10s for process-tree teardown instead of imposing a 10s child cap.
+const npmResolutionTimeoutMs = 80_000
+describe('npm resolution benchmark', { timeout: 90_000 }, () => {
   it('parses repeat, timeout, threshold, and ref options', () => {
     expect(parseBenchmarkOptions([])).toEqual({ runs: 1, timeoutMs: 300_000 })
     expect(parseBenchmarkOptions([
@@ -94,7 +97,7 @@ describe('npm resolution benchmark', () => {
       '@deepseek-ai/dsh',
       new Map([['0.1.0', { name: '@deepseek-ai/dsh', version: '0.1.0' }]]),
     ]])
-    const result = await benchmarkNpmResolution(index, '0.1.0', 10_000)
+    const result = await benchmarkNpmResolution(index, '0.1.0', npmResolutionTimeoutMs)
 
     expect(result.durationMs).toBeGreaterThan(0)
     expect(result.registryRequests).toBeGreaterThan(0)
@@ -114,7 +117,7 @@ describe('npm resolution benchmark', () => {
     const result = await resolveNpmPackageLock(index, {
       '@deepseek-ai/dsh': '0.2.0',
       'dsh-previous': 'npm:@deepseek-ai/dsh@0.1.0',
-    }, 10_000)
+    }, npmResolutionTimeoutMs)
 
     expect(result.archiveRequests).toBe(0)
     expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh']?.version).toBe('0.2.0')
@@ -150,7 +153,7 @@ describe('npm resolution benchmark', () => {
         }]])],
       ])
 
-      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, 10_000)
+      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, npmResolutionTimeoutMs)
 
       expect(result.archiveRequests).toBe(0)
       expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh-peer']?.version).toBe('1.0.0')

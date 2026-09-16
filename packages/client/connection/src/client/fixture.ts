@@ -384,13 +384,13 @@ type WorkspaceFollowFrame =
       readonly workspaceTagsById: Readonly<Record<string, readonly string[]>>
     }
   }
-  | { readonly type: 'upsert'; readonly workspace: WorkspaceView }
-  | { readonly type: 'remove'; readonly workspaceId: WorkspaceId }
-  | { readonly type: 'order'; readonly workspaceIds: readonly WorkspaceId[] }
-  | { readonly type: 'archived'; readonly archivedSessionIds: readonly SessionId[] }
-  | { readonly type: 'favorites'; readonly favoriteSessionIds: readonly SessionId[] }
-  | { readonly type: 'sessionTags'; readonly sessionTagsById: Readonly<Record<string, readonly string[]>> }
-  | { readonly type: 'workspaceTags'; readonly workspaceTagsById: Readonly<Record<string, readonly string[]>> }
+  | ({ readonly type: 'upsert' } & WorkspaceValue)
+  | ({ readonly type: 'remove' } & WorkspaceDeleteRequest)
+  | ({ readonly type: 'order' } & WorkspaceOrderValue)
+  | ({ readonly type: 'archived' } & WorkspaceArchiveValue)
+  | ({ readonly type: 'favorites' } & WorkspaceFavoriteValue)
+  | ({ readonly type: 'sessionTags' } & WorkspaceSessionTagsValue)
+  | ({ readonly type: 'workspaceTags' } & WorkspaceWorkspaceTagsValue)
 
 interface FixtureWorkspaceApi {
   create(request: WorkspaceCreateRequest): Promise<ConnectionRpcResult<WorkspaceCreateValue>>
@@ -2041,11 +2041,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     id: string,
     tags: readonly string[],
   ): Record<string, string[]> => {
-    const next: Record<string, string[]> = {}
-    for (const [key, list] of Object.entries(map)) {
-      if (key === id) continue
-      next[key] = [...list]
-    }
+    const next = Object.fromEntries(Object.entries(map)
+      .filter(([key]) => key !== id)
+      .map(([key, list]) => [key, [...list]]))
     if (tags.length > 0) next[id] = [...tags]
     return next
   }

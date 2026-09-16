@@ -98,6 +98,8 @@ One backend serves both dialects: bash and pwsh share the same session machinery
 
 Three bounded tiers settle a send: exact stdin-wait evidence from the subprocess provider (Linux only), the verified private prompt marker with an exact printable tail, and output silence (`inferred_idle`); an absolute timeout always bounds the wait. Pwsh startup uses one deadline across its complete setup loop, so an `inferred_idle` follow-up does not restart the bound. Evidence collected before the provider write is discarded at the write boundary, a stdin wait that predates the write is not post-write readiness, and unknown foreground state is never a positive exact-idle signal.
 
+The pwsh setup command is submitted once, independently of whether a settled send produced output. A later empty readiness result retains the last non-empty bounded startup output instead of erasing the startup message; `stdin_read` remains the readiness requirement.
+
 ### Send cancellation and teardown
 
 Cancellation marks queued input as canceled, then signals the current foreground process group with a real `SIGINT` after any in-flight provider write settles; it never emulates interruption by writing `\x03`. Closing stops readiness polling, terminates the provider-owned process tree, awaits quiescence, and settles the active send as `session_exit`.

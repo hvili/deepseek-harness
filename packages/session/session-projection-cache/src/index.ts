@@ -96,6 +96,7 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  private readonly writes = new Map<Session, Promise<void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -104,7 +105,10 @@ export class SessionProjectionCache extends Service {
   /** Open the domain and install the write-behind listeners. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'sessionProjectionCache.domainClose')
+    this.ctx.effect(() => async () => {
+      await Promise.allSettled(this.writes.values())
+      await domain.close()
+    }, 'sessionProjectionCache.domainClose')
     this.table = domain.table('sessions')
     this.installWritePath()
   }
@@ -253,12 +257,23 @@ export class SessionProjectionCache extends Service {
     // from events no stored log contains). At detach the store entry is
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
-    await this.put(
-      session.id,
-      identityOf(session.header, session.inheritedEventCount),
-      rows,
-    )
+    const previous = this.writes.get(session)
+    const pending = (async () => {
+      // Reserve the write order before any log barrier can yield to detach.
+      if (previous !== undefined) await previous.catch(() => {})
+      if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+      await this.put(
+        session.id,
+        identityOf(session.header, session.inheritedEventCount),
+        rows,
+      )
+    })()
+    this.writes.set(session, pending)
+    try {
+      await pending
+    } finally {
+      if (this.writes.get(session) === pending) this.writes.delete(session)
+    }
   }
 
   /**

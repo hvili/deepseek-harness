@@ -233,6 +233,35 @@ describe('SessionProjectionCache write policy', () => {
     }, { timeout: 5_000 })
   })
 
+  it('keeps the detach checkpoint after an earlier creation flush is delayed', async () => {
+    const { ctx, root, cache } = await harness()
+    const barrier = Promise.withResolvers<undefined>()
+    const flush = vi.spyOn(ctx.sessions, 'flush').mockImplementationOnce(async () => {
+      await barrier.promise
+      return false
+    })
+    const write = vi.spyOn(cache, 'write')
+    let session: Session | undefined
+    try {
+      const owner = await ctx.plugin(Object.assign((inner: Context) => {
+        session = inner.sessions.create(SessionId('delayed-create'))
+      }, { inject: ['sessions'] }))
+      if (session === undefined) throw new Error('session was not created')
+      expect(flush).toHaveBeenCalledWith(session)
+      mark(session, ['live'])
+      await owner.dispose()
+      expect(write).toHaveBeenCalledTimes(2)
+      barrier.resolve(undefined)
+      await Promise.all(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
+    } finally {
+      barrier.resolve(undefined)
+      await Promise.allSettled(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      write.mockRestore()
+      flush.mockRestore()
+    }
+  })
+
   it('flushes when the in-turn event count reaches the configured threshold', async () => {
     const { ctx, root } = await harness({ config: { writeEveryEvents: 3, writeIntervalMs: 60_000 } })
     const session = ctx.sessions.create(SessionId('count'))
