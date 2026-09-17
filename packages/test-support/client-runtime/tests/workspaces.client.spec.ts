@@ -32,18 +32,47 @@ describe('TestWorkspaces favorites and tags', () => {
       .resolves.toEqual(['a', 'b'])
     expect(workspaces.list.getSnapshot().sessionTagsById).toEqual({ s1: ['a', 'b'] })
 
-    await expect(workspaces.setSessionTags(sid('s1'), [])).resolves.toEqual([])
-    expect(workspaces.list.getSnapshot().sessionTagsById).toEqual({})
+    // Replacing another id's list preserves the existing entry untouched.
+    await expect(workspaces.setSessionTags(sid('s2'), ['c'])).resolves.toEqual(['c'])
+    expect(workspaces.list.getSnapshot().sessionTagsById).toEqual({ s1: ['a', 'b'], s2: ['c'] })
 
-    await expect(workspaces.setWorkspaceTags(wid('ws'), [' team-a ']))
+    await expect(workspaces.setSessionTags(sid('s1'), [])).resolves.toEqual([])
+    expect(workspaces.list.getSnapshot().sessionTagsById).toEqual({ s2: ['c'] })
+
+    await expect(workspaces.setWorkspaceTags(wid('ws1'), [' team-a ']))
       .resolves.toEqual(['team-a'])
-    expect(workspaces.list.getSnapshot().workspaceTagsById).toEqual({ ws: ['team-a'] })
+    await expect(workspaces.setWorkspaceTags(wid('ws2'), ['team-b']))
+      .resolves.toEqual(['team-b'])
+    expect(workspaces.list.getSnapshot().workspaceTagsById).toEqual({ ws1: ['team-a'], ws2: ['team-b'] })
+    await expect(workspaces.setWorkspaceTags(wid('ws1'), [])).resolves.toEqual([])
+    expect(workspaces.list.getSnapshot().workspaceTagsById).toEqual({ ws2: ['team-b'] })
     expect(workspaces.calls.map(call => call.method)).toEqual([
-      'setSessionTags', 'setSessionTags', 'setWorkspaceTags',
+      'setSessionTags', 'setSessionTags', 'setSessionTags',
+      'setWorkspaceTags', 'setWorkspaceTags', 'setWorkspaceTags',
     ])
   })
 
-  it('lets a stub replace the default favorite behavior while still recording', async () => {
+  it('lets stubs replace the default behaviors while calls still record', async () => {
+    const workspaces = new TestWorkspaces(stabilize)
+    workspaces.stub('favoriteSession', async () => {})
+    await expect(workspaces.favoriteSession(sid('s1'))).resolves.toBeUndefined()
+    expect(workspaces.list.getSnapshot().favoriteSessionIds).toEqual([])
+
+    workspaces.stub('unfavoriteSession', async () => {})
+    await expect(workspaces.unfavoriteSession(sid('s1'))).resolves.toBeUndefined()
+
+    workspaces.stub('setSessionTags', async (_sessionId, tags) => [tags.join('-')])
+    await expect(workspaces.setSessionTags(sid('s1'), ['a', 'b'])).resolves.toEqual(['a-b'])
+
+    workspaces.stub('setWorkspaceTags', async (_workspaceId, tags) => [tags.join('+')])
+    await expect(workspaces.setWorkspaceTags(wid('ws'), ['a', 'b'])).resolves.toEqual(['a+b'])
+
+    expect(workspaces.calls.map(call => call.method)).toEqual([
+      'favoriteSession', 'unfavoriteSession', 'setSessionTags', 'setWorkspaceTags',
+    ])
+  })
+
+  it('lets a rejecting favorite stub surface failures without mutating the state', async () => {
     const workspaces = new TestWorkspaces(stabilize)
     workspaces.stub('favoriteSession', async () => {
       throw new Error('favorite rejected')

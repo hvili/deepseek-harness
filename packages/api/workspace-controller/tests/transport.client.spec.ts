@@ -346,6 +346,11 @@ describe('WorkspaceController', () => {
     await expect(controller.unfavoriteSession(sid('session'))).resolves.toBeUndefined()
     await expect(controller.setSessionTags(sid('session'), ['ops'])).resolves.toEqual(['ops'])
     await expect(controller.setWorkspaceTags(wid('one'), ['team-a'])).resolves.toEqual(['team-a'])
+    // A Host echo whose map dropped the entry (normalized empty list) resolves empty.
+    mock.remote.workspace.setSessionTags.mockResolvedValueOnce({ ok: true, value: { sessionTagsById: {} } })
+    await expect(controller.setSessionTags(sid('session'), [])).resolves.toEqual([])
+    mock.remote.workspace.setWorkspaceTags.mockResolvedValueOnce({ ok: true, value: { workspaceTagsById: {} } })
+    await expect(controller.setWorkspaceTags(wid('one'), [])).resolves.toEqual([])
     await expect(controller.delete(wid('one'))).resolves.toBeUndefined()
     // Each command crosses the wire as one positional request object.
     expect(mock.log.requests('workspace/create')).toEqual([{ path: '/work/created' }])
@@ -355,8 +360,14 @@ describe('WorkspaceController', () => {
     expect(mock.log.requests('workspace/archiveSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/favoriteSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/unfavoriteSession')).toEqual([{ sessionId: 'session' }])
-    expect(mock.log.requests('workspace/setSessionTags')).toEqual([{ sessionId: 'session', tags: ['ops'] }])
-    expect(mock.log.requests('workspace/setWorkspaceTags')).toEqual([{ workspaceId: 'one', tags: ['team-a'] }])
+    expect(mock.log.requests('workspace/setSessionTags')).toEqual([
+      { sessionId: 'session', tags: ['ops'] },
+      { sessionId: 'session', tags: [] },
+    ])
+    expect(mock.log.requests('workspace/setWorkspaceTags')).toEqual([
+      { workspaceId: 'one', tags: ['team-a'] },
+      { workspaceId: 'one', tags: [] },
+    ])
     expect(mock.log.requests('workspace/delete')).toEqual([{ workspaceId: 'one' }])
   })
 

@@ -472,7 +472,9 @@ function sameTagMaps(
   if (leftKeys.length !== rightKeys.length) return false
   for (const key of leftKeys) {
     if (!Object.hasOwn(right, key)) return false
+    /* v8 ignore next -- ownership is proven above and values are typed arrays; the coalesce only satisfies noUncheckedIndexedAccess. */
     const a = left[key] ?? []
+    /* v8 ignore next -- same typing-only fallback as the line above. */
     const b = right[key] ?? []
     if (a.length !== b.length || a.some((tag, index) => tag !== b[index])) return false
   }

@@ -413,6 +413,16 @@ describe('ClientWorkspaceModel', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
+  it('installs a tag map whose keys changed while the count stayed equal', async () => {
+    const model = modelFor()
+    baseline(model, [workspace('one', [sid('first')])])
+    model.replaceSessionTags({ first: ['ops'] })
+
+    // Equal key counts with different keys must not be mistaken for equality.
+    model.replaceSessionTags({ second: ['ops'] })
+    expect(model.getSnapshot().sessionTagsById).toEqual({ second: ['ops'] })
+  })
+
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {
     const model = modelFor()
     baseline(model, [

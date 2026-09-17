@@ -166,11 +166,14 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 /** Deterministic JSON spelling of one tag map for change detection. */
 function stableStringifyTags(map: Readonly<Record<string, readonly string[]>>): string {
   const keys = Object.keys(map).sort()
+  /* v8 ignore next -- parsed state records always carry array values, so the
+     coalesced fallback only exists for the noUncheckedIndexedAccess typing. */
   return JSON.stringify(keys.map(key => [key, [...map[key] ?? []]]))
 }
 
 /** Detach one tag map into fresh arrays for Remote transport. */
 function copyTags(map: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> {
+  /* v8 ignore next -- same typing-only fallback as stableStringifyTags above. */
   return Object.fromEntries(Object.keys(map).sort().map(key => [key, [...map[key] ?? []]]))
 }
 

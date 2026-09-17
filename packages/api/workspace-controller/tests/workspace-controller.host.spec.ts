@@ -151,6 +151,25 @@ describe('WorkspaceController commands', () => {
     vi.spyOn(ctx.workspaceRegistry, 'archiveSession').mockRejectedValueOnce(archiveFailure)
     await expect(controller.archiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(archiveFailure)
+
+    // Annotation commands propagate registry failures that are not their
+    // mapped business errors unchanged.
+    const favoriteFailure = new Error('favorite storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'favoriteSession').mockRejectedValueOnce(favoriteFailure)
+    await expect(controller.favoriteSession({ sessionId: SessionId('session') }))
+      .rejects.toBe(favoriteFailure)
+
+    const sessionTagsFailure = new Error('session tags storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'setSessionTags').mockRejectedValueOnce(sessionTagsFailure)
+    await expect(controller.setSessionTags({ sessionId: SessionId('session'), tags: ['ops'] }))
+      .rejects.toBe(sessionTagsFailure)
+
+    const workspaceTagsFailure = new Error('workspace tags storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'setWorkspaceTags').mockRejectedValueOnce(workspaceTagsFailure)
+    await expect(controller.setWorkspaceTags({
+      workspaceId: created.workspace.workspaceId,
+      tags: ['team-a'],
+    })).rejects.toBe(workspaceTagsFailure)
   })
 
   it('resolves queued Workspace identities when their operation starts', async () => {
