@@ -1540,8 +1540,11 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(maxConcat).toBeLessThan(2048)
     // The paced payload costs ~3.2s deterministically, which is above the
     // 5000ms default the local unit entry grants, so the case carries its own
-    // bound instead of relying on the lane to widen it.
-  }, 20_000)
+    // bound instead of relying on the lane to widen it. Per-byte sleeps
+    // accumulate scheduler overshoot on loaded CI runners (a macOS lane
+    // exhausted 20s), so the bound covers a full `maxWallMs` run plus spawn
+    // and teardown overhead.
+  }, 90_000)
 
   it('charges a structurally-valid but illegal UTF-8 sequence its U+FFFD-decoded cost', async () => {
     // A CESU-8 lone surrogate `ED A0 80` is structurally well-formed (a 3-byte
@@ -1591,8 +1594,11 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(maxConcat).toBeLessThan(2048)
     // The paced payload costs ~3.3s deterministically, which is above the
     // 5000ms default the local unit entry grants, so the case carries its own
-    // bound instead of relying on the lane to widen it.
-  }, 20_000)
+    // bound instead of relying on the lane to widen it. Per-byte sleeps
+    // accumulate scheduler overshoot on loaded CI runners (a macOS lane
+    // exhausted 20s), so the bound covers a full `maxWallMs` run plus spawn
+    // and teardown overhead.
+  }, 90_000)
 
   it('charges a lone surrogate its full six escaped bytes, not three', async () => {
     // A forged `log` frame carrying `\ud800` escapes materializes lone
