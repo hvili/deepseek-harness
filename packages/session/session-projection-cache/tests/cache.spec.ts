@@ -218,8 +218,9 @@ describe('SessionProjectionCache write policy', () => {
   })
 
   it('writes at session disposal (detach, the live-to-cold moment)', async () => {
-    const { ctx, root } = await harness()
+    const { ctx, root, cache } = await harness()
     // Sessions dispose with their owning fiber: create in a child plugin.
+    const write = vi.spyOn(cache, 'write')
     let session: Session | undefined
     const owner = await ctx.plugin(Object.assign((inner: Context) => {
       session = inner.sessions.create(SessionId('detach'))
@@ -228,9 +229,13 @@ describe('SessionProjectionCache write policy', () => {
     mark(session, ['live'])
     await owner.dispose()
     const detached = session
-    await vi.waitFor(async () => {
-      expect((await storedRows(root, detached.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
-    }, { timeout: 5_000 })
+    // The detach write is fire-and-forget from the disposal event; await its
+    // completion instead of polling the file on a wall-clock budget, which a
+    // loaded Windows runner can exhaust between the two adjacent writes.
+    await Promise.all(write.mock.results
+      .filter(result => result.type === 'return')
+      .map(result => result.value))
+    expect((await storedRows(root, detached.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
   })
 
   it('keeps the detach checkpoint after an earlier creation flush is delayed', async () => {
