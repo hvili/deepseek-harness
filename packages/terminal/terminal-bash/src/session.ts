@@ -184,6 +184,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private polling = false
   private promptSeen = false
   private promptTextSeen = false
+  private promptAcknowledgedValue = false
   private promptTail = ''
   private shellPgid: number | undefined
   private initializing = false
@@ -245,6 +246,33 @@ export class LocalPtySession implements TerminalBackendSession {
       throw error
     } finally {
       this.initializing = false
+    }
+  }
+
+  /** Whether the controlled prompt marker and its printable prompt have been observed since spawn. */
+  get promptAcknowledged(): boolean {
+    return this.promptAcknowledgedValue
+  }
+
+  /**
+   * Resolve once no PTY output arrives for `quietMs`, so input queued behind
+   * the shell's own startup reading has finished rendering before the next
+   * send settles on its own command.
+   * @param quietMs - output-silence window.
+   * @param timeoutMs - absolute bound for the wait.
+   * @param signal - optional cancellation.
+   */
+  async quiesce(quietMs: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+    const startedAt = Date.now()
+    for (;;) {
+      signal?.throwIfAborted()
+      const idleFor = Date.now() - this.lastOutputAt
+      if (idleFor >= quietMs) return
+      const remainingBound = timeoutMs - (Date.now() - startedAt)
+      if (remainingBound <= 0) throw new Error('PTY shell did not quiesce before startup timeout')
+      await new Promise((resolve) => {
+        setTimeout(resolve, Math.min(quietMs - idleFor, remainingBound))
+      })
     }
   }
 
@@ -434,6 +462,7 @@ export class LocalPtySession implements TerminalBackendSession {
       this.promptTail += sanitized.promptTail.slice(0, remaining)
       if (sanitized.promptTail.length > remaining) this.promptTail = `${CONTROLLED_PROMPT}\0`
       this.promptTextSeen = this.promptTail === CONTROLLED_PROMPT
+      if (this.promptTextSeen) this.promptAcknowledgedValue = true
     }
   }
 

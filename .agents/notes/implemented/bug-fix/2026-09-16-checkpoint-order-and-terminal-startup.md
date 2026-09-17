@@ -14,7 +14,7 @@ The macOS Linux-scope unit fixture had a separate host-resource leak: its fake p
 
 [SessionProjectionCache](../../../../packages/session/session-projection-cache/src/index.ts) snapshots the projection cut synchronously and reserves a per-Session write chain before awaiting log durability. A failed predecessor settles before its successor continues. Completed chains leave the pending map, and disposal joins remaining writes before closing the domain. Different Sessions retain independent log barriers; the storage domain still owns durable publication.
 
-[Terminal startup](../../../../packages/terminal/terminal-bash/src/index.ts) submits pwsh setup once and retains the latest non-empty bounded viewport across empty follow-up results. It still requires backend `stdin_read` and keeps the same absolute deadline; printed prompt text alone cannot establish readiness.
+[Terminal startup](../../../../packages/terminal/terminal-bash/src/index.ts) resubmits the pwsh setup until the prompt marker acknowledges it; [the marker-readiness note](2026-09-17-pwsh-startup-marker-readiness.md) owns the current startup decision. The latest non-empty bounded viewport is retained across empty follow-up results, and printed prompt text alone still cannot establish readiness.
 
 Every Linux-scope unit case intercepts process-group signals before using fake children and restores the mock afterward. Tests that need successful group delivery explicitly replace that interception with a recording fake. Npm resolution tests use the Windows lane's 90-second case budget with 80 seconds for the child and 10 seconds for termination and assertions; the separate deliberate-timeout test retains its short deadline.
 

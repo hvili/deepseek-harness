@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-16-checkpoint-order-and-terminal-startup.md
-2026-09-16-checkpoint-order-and-terminal-startup.md: 44194ff8afcb45ca705a62d962514070db9ca2be
-2026-09-16-checkpoint-order-and-terminal-startup.zh.md: 22a2ac63a2c5ee38c14be552b2f3623331698ac8
+2026-09-16-checkpoint-order-and-terminal-startup.md: d0e2cfb12b9299002f3df4e3c861586a31917ac5
+2026-09-16-checkpoint-order-and-terminal-startup.zh.md: a674f901d7e321f1577567d9eb7310b1d3510d33

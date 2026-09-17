@@ -14,7 +14,7 @@ macOS 上的 Linux scope 单元夹具有另一个宿主资源泄漏：假 pid �
 
 [SessionProjectionCache](../../../../packages/session/session-projection-cache/src/index.ts) 同步截取投影切面，并在等待日志持久化前确定逐 Session 写入链的顺序。失败的前序写入先结算，后序写入再继续。完成的链会移出待完成映射；释放会等待剩余写入，再关闭存储域。不同 Session 仍有各自独立的日志屏障，持久发布仍由存储域负责。
 
-[终端启动](../../../../packages/terminal/terminal-bash/src/index.ts) 只提交一次 pwsh 设置，并在后续结果为空时保留最近的非空有界视口。它仍要求后端报告 `stdin_read`，并沿用同一个绝对截止时间；仅打印提示符文本不能证明就绪。
+[终端启动](../../../../packages/terminal/terminal-bash/src/index.ts) 会反复重新提交 pwsh 设置，直到提示符标记确认；[标记就绪笔记](2026-09-17-pwsh-startup-marker-readiness.zh.md) 拥有当前的启动决策。后续结果为空时仍保留最近的非空有界视口，且仅打印提示符文本仍不能证明就绪。
 
 每个 Linux scope 单元用例都在使用假子进程前拦截进程组信号，并在结束后恢复 mock。需要模拟成功投递到进程组的测试会明确换成记录调用的假实现。npm 解析测试采用 Windows 档位的 90 秒用例预算，其中子进程占 80 秒，终止和断言保留 10 秒；单独的故意超时测试仍保留短截止时间。
 

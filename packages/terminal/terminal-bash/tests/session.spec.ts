@@ -1603,4 +1603,30 @@ describe('LocalPtySession bounds, signals, and teardown', () => {
     expect((await operation.done).waitReason).toBe('session_exit')
   })
 
+  it('quiesce resolves on output silence and rejects when the shell keeps emitting', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = makeSession(terminal, new FakeInspector(), config({ timeoutMs: 200 }))
+    // Quiet since spawn: the silence window elapses, then the wait resolves.
+    const quiet = session.quiesce(30, 200)
+    const quietSettled = expect(quiet).resolves.toBeUndefined()
+    await vi.advanceTimersByTimeAsync(30)
+    await quietSettled
+
+    // Recent output restarts the silence window; quiescence follows the last chunk.
+    terminal.emitData('startup echo')
+    const settling = session.quiesce(30, 200)
+    const settled = expect(settling).resolves.toBeUndefined()
+    await vi.advanceTimersByTimeAsync(60)
+    await settled
+
+    // Continuous output exceeds the absolute bound.
+    terminal.emitData('another burst')
+    const rejected = expect(session.quiesce(30, 100)).rejects.toThrow('did not quiesce')
+    const keepEmitting = setInterval(() => { terminal.emitData('x') }, 20)
+    await vi.advanceTimersByTimeAsync(200)
+    await rejected
+    clearInterval(keepEmitting)
+  })
+
 })

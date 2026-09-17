@@ -114,7 +114,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
-  timeoutMs: number,
+  config: ResolvedConfig,
   signal?: AbortSignal,
 ): Promise<void> {
   let startupOperation: TerminalSendOperation | undefined
@@ -123,26 +123,39 @@ async function startupSession(
       await session.initialize(signal)
       return
     }
-    // pwsh cannot install its prompt from the environment. Write the prompt
-    // function through the session, pin UTF-8 output before user input, and
-    // accept only backend stdin_read evidence; echoed setup source containing
-    // the printable prompt is not readiness. Follow-up sends bridge silence
-    // settlements during startup, while one absolute deadline bounds them.
+    // pwsh cannot install its prompt from the environment. The setup must be
+    // submitted through the session, and the first submission races the shell's
+    // own startup: a line queued before pwsh's interactive loop runs is echoed
+    // by the tty yet can be consumed by the shell's startup terminal probing
+    // and never executed. A settled send is therefore not evidence that the
+    // setup ran; readiness requires the owned prompt marker
+    // (promptAcknowledged). An unacknowledged settle resubmits the setup — it
+    // is idempotent — and from the third attempt alternates with a submitted
+    // empty line that cancels a partially consumed line before the next
+    // resubmission. The absolute deadline bounds every cycle.
     let viewport = ''
-    let first = true
+    let unacknowledged = 0
     for (;;) {
       startupOperation = session.startSend({
-        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
-        submit: first,
+        text: unacknowledged > 0 && unacknowledged % 2 === 0 ? '' : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        submit: true,
         ...signal !== undefined ? { signal } : {},
       })
-      first = false
       const result = await startupOperation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       if (result.viewport.length > 0) viewport = result.viewport
-      if (result.waitReason === 'stdin_read') break
+      if (session.promptAcknowledged) break
+      unacknowledged += 1
     }
+    // Resubmissions queue behind the shell's own reading, and the terminal's
+    // own echo of the acknowledging line can render as a late burst that
+    // carries marker evidence. Either would settle a send started now on
+    // leftover startup output instead of its own command, so wait for the
+    // output stream to go quiet first. The window stays below the
+    // `inferred_idle` tier: the deadline still bounds the whole sequence.
+    await session.quiesce(Math.min(config.idleSilenceMs, 500), config.timeoutMs, signal)
+    session.motd = viewport
     session.motd = viewport
   }
   const races: Promise<void>[] = []
@@ -159,7 +172,7 @@ async function startupSession(
     deadlineTimer = setTimeout(() => {
       startupOperation?.cancel()
       deadline.reject(new Error('PTY shell did not reach readiness before startup timeout'))
-    }, timeoutMs)
+    }, config.timeoutMs)
     races.push(deadline.promise)
   }
   try {
@@ -206,7 +219,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config, spec.signal)
       return session
     } catch (error) {
       try {

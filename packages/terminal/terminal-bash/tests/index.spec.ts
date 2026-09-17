@@ -364,6 +364,8 @@ describe('BashTerminalBackend startup rollback', () => {
     let sent: TerminalSendRequest | undefined
     const session = {
       motd: '',
+      promptAcknowledged: true,
+      quiesce: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sent = request
         return {
@@ -394,10 +396,30 @@ describe('BashTerminalBackend startup rollback', () => {
   })
 
   it.each([
-    { initialOutput: "function prompt { 'dsh> ' }\ndsh> ", finalOutput: 'dsh> ' },
-    { initialOutput: "function prompt { 'dsh> ' }\ndsh> ", finalOutput: '' },
-    { initialOutput: '', finalOutput: 'dsh> ' },
-  ])('submits setup once and retains output across startup settlements: %j', async ({ initialOutput, finalOutput }) => {
+    {
+      name: 'one resubmission recovers a setup consumed by shell startup probing',
+      // Send 1 settles on the echoed setup source alone; send 2 resubmits the
+      // same setup, the shell executes it, and the marker prompt settles.
+      results: [
+        { viewport: "function prompt { 'dsh> ' }\n", waitReason: 'inferred_idle' as const },
+        { viewport: 'dsh> ', waitReason: 'stdin_read' as const },
+      ],
+      expected: 'dsh> ',
+    },
+    {
+      name: 'the empty-line flush cancels a half-consumed line before the next resubmission',
+      // Send 2's resubmission also settles without the marker (a partial line
+      // is still pending), so send 3 submits an empty line, and send 4's
+      // resubmission finally reaches the marker prompt.
+      results: [
+        { viewport: "function prompt { 'dsh", waitReason: 'inferred_idle' as const },
+        { viewport: '> ', waitReason: 'stdin_read' as const },
+        { viewport: '', waitReason: 'stdin_read' as const },
+        { viewport: 'dsh> ', waitReason: 'stdin_read' as const },
+      ],
+      expected: 'dsh> ',
+    },
+  ])('resubmits the pwsh setup until the marker prompt acknowledges it: $name', async ({ results, expected }) => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SessionProjectionRegistry)
@@ -405,13 +427,15 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      get promptAcknowledged(): boolean { return sends.length >= results.length },
+      quiesce: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
-        const second = sends.length > 1
+        const result = results[Math.min(sends.length - 1, results.length - 1)]!
         return {
           done: Promise.resolve({
-            viewport: second ? finalOutput : initialOutput,
-            waitReason: second ? 'stdin_read' as const : 'inferred_idle' as const,
+            viewport: result.viewport,
+            waitReason: result.waitReason,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -427,9 +451,9 @@ describe('BashTerminalBackend startup rollback', () => {
       () => session,
     )
     await backend.spawn(spec(agent(ctx)))
-    expect(sends).toHaveLength(2)
-    expect(sends[1]).toMatchObject({ text: '', submit: false })
-    expect(session.motd).toBe(finalOutput || initialOutput)
+    expect(sends).toHaveLength(results.length)
+    expect(sends[0]).toMatchObject({ text: ENCODING_PREAMBLE + PWSH_PROMPT_SETUP, submit: true })
+    expect(session.motd).toContain(expected)
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
@@ -518,6 +542,8 @@ describe('BashTerminalBackend startup rollback', () => {
     const sends: TerminalSendRequest[] = []
     const session = {
       motd: '',
+      promptAcknowledged: true,
+      quiesce: async () => {},
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         return {
