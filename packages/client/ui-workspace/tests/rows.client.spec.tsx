@@ -484,6 +484,76 @@ describe('workspace browser rows', () => {
   })
 
 
+  it('session row menu toggles favorites, edits tags, and renders favorite and tag marks', () => {
+    const onOpen = vi.fn()
+    const onFavorite = vi.fn()
+    const onEditTags = vi.fn()
+    const node: SessionNode = {
+      id: sid('s1'), title: 'Tagged', blank: false, favorite: true, tags: ['ops', 'urgent'], running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, updatedAt: 0,
+    }
+    const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
+      onFavorite={onFavorite} onEditTags={onEditTags} t={t} />)
+
+    expect(screen.getByText('ops')).toBeTruthy()
+    expect(screen.getByText('urgent')).toBeTruthy()
+    expect(screen.getByRole('img', { name: '已收藏' })).toBeTruthy()
+
+    const openMenu = (): void => { fireEvent.click(screen.getByRole('button', { name: '会话“Tagged”的操作' })) }
+    openMenu()
+    // The favorited row offers removing the favorite, and the menu dispatch
+    // passes the requested membership target instead of the current one.
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消收藏' }))
+    expect(onFavorite).toHaveBeenCalledWith(node.id, false)
+    openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }))
+    expect(onEditTags).toHaveBeenCalledWith(node.id, ['ops', 'urgent'])
+
+    view.rerender(<SessionNodeItem node={{ ...node, favorite: false, tags: [] }} currentId={undefined} now={0}
+      onOpen={onOpen} onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()}
+      onFavorite={onFavorite} onEditTags={onEditTags} t={t} />)
+    expect(screen.queryByRole('img', { name: '已收藏' })).toBeNull()
+    openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: '收藏会话' }))
+    expect(onFavorite).toHaveBeenCalledWith(node.id, true)
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('search rows render durable tags and the favorite mark', () => {
+    const onOpen = vi.fn()
+    render(<SearchResultItem
+      result={{
+        id: sid('tagged-result'), title: 'Tagged result', workspace: 'Project',
+        favorite: true, tags: ['ops'], running: false, runningSubagentCount: 0,
+        completed: false, hasActiveSchedule: false,
+      }}
+      currentId={undefined} onOpen={onOpen} t={t}
+    />)
+    const row = screen.getByRole('treeitem')
+    expect(screen.getByText('ops')).toBeTruthy()
+    expect(screen.getByRole('img', { name: '已收藏' })).toBeTruthy()
+    fireEvent.click(row)
+    expect(onOpen).toHaveBeenCalledOnce()
+  })
+
+  it('workspace rows render durable tags and dispatch the tag editor', () => {
+    const onEditTags = vi.fn()
+    const group: GroupNode = {
+      key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+      tags: ['team-a', 'team-b'], sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+    }
+    render(<ProjectRowItem
+      group={group} onToggle={vi.fn()} onCreate={vi.fn()}
+      actions={{ rename: vi.fn(), delete: vi.fn(), editTags: onEditTags }} t={t}
+    />)
+    expect(screen.getByText('team-a')).toBeTruthy()
+    expect(screen.getByText('team-b')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Project”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }))
+    expect(onEditTags).toHaveBeenCalledOnce()
+  })
+
   it('shows the hover card after the dwell and suppresses it while the row menu is open', () => {
     vi.useFakeTimers()
     try {

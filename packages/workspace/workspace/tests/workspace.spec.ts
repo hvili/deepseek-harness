@@ -997,3 +997,139 @@ describe('registry-global session archive', () => {
     expect(upgraded.registry.archivedSessionIds).toEqual([])
   })
 })
+
+describe('registry-global session favorites', () => {
+  it('favorites durably in order, idempotently skips repeats, and leaves accounting untouched', async () => {
+    const dir = await makeDir('favorite-home')
+    const result = await harness({ sessions: [header('kept', dir, 100), header('gone', dir, 200)] })
+    const workspace = result.registry.list()[0]!
+    expect(result.registry.favoriteSessionIds).toEqual([])
+
+    await result.registry.favoriteSession(SessionId('gone'))
+    expect(result.registry.favoriteSessionIds).toEqual(['gone'])
+    // Favoriting is a display-set write: the workspace account keeps the id.
+    expect(workspace.sessionIds).toContain('gone')
+    expect(storedState(result.pool).favoriteSessionIds).toEqual(['gone'])
+    const changesAfterFirst = result.changes.filter(change => change.table === '').length
+
+    await result.registry.favoriteSession(SessionId('gone'))
+    expect(result.registry.favoriteSessionIds).toEqual(['gone'])
+    // The idempotent repeat neither rewrites the medium nor emits a change.
+    expect(result.changes.filter(change => change.table === '').length).toBe(changesAfterFirst)
+
+    await result.registry.favoriteSession(SessionId('kept'))
+    expect(result.registry.favoriteSessionIds).toEqual(['gone', 'kept'])
+  })
+
+  it('accepts a live session and rejects unknown ids without writing', async () => {
+    const dir = await makeDir('favorite-live')
+    const result = await harness({ liveSessions: [header('live-only', dir, 200)] })
+    await result.registry.favoriteSession(SessionId('live-only'))
+    expect(result.registry.favoriteSessionIds).toEqual(['live-only'])
+
+    await expect(result.registry.favoriteSession(SessionId('ghost')))
+      .rejects.toThrow(/cannot archive session 'ghost'/)
+    expect(storedState(result.pool).favoriteSessionIds).toEqual(['live-only'])
+  })
+
+  it('unfavorites without an existence proof and resolves an absent id write-free', async () => {
+    const dir = await makeDir('favorite-unfavorite')
+    const result = await harness({ sessions: [header('s1', dir, 100)] })
+    await result.registry.favoriteSession(SessionId('s1'))
+
+    await result.registry.unfavoriteSession(SessionId('s1'))
+    expect(result.registry.favoriteSessionIds).toEqual([])
+    expect(storedState(result.pool).favoriteSessionIds).toEqual([])
+
+    const changesAfterRemoval = result.changes.filter(change => change.table === '').length
+    await result.registry.unfavoriteSession(SessionId('never-favorited'))
+    expect(result.registry.favoriteSessionIds).toEqual([])
+    expect(result.changes.filter(change => change.table === '').length).toBe(changesAfterRemoval)
+  })
+
+  it('restores favorites across restarts', async () => {
+    const dir = await makeDir('favorite-restart')
+    const pool = new MemoryMediaPool()
+    const first = await harness({ pool, sessions: [header('s1', dir, 100)] })
+    await first.registry.favoriteSession(SessionId('s1'))
+    await first.fiber.dispose()
+
+    const second = await harness({ pool, sessions: [header('s1', dir, 100)] })
+    expect(second.registry.favoriteSessionIds).toEqual(['s1'])
+    await second.fiber.dispose()
+  })
+})
+
+describe('durable tag maps', () => {
+  it('normalizes proposed tags and replaces one session entry durably', async () => {
+    const dir = await makeDir('tags-home')
+    const result = await harness({ sessions: [header('s1', dir, 100), header('s2', dir, 200)] })
+
+    await expect(result.registry.setSessionTags(SessionId('s1'), [' ops ', '', 'ops', 'urgent']))
+      .resolves.toEqual(['ops', 'urgent'])
+    expect(result.registry.sessionTagsById).toEqual({ s1: ['ops', 'urgent'] })
+
+    await expect(result.registry.setSessionTags(SessionId('s2'), [])).resolves.toEqual([])
+    expect(result.registry.sessionTagsById).toEqual({ s1: ['ops', 'urgent'] })
+
+    // An empty replacement removes the entry so the map stays compact.
+    await expect(result.registry.setSessionTags(SessionId('s1'), [])).resolves.toEqual([])
+    expect(result.registry.sessionTagsById).toEqual({})
+  })
+
+  it('rejects unknown sessions, over-long tags, and lists beyond the stored bound', async () => {
+    const dir = await makeDir('tags-limits')
+    const result = await harness({ sessions: [header('s1', dir, 100)] })
+
+    await expect(result.registry.setSessionTags(SessionId('ghost'), ['ops']))
+      .rejects.toThrow(/cannot archive session 'ghost'/)
+
+    await expect(result.registry.setSessionTags(SessionId('s1'), ['x'.repeat(65)]))
+      .rejects.toThrow(/tag-too-long/)
+
+    await expect(result.registry.setSessionTags(SessionId('s1'), [
+      't01', 't02', 't03', 't04', 't05', 't06', 't07', 't08', 't09', 't10',
+      't11', 't12', 't13', 't14', 't15', 't16', 't17', 't18', 't19', 't20',
+      't21', 't22', 't23', 't24', 't25',
+    ])).rejects.toThrow(/too-many-tags/)
+    expect(result.registry.sessionTagsById).toEqual({})
+
+    // Exactly 24 distinct tags are accepted.
+    await expect(result.registry.setSessionTags(SessionId('s1'), [
+      't01', 't02', 't03', 't04', 't05', 't06', 't07', 't08', 't09', 't10',
+      't11', 't12', 't13', 't14', 't15', 't16', 't17', 't18', 't19', 't20',
+      't21', 't22', 't23', 't24',
+    ])).resolves.toHaveLength(24)
+  })
+
+  it('replaces one workspace entry, removes emptied entries, and rejects unknown workspaces', async () => {
+    const dir = await makeDir('tags-workspace')
+    const result = await harness({ sessions: [header('s1', dir, 100)] })
+    const workspace = await result.registry.create(dir)
+
+    await expect(result.registry.setWorkspaceTags(workspace.id, [' team-a ', '', 'team-a', 'active']))
+      .resolves.toEqual(['team-a', 'active'])
+    expect(result.registry.workspaceTagsById).toEqual({ [workspace.id]: ['team-a', 'active'] })
+
+    await expect(result.registry.setWorkspaceTags(workspace.id, [])).resolves.toEqual([])
+    expect(result.registry.workspaceTagsById).toEqual({})
+
+    await expect(result.registry.setWorkspaceTags(WorkspaceId('ghost'), ['ops']))
+      .rejects.toThrow(/cannot tag unknown workspace 'ghost'/)
+  })
+
+  it('restores both tag maps across restarts', async () => {
+    const dir = await makeDir('tags-restart')
+    const pool = new MemoryMediaPool()
+    const first = await harness({ pool, sessions: [header('s1', dir, 100)] })
+    const workspace = await first.registry.create(dir)
+    await first.registry.setSessionTags(SessionId('s1'), ['ops'])
+    await first.registry.setWorkspaceTags(workspace.id, ['team-a'])
+    await first.fiber.dispose()
+
+    const second = await harness({ pool, sessions: [header('s1', dir, 100)] })
+    expect(second.registry.sessionTagsById).toEqual({ s1: ['ops'] })
+    expect(second.registry.workspaceTagsById).toEqual({ [workspace.id]: ['team-a'] })
+    await second.fiber.dispose()
+  })
+})

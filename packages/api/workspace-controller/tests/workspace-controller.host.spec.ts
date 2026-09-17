@@ -222,6 +222,43 @@ describe('WorkspaceController commands', () => {
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
   })
+
+  it('favorites sessions and edits tag maps with stable failure mappings', async () => {
+    const { controller, ctx, root } = await harness()
+    const created = await controller.create({ path: stageDir(root, 'tagged') })
+    const session = ctx.sessions.create(SessionId('favorite-one'), {
+      meta: { cwd: created.workspace.path },
+    })
+
+    await expect(controller.favoriteSession({ sessionId: session.id }))
+      .resolves.toEqual({ favoriteSessionIds: [session.id] })
+    await expect(controller.unfavoriteSession({ sessionId: session.id }))
+      .resolves.toEqual({ favoriteSessionIds: [] })
+    await expect(controller.favoriteSession({ sessionId: SessionId('unknown') }))
+      .rejects.toMatchObject({ code: 'session/not-found' })
+
+    await expect(controller.setSessionTags({ sessionId: session.id, tags: [' ops ', '', 'ops'] }))
+      .resolves.toEqual({ sessionTagsById: { [session.id]: ['ops'] } })
+    await expect(controller.setSessionTags({ sessionId: session.id, tags: [] }))
+      .resolves.toEqual({ sessionTagsById: {} })
+    await expect(controller.setSessionTags({ sessionId: SessionId('unknown'), tags: ['ops'] }))
+      .rejects.toMatchObject({ code: 'session/not-found' })
+    await expect(controller.setSessionTags({ sessionId: session.id, tags: ['x'.repeat(65)] }))
+      .rejects.toMatchObject({ code: 'workspace/invalid-tags' })
+
+    await expect(controller.setWorkspaceTags({
+      workspaceId: created.workspace.workspaceId,
+      tags: ['team-a'],
+    })).resolves.toEqual({ workspaceTagsById: { [created.workspace.workspaceId]: ['team-a'] } })
+    await expect(controller.setWorkspaceTags({
+      workspaceId: 'missing' as WorkspaceId,
+      tags: ['team-a'],
+    })).rejects.toMatchObject({ code: 'workspace/not-found' })
+    await expect(controller.setWorkspaceTags({
+      workspaceId: created.workspace.workspaceId,
+      tags: ['x'.repeat(65)],
+    })).rejects.toMatchObject({ code: 'workspace/invalid-tags' })
+  })
 })
 
 describe('WorkspaceController follow', () => {
@@ -291,6 +328,30 @@ describe('WorkspaceController follow', () => {
     await controller.archiveSession({ sessionId: session.id })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'archived', archivedSessionIds: [session.id],
+    })
+    await controller.favoriteSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'favorites', favoriteSessionIds: [session.id],
+    })
+    await controller.setSessionTags({ sessionId: session.id, tags: ['ops'] })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'sessionTags', sessionTagsById: { [session.id]: ['ops'] },
+    })
+    await controller.setWorkspaceTags({
+      workspaceId: first.workspace.workspaceId,
+      tags: ['team-a', 'team-b'],
+    })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'workspaceTags', workspaceTagsById: { [first.workspace.workspaceId]: ['team-a', 'team-b'] },
+    })
+    // A same-value global write re-emits nothing: change detection is value-based.
+    await controller.setWorkspaceTags({
+      workspaceId: first.workspace.workspaceId,
+      tags: ['team-a', 'team-b'],
+    })
+    await controller.unfavoriteSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'favorites', favoriteSessionIds: [],
     })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({

@@ -611,6 +611,26 @@ describe('UiWorkspaceService', () => {
     expect(b.workspaces.archiveCalls).toEqual([idle, idle])
   })
 
+  it('forwards favorite and tag commands with normalized tag results', async () => {
+    const member = sid('member')
+    const b = bench({ workspaces: workspaceState([workspace('alpha', [member])]) })
+
+    await b.uiWorkspace.favoriteSession(member)
+    expect(b.workspaces.favoriteCalls).toEqual([member])
+    expect(b.workspaces.list.getSnapshot().favoriteSessionIds).toEqual([member])
+    await b.uiWorkspace.unfavoriteSession(member)
+    expect(b.workspaces.list.getSnapshot().favoriteSessionIds).toEqual([])
+
+    await expect(b.uiWorkspace.setSessionTags(member, [' a ', '', 'a'])).resolves.toEqual(['a'])
+    expect(b.workspaces.list.getSnapshot().sessionTagsById).toEqual({ [member]: ['a'] })
+    await expect(b.uiWorkspace.setWorkspaceTags(wid('alpha'), ['team-a'])).resolves.toEqual(['team-a'])
+    expect(b.workspaces.list.getSnapshot().workspaceTagsById).toEqual({ alpha: ['team-a'] })
+
+    b.workspaces.onFavorite = () => Promise.reject(new Error('favorite rejected'))
+    await expect(b.uiWorkspace.favoriteSession(member)).rejects.toThrow('favorite rejected')
+    expect(b.workspaces.favoriteCalls).toEqual([member, member])
+  })
+
   it('passes directory operations to the Host and preserves structured browse failures', async () => {
     const b = bench()
     b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: '/w/alpha' })

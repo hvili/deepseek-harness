@@ -352,6 +352,67 @@ describe('ClientWorkspaceModel', () => {
     expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
   })
 
+  it('installs favorites and tag maps from unary echoes and stream replacements', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [workspace('one', [sid('first')])])
+
+    await expect(model.favoriteSession(sid('first'))).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'favoriteSession', request: { sessionId: 'first' } })
+    expect(model.getSnapshot().favoriteSessionIds).toEqual(['first'])
+
+    remote.onUnfavoriteSession = () => Promise.resolve(workspaceError(
+      new RemoteError('session/not-found', 'missing', { sessionId: sid('first') }),
+    ))
+    await expect(model.unfavoriteSession(sid('first'))).resolves.toMatchObject({ ok: false })
+    expect(model.getSnapshot().favoriteSessionIds).toEqual(['first'])
+
+    remote.onUnfavoriteSession = () => Promise.resolve(remoteOk({ favoriteSessionIds: [] }))
+    await expect(model.unfavoriteSession(sid('first'))).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().favoriteSessionIds).toEqual([])
+
+    // The echo installs the complete returned map verbatim; normalization is Host-owned.
+    await expect(model.setSessionTags(sid('first'), [' ops ', '', 'ops'])).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({
+      method: 'setSessionTags', request: { sessionId: 'first', tags: [' ops ', '', 'ops'] },
+    })
+    expect(model.getSnapshot().sessionTagsById).toEqual({ first: [' ops ', '', 'ops'] })
+
+    await expect(model.setWorkspaceTags(wid('one'), ['team-a'])).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({
+      method: 'setWorkspaceTags', request: { workspaceId: 'one', tags: ['team-a'] },
+    })
+    expect(model.getSnapshot().workspaceTagsById).toEqual({ one: ['team-a'] })
+
+    // Stream replacements publish the complete Host-confirmed maps.
+    model.replaceFavorites([sid('first')])
+    model.replaceSessionTags({ first: ['fresh'], second: ['other'] })
+    model.replaceWorkspaceTags({ one: ['fresh-team'] })
+    expect(model.getSnapshot().favoriteSessionIds).toEqual(['first'])
+    expect(model.getSnapshot().sessionTagsById).toEqual({ first: ['fresh'], second: ['other'] })
+    expect(model.getSnapshot().workspaceTagsById).toEqual({ one: ['fresh-team'] })
+  })
+
+  it('keeps structurally equal tag maps publish-free', async () => {
+    const model = modelFor()
+    baseline(model, [workspace('one', [sid('first')])])
+    const listener = vi.fn()
+    model.subscribe(listener)
+
+    model.replaceFavorites([sid('first')])
+    model.replaceSessionTags({ first: ['ops'] })
+    model.replaceWorkspaceTags({ one: ['team-a'] })
+    await Promise.resolve()
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    // Fresh arrays with the same content (every transport decode) stay silent.
+    model.replaceFavorites([sid('first')])
+    model.replaceSessionTags({ first: ['ops'] })
+    model.replaceWorkspaceTags({ one: ['team-a'] })
+    await Promise.resolve()
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {
     const model = modelFor()
     baseline(model, [

@@ -359,6 +359,58 @@ describe('deriveSearchResults archive filtering', () => {
   })
 })
 
+describe('deriveSearchResults durable annotations', () => {
+  it('matches durable Workspace and Session tags and projects favorites onto rows', () => {
+    const workspaceTagHit = summary('workspace-tag', 20, '/projects/tagged')
+    workspaceTagHit.displayTitle = 'Ordinary title'
+    const sessionTagHit = summary('session-tag', 10)
+    sessionTagHit.displayTitle = 'Another ordinary title'
+    const annotated = {
+      favoriteSessionIds: [sid('session-tag')],
+      sessionTagsById: { 'session-tag': ['incident'] },
+      workspaceTagsById: { tagged: ['payment'] },
+    }
+    const result = deriveSearchResults(
+      list(workspaceTagHit, sessionTagHit),
+      [workspace('tagged', ['workspace-tag'])],
+      'PAYMENT',
+      noArchive,
+      noAttention,
+      { items: [], hasMore: false },
+      10,
+      annotated,
+    )
+    // A durable Workspace tag matches case-insensitively and carries the row's tags.
+    expect(result.items.map(item => item.id)).toEqual([workspaceTagHit.id])
+    expect(result.items[0]).toMatchObject({ favorite: false, tags: [] })
+
+    const bySessionTag = deriveSearchResults(
+      list(workspaceTagHit, sessionTagHit),
+      [workspace('tagged', ['workspace-tag'])],
+      'incident',
+      noArchive,
+      noAttention,
+      { items: [], hasMore: false },
+      10,
+      annotated,
+    )
+    // A durable Session tag matches its own session, which is also favorited.
+    expect(bySessionTag.items.map(item => item.id)).toEqual([sessionTagHit.id])
+    expect(bySessionTag.items[0]).toMatchObject({ favorite: true, tags: ['incident'] })
+
+    // Without annotations the same queries match nothing.
+    expect(deriveSearchResults(
+      list(workspaceTagHit, sessionTagHit),
+      [workspace('tagged', ['workspace-tag'])],
+      'payment',
+      noArchive,
+      noAttention,
+      { items: [], hasMore: false },
+      10,
+    ).items).toEqual([])
+  })
+})
+
 describe('deriveSearchResults', () => {
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
